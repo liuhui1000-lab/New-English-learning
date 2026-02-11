@@ -13,26 +13,42 @@ export async function POST(req: NextRequest) {
     try {
         // 1. Get Settings from DB (or Env)
         // For MVP, we try Env first, then DB
+        // 1. Get Settings from DB (or Env)
         let apiKey = process.env.BAIDU_OCR_API_KEY;
         let secretKey = process.env.BAIDU_OCR_SECRET_KEY;
 
         // If not in Env, fetch from system_settings via Supabase
-        if (!apiKey || !secretKey) {
-            // Note: This requires the supabase client to have access (anon key might not read system_settings if RLS is strict)
-            // So ideally we use a Service Role key here, or ensure system_settings is readable.
-            // For now, let's assume Env vars are set or we skip.
-            // In a real app, use Service Role Client.
+        if (!apiKey) {
+            const { data: settings } = await supabase
+                .from('system_settings')
+                .select('*')
+                .in('key', ['baidu_ocr_api_key', 'baidu_ocr_secret_key']);
+
+            if (settings) {
+                const map: Record<string, string> = {};
+                settings.forEach((s: any) => map[s.key] = s.value);
+                apiKey = map['baidu_ocr_api_key'];
+                secretKey = map['baidu_ocr_secret_key'];
+            }
         }
 
-        if (!apiKey || !secretKey) {
-            return NextResponse.json({ error: "OCR Configuration Missing" }, { status: 500 });
+        if (!apiKey) {
+            return NextResponse.json({ error: "OCR Configuration Missing (Please configure in Admin Settings)" }, { status: 500 });
         }
 
         const { image } = await req.json(); // Base64 image
         if (!image) return NextResponse.json({ error: "No image provided" }, { status: 400 });
 
         // 2. Get Token
-        const token = await getAccessToken(apiKey, secretKey);
+        let token = "";
+        if (!secretKey) {
+            // Support "Direct Access Token" mode (User provided only one key)
+            // If Secret Key is empty, we assume API Key IS the Access Token
+            token = apiKey;
+        } else {
+            // Standard Mode: Exchange AK + SK for Token
+            token = await getAccessToken(apiKey, secretKey);
+        }
 
         // 3. Call OCR (General Basic or High Accuracy)
         // Using 'general_basic' for speed, or 'webimage'
