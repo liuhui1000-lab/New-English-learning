@@ -35,18 +35,76 @@ async function extractText(file: File): Promise<string> {
             cMapPacked: true,
         }).promise;
         let fullText = "";
+        let useOCR = false;
 
+        // Pass 1: Try Text Extraction
         for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
-            // Type assertion for items
             const items: any[] = textContent.items as any[];
             const pageText = items.map((item) => item.str).join(" ");
+
+            // Check for garbage/obfuscated text pattern (e.g. {#{...}#})
+            if (/\{#\{.*?\}#\}/.test(pageText) || pageText.trim().length === 0) {
+                console.warn(`Page ${i} seems obfuscated or empty, switching to OCR...`);
+                useOCR = true;
+                fullText = ""; // Reset
+                break;
+            }
             fullText += pageText + "\n";
         }
+
+        // Pass 2: OCR Fallback (if needed)
+        if (useOCR) {
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                try {
+                    const ocrText = await ocrPdfPage(page);
+                    fullText += ocrText + "\n";
+                } catch (e) {
+                    console.error(`OCR failed for page ${i}`, e);
+                    fullText += `[Page ${i} OCR Failed]\n`;
+                }
+            }
+        }
+
         return fullText;
     }
     throw new Error("Unsupported file type");
+}
+
+// Helper: OCR a single PDF page
+async function ocrPdfPage(page: any): Promise<string> {
+    const viewport = page.getViewport({ scale: 1.5 }); // Higher scale for better OCR
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error("Canvas context not available");
+
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+
+    await page.render({
+        canvasContext: context,
+        viewport: viewport
+    }).promise;
+
+    const base64Image = canvas.toDataURL('image/jpeg', 0.8);
+    const image = base64Image.replace(/^data:image\/\w+;base64,/, "");
+
+    const response = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image })
+    });
+
+    if (!response.ok) {
+        throw new Error("OCR Service Error");
+    }
+
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+
+    return data.text || "";
 }
 
 function splitQuestions(text: string): string[] {
