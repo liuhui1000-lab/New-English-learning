@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Question } from "@/types"
 
-export default function PracticePage() {
+function PracticeContent() {
     const searchParams = useSearchParams()
     const type = searchParams?.get('type') || 'word_transformation'
 
@@ -101,5 +101,13 @@ export default function PracticePage() {
                 </button>
             )}
         </div>
+    )
+}
+
+export default function PracticePage() {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <PracticeContent />
+        </Suspense>
     )
 }

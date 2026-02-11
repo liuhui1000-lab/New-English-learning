@@ -1,10 +1,5 @@
 import mammoth from "mammoth";
-import * as pdfjsLib from "pdfjs-dist";
 import { Question, QuestionType } from "@/types";
-
-// Set worker source for PDF.js
-// Note: You might need to copy the worker script to public/ or use a CDN link in production
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 export interface ParsedQuestion {
     id: string; // Temporary ID for review
@@ -26,6 +21,14 @@ async function extractText(file: File): Promise<string> {
         const result = await mammoth.extractRawText({ arrayBuffer });
         return result.value;
     } else if (file.type === "application/pdf") {
+        // Dynamic import to avoid SSR issues with canvas/DOMMatrix
+        const pdfjsLib = await import("pdfjs-dist");
+
+        // Set worker source
+        // Use unpkg or cdnjs which matches the version
+        // Note: In a real prod app, you might want to host the worker file locally in public/
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         let fullText = "";
@@ -33,7 +36,9 @@ async function extractText(file: File): Promise<string> {
         for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
-            const pageText = textContent.items.map((item: any) => item.str).join(" ");
+            // Type assertion for items
+            const items: any[] = textContent.items as any[];
+            const pageText = items.map((item) => item.str).join(" ");
             fullText += pageText + "\n";
         }
         return fullText;
