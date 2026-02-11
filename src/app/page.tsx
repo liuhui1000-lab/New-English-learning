@@ -10,7 +10,7 @@ export default function Home() {
       <p className="mt-4 text-xl text-gray-500 max-w-2xl mx-auto">
         欢迎来到上海初中英语提升平台。
         <br />
-        已部署 CI/CD 自动化流程 (Dev -> Test -> Prod)。
+        已部署 CI/CD 自动化流程 (Dev → Test → Prod)。
       </p>
 
       <div className="mt-10 flex items-center justify-center gap-x-6">
