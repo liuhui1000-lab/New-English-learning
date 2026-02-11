@@ -25,9 +25,8 @@ async function extractText(file: File): Promise<string> {
         const pdfjsLib = await import("pdfjs-dist");
 
         // Set worker source
-        // Use unpkg or cdnjs which matches the version
-        // Note: In a real prod app, you might want to host the worker file locally in public/
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+        // Use local file in public/ for reliability (copied from node_modules)
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`;
 
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
