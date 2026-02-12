@@ -60,22 +60,36 @@ export async function POST(req: NextRequest) {
 
         const result = await response.json();
 
+        // Check for error codes (support both errorCode and error_code standards)
+        if (result.errorCode !== undefined && result.errorCode !== 0) {
+            throw new Error(result.errorMsg || "Unknown Error");
+        }
+        if (result.error_code !== undefined && result.error_code !== 0) {
+            throw new Error(result.error_msg || "Unknown Error");
+        }
+
         // 4. Parse Response
-        // Structure: result["result"]["layoutParsingResults"][0]["markdown"]["text"]
-        if (!result.result || !result.result.layoutParsingResults) {
-            throw new Error("Invalid response structure from Paddle API");
-        }
+        // Priority 1: Layout Parsing (Markdown) - from User's Script
+        if (result.result && result.result.layoutParsingResults) {
+            const parsingResults = result.result.layoutParsingResults;
+            let fullMarkdown = "";
 
-        const parsingResults = result.result.layoutParsingResults;
-        let fullMarkdown = "";
-
-        for (const res of parsingResults) {
-            if (res.markdown && res.markdown.text) {
-                fullMarkdown += res.markdown.text + "\n\n";
+            for (const res of parsingResults) {
+                if (res.markdown && res.markdown.text) {
+                    fullMarkdown += res.markdown.text + "\n\n";
+                }
             }
+            return NextResponse.json({ text: fullMarkdown });
         }
 
-        return NextResponse.json({ text: fullMarkdown });
+        // Priority 2: Standard PP-OCRv5 (Plain Text) - from Doc Link
+        if (result.result && result.result.ocrResults) {
+            const ocrResults = result.result.ocrResults;
+            const text = ocrResults.map((r: any) => r.words || r.text || "").join("\n");
+            return NextResponse.json({ text });
+        }
+
+        throw new Error("Invalid response structure: No layoutParsingResults or ocrResults found");
 
     } catch (error: any) {
         console.error("OCR Proxy Error:", error);
