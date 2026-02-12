@@ -97,6 +97,12 @@ create table public.user_progress (
   attempts int default 0,
   last_practiced_at timestamptz,
   next_review_at timestamptz,
+  
+  -- Recitation Module Fields
+  consecutive_correct int default 0, -- Track 2x consecutive pass rule
+  review_stage int default 0, -- Ebbinghaus stage (0-7)
+  ease_factor float default 2.5, -- SM-2 Ease Factor
+  
   unique(user_id, question_id)
 );
 

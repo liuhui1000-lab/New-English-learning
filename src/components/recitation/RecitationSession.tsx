@@ -55,6 +55,40 @@ export default function RecitationSession({ batch, onComplete }: RecitationSessi
         onComplete(results)
     }
 
+    // Helper to group by Family for Flashcard View
+    const groupByFamily = (questions: Question[]) => {
+        const groups: { [key: string]: Question[] } = {}
+        const standalone: Question[] = []
+
+        questions.forEach(q => {
+            // Find Family tag
+            const familyTag = q.tags?.find(t => t.startsWith('Family:'))
+            if (familyTag) {
+                const familyId = familyTag.split(':')[1]
+                if (!groups[familyId]) groups[familyId] = []
+                groups[familyId].push(q)
+            } else {
+                standalone.push(q)
+            }
+        })
+
+        // Convert to array format for FlashcardView
+        const groupArray = Object.keys(groups).map(key => ({
+            id: `group-${key}`,
+            items: groups[key]
+        }))
+
+        // Add standalone items as groups of 1
+        standalone.forEach(q => {
+            groupArray.push({
+                id: q.id,
+                items: [q]
+            })
+        })
+
+        return groupArray
+    }
+
     return (
         <div className="min-h-screen bg-indigo-50 flex flex-col">
             {/* Thread / Progress Bar */}
@@ -80,7 +114,7 @@ export default function RecitationSession({ batch, onComplete }: RecitationSessi
                             className="flex-1"
                         >
                             <FlashcardView
-                                batch={batch}
+                                groups={groupByFamily(batch)}
                                 onComplete={() => setPhase('matching')}
                             />
                         </motion.div>

@@ -3,24 +3,26 @@
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { ChevronRight, ChevronLeft, Play } from "lucide-react"
+import { Question } from "@/types"
+
+export interface FlashcardGroup {
+    id: string
+    items: Question[]
+}
 
 interface FlashcardViewProps {
-    batch: any[]
+    groups: FlashcardGroup[]
     onComplete: () => void
 }
 
-export default function FlashcardView({ batch, onComplete }: FlashcardViewProps) {
+export default function FlashcardView({ groups, onComplete }: FlashcardViewProps) {
     const [index, setIndex] = useState(0)
     const [isFlipped, setIsFlipped] = useState(false)
 
-    // Auto-advance? Maybe let user control.
-
     const next = () => {
         setIsFlipped(false)
-        if (index < batch.length - 1) {
+        if (index < groups.length - 1) {
             setIndex(index + 1)
-        } else {
-            // End of stack
         }
     }
 
@@ -29,17 +31,14 @@ export default function FlashcardView({ batch, onComplete }: FlashcardViewProps)
         if (index > 0) setIndex(index - 1)
     }
 
-    const current = batch[index]
+    const currentGroup = groups[index]
 
-    // Parse POS/Def
-    const posMatch = current.answer.match(/^([a-z]+\.)\s*(.*)/)
-    const pos = posMatch ? posMatch[1] : "word"
-    const def = posMatch ? posMatch[2] : current.answer
+    if (!currentGroup) return <div>Loading...</div>
 
     return (
         <div className="max-w-xl mx-auto p-4 flex flex-col items-center h-full justify-center min-h-[60vh]">
             <h3 className="text-xl font-bold text-indigo-800 mb-6 font-comic">
-                📚 认一认 ({index + 1} / {batch.length})
+                📚 认一认 ({index + 1} / {groups.length})
             </h3>
 
             <div className="relative w-full aspect-[4/3] perspective-1000 group cursor-pointer" onClick={() => setIsFlipped(!isFlipped)}>
@@ -48,29 +47,53 @@ export default function FlashcardView({ batch, onComplete }: FlashcardViewProps)
                     animate={{ rotateY: isFlipped ? 180 : 0 }}
                     transition={{ duration: 0.6 }}
                 >
-                    {/* Front: Word */}
+                    {/* Front: Words */}
                     <div className="absolute inset-0 bg-white rounded-2xl shadow-xl border-4 border-indigo-100 flex flex-col items-center justify-center p-8 backface-hidden">
                         <span className="text-sm font-bold text-indigo-400 uppercase tracking-widest mb-4">
                             Phase 1: Memory
                         </span>
-                        <h2 className="text-5xl font-extrabold text-gray-800 mb-4 text-center">
-                            {current.content}
-                        </h2>
+
+                        <div className="flex flex-col gap-4 text-center">
+                            {currentGroup.items.map((item, idx) => (
+                                <h2 key={item.id} className="text-4xl font-extrabold text-gray-800">
+                                    {item.content}
+                                </h2>
+                            ))}
+                        </div>
+
                         <p className="text-gray-400 text-sm mt-8">(点击翻转看释义)</p>
                     </div>
 
-                    {/* Back: Def & POS */}
-                    <div className="absolute inset-0 bg-indigo-600 rounded-2xl shadow-xl flex flex-col items-center justify-center p-8 backface-hidden rotate-y-180 text-white">
-                        <span className="px-3 py-1 bg-white/20 rounded-full text-sm font-bold mb-6">
-                            {pos}
-                        </span>
-                        <h3 className="text-3xl font-bold text-center leading-relaxed">
-                            {def}
-                        </h3>
+                    {/* Back: Defs & POS */}
+                    <div className="absolute inset-0 bg-indigo-600 rounded-2xl shadow-xl flex flex-col items-center justify-center p-8 backface-hidden rotate-y-180 text-white overflow-y-auto custom-scrollbar">
+                        <div className="flex flex-col gap-6 w-full">
+                            {currentGroup.items.map((item, idx) => {
+                                const posMatch = item.answer.match(/^([a-z]+\.)\s*(.*)/)
+                                const pos = posMatch ? posMatch[1] : ""
+                                const def = posMatch ? posMatch[2] : item.answer
+
+                                return (
+                                    <div key={item.id} className="flex flex-col items-center border-b border-white/20 last:border-0 pb-4 last:pb-0">
+                                        <div className="flex items-baseline gap-2 mb-1">
+                                            <span className="text-xl font-bold">{item.content}</span>
+                                            {pos && (
+                                                <span className="px-2 py-0.5 bg-white/20 rounded-full text-xs font-bold">
+                                                    {pos}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <h3 className="text-lg font-medium text-center leading-relaxed opacity-90">
+                                            {def}
+                                        </h3>
+                                    </div>
+                                )
+                            })}
+                        </div>
+
                         {/* Family Tag Hint */}
-                        {current.tags?.find((t: string) => t.startsWith('Family:')) && (
-                            <div className="mt-8 pt-4 border-t border-white/20 text-indigo-200 text-sm">
-                                🔒 属于词族: {current.tags.find((t: string) => t.startsWith('Family:')).split(':')[1]}
+                        {currentGroup.items[0].tags?.find((t: string) => t.startsWith('Family:')) && (
+                            <div className="mt-6 pt-4 border-t border-white/20 text-indigo-200 text-sm">
+                                🔒 属于词族: {currentGroup.items[0].tags.find((t: string) => t.startsWith('Family:')).split(':')[1]}
                             </div>
                         )}
                     </div>
@@ -87,7 +110,7 @@ export default function FlashcardView({ batch, onComplete }: FlashcardViewProps)
                     <ChevronLeft className="w-6 h-6 text-gray-600" />
                 </button>
 
-                {index === batch.length - 1 ? (
+                {index === groups.length - 1 ? (
                     <button
                         onClick={onComplete}
                         className="px-8 py-3 bg-green-500 hover:bg-green-600 text-white rounded-full font-bold shadow-lg transform hover:scale-105 transition flex items-center"
@@ -106,7 +129,7 @@ export default function FlashcardView({ batch, onComplete }: FlashcardViewProps)
 
                 <button
                     onClick={next}
-                    disabled={index === batch.length - 1}
+                    disabled={index === groups.length - 1}
                     className="p-3 rounded-full hover:bg-gray-100 disabled:opacity-0 transition"
                 >
                     <ChevronRight className="w-6 h-6 text-gray-600" />
