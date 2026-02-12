@@ -73,7 +73,7 @@ create table public.import_history (
 -- Questions Table
 create table public.questions (
   id uuid default gen_random_uuid() primary key,
-  type text check (type in ('word_transformation', 'collocation', 'grammar', 'mistake')),
+  type text check (type in ('word_transformation', 'collocation', 'grammar', 'mistake', 'vocabulary')),
   content text, -- The question body or OCR text
   answer text,
   hint text,
