@@ -188,22 +188,35 @@ async function extractPageText(page: any, scale: number, quality: number): Promi
 
     const image = base64Image.replace(/^data:image\/\w+;base64,/, "");
 
-    const response = await fetch('/api/ocr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image })
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 50000); // 50s Client Timeout
 
-    if (!response.ok) {
-        let errText = "";
-        try {
-            errText = await response.text();
-        } catch (e) { }
-        throw new Error(`OCR Service Error: ${response.status} ${errText.substring(0, 100)}`);
+    try {
+        const response = await fetch('/api/ocr', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image }),
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            let errText = "";
+            try {
+                errText = await response.text();
+            } catch (e) { }
+            throw new Error(`OCR Service Error: ${response.status} ${errText.substring(0, 100)}`);
+        }
+
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+
+        return data.text || "";
+    } catch (error: any) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            throw new Error("OCR Request Client Timeout ( > 50s)");
+        }
+        throw error;
     }
-
-    const data = await response.json();
-    if (data.error) throw new Error(data.error);
-
-    return data.text || "";
 }

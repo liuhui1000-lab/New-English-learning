@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
+export const maxDuration = 60; // Allow up to 60 seconds for OCR processing
+
 // Configuration for Paddle OCR (Layout Parsing)
 const PADDLE_API_URL = "https://5ejew8k4i019dek5.aistudio-app.com/layout-parsing";
 // Default token provided by user, but prefer Env/DB
