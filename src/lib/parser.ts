@@ -83,6 +83,11 @@ function processRecitationMode(fullText: string): ParsedQuestion[] {
         // Look for first non-ascii character (Chinese definition)?
         // Or look for "->"
 
+        let content = "";
+        let answer = "";
+        let type: QuestionType = 'vocabulary';
+        let tags: string[] = ['Recitation'];
+
         if (line.includes("->")) {
             // Transformation: happy -> happiness
             const parts = line.split("->");
