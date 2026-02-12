@@ -24,9 +24,7 @@ export default function MatchingGame({ batch, onComplete, onError }: MatchingGam
     const [midCol, setMidCol] = useState<MatchItem[]>([])
     const [rightCol, setRightCol] = useState<MatchItem[]>([])
 
-    const [selected, setSelected] = useState<{ item: MatchItem, col: 'left' | 'mid' | 'right' } | null>(null)
     const [matchedIds, setMatchedIds] = useState<Set<string>>(new Set()) // Stores matchIds (Family IDs) that are fully cleared
-    const [partialMatches, setPartialMatches] = useState<Map<string, Set<'word' | 'pos' | 'def'>>>(new Map()) // Track partial progress for a family
 
     // Feedback State
     const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null)
@@ -34,11 +32,6 @@ export default function MatchingGame({ batch, onComplete, onError }: MatchingGam
 
     useEffect(() => {
         // Initialize Game: Shuffle and split
-        // Simplified Logic: 
-        // Col 1: Words
-        // Col 2: POS (or Part of Speech hints)
-        // Col 3: Definitions
-
         const l: MatchItem[] = []
         const m: MatchItem[] = []
         const r: MatchItem[] = []
@@ -67,68 +60,7 @@ export default function MatchingGame({ batch, onComplete, onError }: MatchingGam
         return [...array].sort(() => Math.random() - 0.5)
     }
 
-    const handleSelect = (item: MatchItem, col: 'left' | 'mid' | 'right') => {
-        if (matchedIds.has(item.matchId)) return // Already done
-        // If clicked unmatched item
-
-        if (!selected) {
-            setSelected({ item, col })
-            return
-        }
-
-        if (selected.item.id === item.id) {
-            setSelected(null) // Deselect
-            return
-        }
-
-        // Logic: Can only match different columns
-        if (selected.col === col) {
-            setSelected({ item, col }) // Switch selection
-            return
-        }
-
-        // Check Match
-        if (selected.item.matchId === item.matchId) {
-            handleMatchSuccess(selected.item.matchId, selected.item.type, item.type)
-        } else {
-            handleMatchFail(item.id, selected.item.item.id) // Pass IDs for shaking
-            // Trigger Penalty for this item
-            onError(selected.item.matchId)
-            onError(item.matchId)
-        }
-    }
-
-    const handleMatchSuccess = (matchId: string, type1: string, type2: string) => {
-        // Play sound?
-        setFeedback('correct')
-        setTimeout(() => setFeedback(null), 800)
-
-        // Update Partial State
-        // We need to track which parts are matched. Since we match 2 at a time, keeping track is tricky.
-        // Simplified for "Connect 3":
-        // Actually, matching Word -> POS -> Def is hard to visualize as 3 cols.
-        // Let's do Standard: Word <-> Def.  POS is maybe too easy/hard to isolate.
-        // Recitation Request says: "Verify POS and Def".
-        // Let's stick to 3 columns layout if possible, or 2 columns where Right Col combines POS+Def?
-        // User requested:
-        // Col 2   Col 1   Col 3
-        // POS     Word    Def
-        // That's 3 columns.
-
-        // Let's assume we match (Word + POS) OR (Word + Def) OR (POS + Def)?
-        // Connecting 3 items is complex UI.
-
-        // ALTERNATIVE:
-        // Click Word -> It highlights. Then Click POS -> It highlights. Then Click Def.
-        // If all 3 match -> BOOM disppear.
-
-        // Let's try "Accumulate Selection" logic.
-        // But current logic is "Pair matching".
-        // Let's pivot to "Multi-Select": Select 1 from each col, then auto-check.
-    }
-
-    // RE-IMPLEMENTING FOR 3-COLUMN MATCH
-    // New State:
+    // 3-COLUMN MATCH LOGIC
     const [selections, setSelections] = useState<{
         word?: MatchItem,
         pos?: MatchItem,
@@ -193,17 +125,6 @@ export default function MatchingGame({ batch, onComplete, onError }: MatchingGam
             </h3>
 
             <div className="grid grid-cols-3 gap-8">
-                {/* Column 2: POS (Displayed on Left per user request "POS Word Def" layout?) 
-                   User said: 
-                   Look at Word, check POS/Def (Matching)
-                   Layout: "POS(Left) Word(Center) Def(Right)"?
-                   Actually user Diagram:
-                   POS2  Word1  Def1
-                   POS3  Word2  Def3
-                   ...
-                   So yes, 3 columns.
-                */}
-
                 {/* Left: POS */}
                 <div className="space-y-4">
                     <h4 className="text-center font-bold text-gray-500 mb-2">词性</h4>
