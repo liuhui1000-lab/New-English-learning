@@ -82,24 +82,25 @@ function processRecitationMode(fullText: string): ParsedQuestion[] {
 
             parts.forEach((part, index) => {
                 // Parse each part as a standalone item
-                // Formats: 
-                // "1. able (adj.) 能够的"
-                // "unable (adj.) 不能够的"
+                // 1. Try Strict Match with POS: "able (adj.) 能够的"
+                // Regex: Start -> (Number) -> Word(Greedy) -> (POS) -> Definition
+                const strictMatch = part.match(/^(\d+[\.\s]*)?([a-zA-Z\-\s]+?)\s*(\([a-z\.]+\))\s*(.+)$/);
 
-                // Regex to capture: Word | (POS) | Definition
-                // Matches: "unable" | "(adj.)" | "不能够的"
-                // Or: "enable" | "(v.)" | "使能够"
-                const partMatch = part.match(/^(\d+[\.\s]*)?([a-zA-Z\-\s]+?)\s*(\([a-z\.]+\))?\s*(.+)$/);
+                // 2. Fallback: Word + Space + Definition (No POS or different format)
+                // "apple 苹果"
+                const fallbackMatch = part.match(/^(\d+[\.\s]*)?([a-zA-Z\-\s]+)\s+(.+)$/);
 
-                if (partMatch) {
-                    const word = partMatch[2].trim();
-                    const rawPos = partMatch[3] ? partMatch[3].replace(/[\(\)]/g, '') : ""; // "adj."
-                    const def = partMatch[4].trim();
+                const successfulMatch = strictMatch || fallbackMatch;
+
+                if (successfulMatch) {
+                    const word = successfulMatch[2].trim();
+                    // If strict match, group 3 is pos. If fallback, group 3 is definition (and 4 is undefined)
+                    const rawPos = strictMatch ? successfulMatch[3].replace(/[\(\)]/g, '') : "";
+                    const def = strictMatch ? successfulMatch[4].trim() : successfulMatch[3].trim();
 
                     if (index === 0) rootWord = word;
 
-                    // Standardize Answer format for Game: "pos. def"
-                    // If rawPos exists, prepend to def
+                    // Standardize Answer format
                     const finalAnswer = rawPos ? `${rawPos} ${def}` : def;
 
                     parsedItems.push({
