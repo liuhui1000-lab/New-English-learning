@@ -113,8 +113,13 @@ export default function ImportPage() {
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-gray-900">极速导入工作台</h2>
-                <div className="text-sm text-gray-500">
-                    支持 .docx (Word) 和 .pdf (智能OCR)
+                <div className="flex items-center space-x-4">
+                    <a href="/admin/import/history" className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
+                        查看历史记录 &rarr;
+                    </a>
+                    <div className="text-sm text-gray-500">
+                        支持 .docx / .pdf
+                    </div>
                 </div>
             </div>
 
