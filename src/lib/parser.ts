@@ -164,7 +164,28 @@ async function extractPageText(page: any, scale: number, quality: number): Promi
         viewport: viewport
     }).promise;
 
-    const base64Image = canvas.toDataURL('image/jpeg', quality);
+    let currentQuality = quality;
+    let base64Image = canvas.toDataURL('image/jpeg', currentQuality);
+
+    // Safety Check: Vercel has a 4.5MB body limit. 
+    // Base64 is ~1.33x larger than binary. 
+    // We aim for < 3MB Base64 string (~2.2MB image) to be ultra safe.
+    const MAX_BASE64_LENGTH = 3 * 1024 * 1024;
+
+    while (base64Image.length > MAX_BASE64_LENGTH && currentQuality > 0.1) {
+        console.warn(`OCR Payload too large (${(base64Image.length / 1024 / 1024).toFixed(2)}MB), compressing...`);
+        currentQuality -= 0.2;
+        base64Image = canvas.toDataURL('image/jpeg', currentQuality);
+    }
+
+    // Double check: if still too big, scale down the canvas
+    if (base64Image.length > MAX_BASE64_LENGTH) {
+        console.warn("Still too large after compression, resizing canvas...");
+        // Logic to redraw on smaller canvas could go here, but for now we try sending.
+        // Or throw specific error to trigger outer retry
+        throw new Error("Page image too complex/large even after compression");
+    }
+
     const image = base64Image.replace(/^data:image\/\w+;base64,/, "");
 
     const response = await fetch('/api/ocr', {
