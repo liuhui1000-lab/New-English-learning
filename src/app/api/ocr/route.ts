@@ -11,6 +11,10 @@ async function getAccessToken(apiKey: string, secretKey: string) {
 
 export async function POST(req: NextRequest) {
     try {
+        // Log request size if possible (for debugging)
+        // const blob = await req.blob();
+        // console.log("OCR Request Size:", blob.size);
+
         // 1. Get Settings from DB (or Env)
         // For MVP, we try Env first, then DB
         // 1. Get Settings from DB (or Env)

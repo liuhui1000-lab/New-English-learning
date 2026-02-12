@@ -59,11 +59,12 @@ async function extractText(file: File): Promise<string> {
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 try {
+                    // Start with high quality, fallback to lower if needed
                     const ocrText = await ocrPdfPage(page);
                     fullText += ocrText + "\n";
-                } catch (e) {
+                } catch (e: any) {
                     console.error(`OCR failed for page ${i}`, e);
-                    fullText += `[Page ${i} OCR Failed]\n`;
+                    fullText += `[Page ${i} OCR Failed: ${e.message}]\n`;
                 }
             }
         }
@@ -71,40 +72,6 @@ async function extractText(file: File): Promise<string> {
         return fullText;
     }
     throw new Error("Unsupported file type");
-}
-
-// Helper: OCR a single PDF page
-async function ocrPdfPage(page: any): Promise<string> {
-    const viewport = page.getViewport({ scale: 1.5 }); // Higher scale for better OCR
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error("Canvas context not available");
-
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
-
-    await page.render({
-        canvasContext: context,
-        viewport: viewport
-    }).promise;
-
-    const base64Image = canvas.toDataURL('image/jpeg', 0.8);
-    const image = base64Image.replace(/^data:image\/\w+;base64,/, "");
-
-    const response = await fetch('/api/ocr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image })
-    });
-
-    if (!response.ok) {
-        throw new Error("OCR Service Error");
-    }
-
-    const data = await response.json();
-    if (data.error) throw new Error(data.error);
-
-    return data.text || "";
 }
 
 function splitQuestions(text: string): string[] {
@@ -165,4 +132,57 @@ function classifyQuestion(content: string): ParsedQuestion {
         answer: '', // Extracted if possible, otherwise empty
         tags: tags
     };
+}
+
+// Helper: OCR a single PDF page with retry logic
+async function ocrPdfPage(page: any): Promise<string> {
+    try {
+        // Attempt 1: High Quality (Scale 1.5, JPEG 0.8)
+        return await extractPageText(page, 1.5, 0.8);
+    } catch (e: any) {
+        console.warn("OCR Attempt 1 failed, retrying with lower quality...", e);
+        try {
+            // Attempt 2: Standard Quality (Scale 1.0, JPEG 0.5) - Smaller payload
+            return await extractPageText(page, 1.0, 0.5);
+        } catch (retryError: any) {
+            throw new Error(retryError.message || "OCR Failed after retries");
+        }
+    }
+}
+
+async function extractPageText(page: any, scale: number, quality: number): Promise<string> {
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error("Canvas context not available");
+
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+
+    await page.render({
+        canvasContext: context,
+        viewport: viewport
+    }).promise;
+
+    const base64Image = canvas.toDataURL('image/jpeg', quality);
+    const image = base64Image.replace(/^data:image\/\w+;base64,/, "");
+
+    const response = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image })
+    });
+
+    if (!response.ok) {
+        let errText = "";
+        try {
+            errText = await response.text();
+        } catch (e) { }
+        throw new Error(`OCR Service Error: ${response.status} ${errText.substring(0, 100)}`);
+    }
+
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+
+    return data.text || "";
 }
