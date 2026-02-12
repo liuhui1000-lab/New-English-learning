@@ -2,158 +2,173 @@
 
 import { useState, useRef, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Check, X, HelpCircle } from "lucide-react"
+import { Check, X, HelpCircle, ArrowRight } from "lucide-react"
+import { FlashcardGroup } from "./FlashcardView"
 
 interface DictationProps {
-    batch: any[] // The raw question objects
+    groups: FlashcardGroup[]
     onComplete: () => void
     onError: (failedId: string) => void
 }
 
-export default function Dictation({ batch, onComplete, onError }: DictationProps) {
-    const [currentIndex, setCurrentIndex] = useState(0)
-    const [input, setInput] = useState("")
-    const [feedback, setFeedback] = useState<'idle' | 'correct' | 'wrong'>('idle')
-    const [hintLevel, setHintLevel] = useState(0)
+export default function Dictation({ groups, onComplete, onError }: DictationProps) {
+    const [currentGroupIndex, setCurrentGroupIndex] = useState(0)
+    const currentGroup = groups[currentGroupIndex]
 
-    const inputRef = useRef<HTMLInputElement>(null)
-    const currentItem = batch[currentIndex]
+    // Form State
+    // Map questionId -> current input value
+    const [inputs, setInputs] = useState<{ [key: string]: string }>({})
+
+    // Status tracking for each field: 'idle' | 'correct' | 'wrong'
+    const [fieldStatus, setFieldStatus] = useState<{ [key: string]: 'idle' | 'correct' | 'wrong' }>({})
+
+    // Hint tracking
+    const [activeHint, setActiveHint] = useState<string | null>(null)
+
+    const firstInputRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
-        // Auto-focus input on change
-        if (inputRef.current) inputRef.current.focus()
-    }, [currentIndex])
+        // Reset state on group change
+        setInputs({})
+        setFieldStatus({})
+        setActiveHint(null)
+        // Focus first input
+        if (firstInputRef.current) setTimeout(() => firstInputRef.current?.focus(), 100)
+    }, [currentGroup])
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleInputChange = (id: string, val: string) => {
+        if (fieldStatus[id] === 'correct') return // Locked
+        setInputs(prev => ({ ...prev, [id]: val }))
+        // Reset wrong status on typing
+        if (fieldStatus[id] === 'wrong') {
+            setFieldStatus(prev => ({ ...prev, [id]: 'idle' }))
+        }
+    }
+
+    const checkAll = (e: React.FormEvent) => {
         e.preventDefault()
-        if (feedback !== 'idle') return
 
-        const target = currentItem.content.trim()
-        const guess = input.trim()
+        const newStatus = { ...fieldStatus }
+        let allCorrect = true
+        let hasErrors = false
 
-        if (guess.toLowerCase() === target.toLowerCase()) {
-            // Correct
-            setFeedback('correct')
+        currentGroup.items.forEach(item => {
+            // Skip already correct ones
+            if (fieldStatus[item.id] === 'correct') return
+
+            const guess = (inputs[item.id] || "").trim().toLowerCase()
+            const target = item.content.trim().toLowerCase()
+
+            if (guess === target) {
+                newStatus[item.id] = 'correct'
+            } else {
+                newStatus[item.id] = 'wrong'
+                allCorrect = false
+                if (guess.length > 0) hasErrors = true // Only count as error if they tried
+
+                // Trigger penalty if wrong (even empty? maybe strictly if they clicked check)
+                onError(item.id)
+            }
+        })
+
+        setFieldStatus(newStatus)
+
+        if (allCorrect) {
+            // Move to next group after delay
             setTimeout(() => {
-                next()
+                if (currentGroupIndex < groups.length - 1) {
+                    setCurrentGroupIndex(prev => prev + 1)
+                } else {
+                    onComplete()
+                }
             }, 800)
-        } else {
-            // Wrong
-            setFeedback('wrong')
-            onError(currentItem.id) // Trigger penalty
-            setTimeout(() => {
-                setFeedback('idle')
-                setInput("") // Clear input to retry
-            }, 1000)
         }
     }
 
-    const next = () => {
-        setFeedback('idle')
-        setInput("")
-        setHintLevel(0)
-
-        if (currentIndex < batch.length - 1) {
-            setCurrentIndex(prev => prev + 1)
-        } else {
-            onComplete()
-        }
-    }
-
-    // Parse Answer (e.g. "adj. 快乐的") -> POS: "adj.", Def: "快乐的"
-    const posMatch = currentItem.answer.match(/^([a-z]+\.)\s*(.*)/)
-    const pos = posMatch ? posMatch[1] : "???"
-    const def = posMatch ? posMatch[2] : currentItem.answer
+    if (!currentGroup) return <div>Loading...</div>
 
     return (
-        <div className="max-w-2xl mx-auto p-6 text-center">
-            <h3 className="text-xl font-bold text-indigo-800 mb-8 font-comic">
-                ✍️ 默写挑战 ({currentIndex + 1} / {batch.length})
-            </h3>
-
-            <div className="bg-white rounded-2xl shadow-lg p-10 mb-8 border-4 border-indigo-100">
-                <div className="mb-6">
-                    <span className="inline-block px-3 py-1 bg-pink-100 text-pink-600 rounded-full text-sm font-bold mb-2">
-                        {pos}
+        <div className="max-w-3xl mx-auto p-4 flex flex-col items-center min-h-[60vh]">
+            <div className="text-center mb-8">
+                <h3 className="text-xl font-bold text-indigo-800 font-comic mb-2">
+                    ✍️ 默写挑战 ({currentGroupIndex + 1} / {groups.length})
+                </h3>
+                {currentGroup.items[0].tags?.find((t: string) => t.startsWith('Family:')) && (
+                    <span className="text-sm text-indigo-400 font-mono bg-indigo-50 px-3 py-1 rounded-full">
+                        Family: {currentGroup.items[0].tags.find((t: string) => t.startsWith('Family:')).split(':')[1]}
                     </span>
-                    <h2 className="text-3xl font-bold text-gray-800">
-                        {def}
-                    </h2>
-                </div>
-
-                {/* Hint Area */}
-                <div className="h-8 mb-4 text-gray-400 font-mono tracking-widest">
-                    {hintLevel > 0 && (
-                        <span>
-                            {currentItem.content.split('').map((char: string, i: number) => (
-                                i === 0 || i === currentItem.content.length - 1 || Math.random() > 0.5
-                                    ? char : '_'
-                            )).join(' ')}
-                        </span>
-                    )}
-                </div>
-
-                <form onSubmit={handleSubmit} className="relative max-w-sm mx-auto">
-                    <input
-                        ref={inputRef}
-                        type="text"
-                        value={input}
-                        onChange={e => setInput(e.target.value)}
-                        className={`
-                            w-full text-center text-2xl font-mono p-3 border-b-4 outline-none transition-colors
-                            ${feedback === 'idle' ? 'border-gray-300 focus:border-indigo-500' : ''}
-                            ${feedback === 'correct' ? 'border-green-500 text-green-600 bg-green-50' : ''}
-                            ${feedback === 'wrong' ? 'border-red-500 text-red-600 bg-red-50' : ''}
-                        `}
-                        placeholder="Type here..."
-                        autoComplete="off"
-                        autoCapitalize="off"
-                    />
-
-                    <AnimatePresence>
-                        {feedback === 'wrong' && (
-                            <motion.div
-                                initial={{ x: -10, opacity: 0 }}
-                                animate={{ x: 0, opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                className="absolute right-[-40px] top-4"
-                            >
-                                <X className="text-red-500 w-8 h-8" />
-                            </motion.div>
-                        )}
-                        {feedback === 'correct' && (
-                            <motion.div
-                                initial={{ scale: 0 }}
-                                animate={{ scale: 1 }}
-                                exit={{ opacity: 0 }}
-                                className="absolute right-[-40px] top-4"
-                            >
-                                <Check className="text-green-500 w-8 h-8" />
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </form>
-
-                {feedback === 'wrong' && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="mt-4 text-sm text-red-400"
-                    >
-                        加油！再试一次！
-                    </motion.div>
                 )}
             </div>
 
-            <div className="flex justify-center">
-                <button
-                    onClick={() => setHintLevel(prev => prev + 1)}
-                    className="flex items-center text-gray-400 hover:text-indigo-500 transition-colors text-sm"
-                >
-                    <HelpCircle className="w-4 h-4 mr-1" />
-                    需要提示?
-                </button>
-            </div>
+            <form onSubmit={checkAll} className="w-full space-y-6 bg-white rounded-2xl shadow-xl p-8 border-4 border-indigo-50">
+                {currentGroup.items.map((item, index) => {
+                    const posMatch = item.answer.match(/^([a-z]+\.)\s*(.*)/)
+                    const pos = posMatch ? posMatch[1] : ""
+                    const def = posMatch ? posMatch[2] : item.answer
+                    const status = fieldStatus[item.id] || 'idle'
+
+                    return (
+                        <motion.div
+                            key={item.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: index * 0.1 }}
+                            className="flex items-center gap-4 border-b border-gray-100 last:border-0 pb-4 last:pb-0"
+                        >
+                            {/* Left: Prompt */}
+                            <div className="w-1/2 text-right">
+                                {pos && <span className="text-xs font-bold text-pink-500 bg-pink-50 px-2 py-0.5 rounded mr-2">{pos}</span>}
+                                <span className="text-gray-700 font-medium">{def}</span>
+                            </div>
+
+                            {/* Right: Input */}
+                            <div className="relative w-1/2 max-w-xs">
+                                <input
+                                    ref={index === 0 ? firstInputRef : null}
+                                    type="text"
+                                    value={inputs[item.id] || ""}
+                                    onChange={e => handleInputChange(item.id, e.target.value)}
+                                    disabled={status === 'correct'}
+                                    className={`
+                                        w-full font-mono text-lg p-2 border-b-2 outline-none transition-colors
+                                        ${status === 'idle' ? 'border-gray-300 focus:border-indigo-500' : ''}
+                                        ${status === 'correct' ? 'border-green-500 text-green-600 bg-green-50' : ''}
+                                        ${status === 'wrong' ? 'border-red-500 text-red-600 bg-red-50' : ''}
+                                    `}
+                                    placeholder={activeHint === item.id ? item.content.replace(/./g, (c, i) => i % 2 === 0 ? c : '_') : ""}
+                                    autoComplete="off"
+                                />
+
+                                {status === 'correct' && (
+                                    <Check className="absolute right-2 top-3 w-5 h-5 text-green-500" />
+                                )}
+                                {status === 'wrong' && (
+                                    <X className="absolute right-2 top-3 w-5 h-5 text-red-500" />
+                                )}
+                            </div>
+
+                            {/* Help Button */}
+                            <button
+                                type="button"
+                                onClick={() => setActiveHint(item.id)}
+                                className="text-gray-300 hover:text-indigo-400 transition"
+                            >
+                                <HelpCircle className="w-5 h-5" />
+                            </button>
+                        </motion.div>
+                    )
+                })}
+
+                <div className="pt-6 flex justify-center">
+                    <button
+                        type="submit"
+                        className="px-10 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full font-bold shadow-lg transform hover:scale-105 transition flex items-center"
+                    >
+                        <Check className="w-5 h-5 mr-2" />
+                        提交本组
+                    </button>
+                </div>
+            </form>
         </div>
     )
 }

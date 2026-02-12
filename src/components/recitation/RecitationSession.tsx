@@ -56,11 +56,12 @@ export default function RecitationSession({ batch, onComplete }: RecitationSessi
     }
 
     // Helper to group by Family for Flashcard View
-    const groupByFamily = (questions: Question[]) => {
+    // Use memo to avoid re-calculation
+    const groupedQuestions = useState(() => {
         const groups: { [key: string]: Question[] } = {}
         const standalone: Question[] = []
 
-        questions.forEach(q => {
+        batch.forEach(q => {
             // Find Family tag
             const familyTag = q.tags?.find(t => t.startsWith('Family:'))
             if (familyTag) {
@@ -87,7 +88,7 @@ export default function RecitationSession({ batch, onComplete }: RecitationSessi
         })
 
         return groupArray
-    }
+    })[0]
 
     return (
         <div className="min-h-screen bg-indigo-50 flex flex-col">
@@ -114,7 +115,7 @@ export default function RecitationSession({ batch, onComplete }: RecitationSessi
                             className="flex-1"
                         >
                             <FlashcardView
-                                groups={groupByFamily(batch)}
+                                groups={groupedQuestions}
                                 onComplete={() => setPhase('matching')}
                             />
                         </motion.div>
@@ -129,7 +130,7 @@ export default function RecitationSession({ batch, onComplete }: RecitationSessi
                             className="flex-1"
                         >
                             <MatchingGame
-                                batch={batch}
+                                groups={groupedQuestions}
                                 onError={handlePhaseError}
                                 onComplete={() => setPhase('dictation')}
                             />
@@ -145,7 +146,7 @@ export default function RecitationSession({ batch, onComplete }: RecitationSessi
                             className="flex-1"
                         >
                             <Dictation
-                                batch={batch}
+                                groups={groupedQuestions}
                                 onError={handlePhaseError}
                                 onComplete={finishSession}
                             />
