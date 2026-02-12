@@ -64,55 +64,67 @@ function processRecitationMode(fullText: string): ParsedQuestion[] {
     lines.forEach(line => {
         if (line.includes("List") || line.includes("Unit") || line.length < 3) return;
 
-        // Strategy: First try to split by ' - ' or ' – ' which indicates a word family chain
-        // Example: "able (adj.) 能够的 - unable (adj.) 不能够的 - ability (n.) 能力"
-
         // Normalize separators
         const normalizedLine = line.replace(/–/g, '-');
 
-        if (normalizedLine.includes(' - ')) {
-            // Complex Family Line
-            const parts = normalizedLine.split(' - ').map(p => p.trim());
+        // Robust Check: Hyphens (Family) OR Wide Spaces (Phrases)
+        if (/[-–]/.test(normalizedLine) || /\s{2,}|\t+/.test(normalizedLine)) {
+            // 1. Pre-split by "Wide Spaces" (Tabs or 2+ spaces)
+            const blocks = normalizedLine.split(/\s{2,}|\t+/);
 
-            // Heuristic to identify the "Root" (Family Name)
-            // Usually the first word of the first part.
-            // Part 0: "1. able (adj.) 能够的"
-            let rootWord = "";
-            const familyId = crypto.randomUUID(); // Or use root word string
+            let hasParsed = false;
 
-            parts.forEach((part, index) => {
-                // Parse each part as a standalone item
-                // 1. Try Strict Match with POS: "able (adj.) 能够的"
-                // Regex: Start -> (Number) -> Word(Greedy) -> (POS) -> Definition
-                const strictMatch = part.match(/^(\d+[\.\s]*)?([a-zA-Z\-\s]+?)\s*(\([a-z\.]+\))\s*(.+)$/);
+            blocks.forEach(block => {
+                if (!block.trim()) return;
 
-                // 2. Fallback: Word + Space + Definition (No POS or different format)
-                // "apple 苹果"
-                const fallbackMatch = part.match(/^(\d+[\.\s]*)?([a-zA-Z\-\s]+)\s+(.+)$/);
+                // 2. Family Splitting (Hyphen with optional spaces)
+                const parts = block.split(/\s*[-–]\s*/).map(p => p.trim()).filter(p => p.length > 0);
 
-                const successfulMatch = strictMatch || fallbackMatch;
+                let rootWord = "";
 
-                if (successfulMatch) {
-                    const word = successfulMatch[2].trim();
-                    // If strict match, group 3 is pos. If fallback, group 3 is definition (and 4 is undefined)
-                    const rawPos = strictMatch ? successfulMatch[3].replace(/[\(\)]/g, '') : "";
-                    const def = strictMatch ? successfulMatch[4].trim() : successfulMatch[3].trim();
+                parts.forEach((part, index) => {
+                    // Regex Fixes:
+                    // 1. Word: Allow '/' for "have/take" -> [a-zA-Z\-\s\/]
+                    // 2. POS: Flexible match
+                    // 3. \s* before POS group handles "word(pos)" case
+                    const strictMatch = part.match(/^(\d+[\.\s]*)?([a-zA-Z\-\s\/]+?)\s*(\([a-z\.]+\))\s*(.*)$/);
 
-                    if (index === 0) rootWord = word;
+                    // Fallback: Word + Space + Def
+                    const fallbackMatch = part.match(/^(\d+[\.\s]*)?([a-zA-Z\-\s\/]+)\s+(.+)$/);
 
-                    // Standardize Answer format
-                    const finalAnswer = rawPos ? `${rawPos} ${def}` : def;
+                    const successfulMatch = strictMatch || fallbackMatch;
 
-                    parsedItems.push({
-                        id: crypto.randomUUID(),
-                        content: word,
-                        type: 'vocabulary',
-                        answer: finalAnswer,
-                        tags: [`Family:${rootWord || word}`]
-                    });
-                }
+                    if (successfulMatch) {
+                        const word = successfulMatch[2].trim();
+                        // If strict match, group 3 is pos. If fallback, group 3 is definition 
+                        const rawPos = strictMatch ? successfulMatch[3].replace(/[\(\)]/g, '') : "";
+                        const def = strictMatch ? successfulMatch[4].trim() : successfulMatch[3].trim();
+
+                        if (index === 0) rootWord = word;
+
+                        // Answer Format: "pos. def" or just "def"
+                        let finalAnswer = def;
+                        if (rawPos) {
+                            // If definition is empty, just show POS? Or keep as is.
+                            // Usually "adj. 意思是"
+                            finalAnswer = def ? `${rawPos} ${def}` : rawPos;
+                        }
+
+                        if (word && (finalAnswer || rawPos)) {
+                            parsedItems.push({
+                                id: crypto.randomUUID(),
+                                content: word,
+                                type: 'vocabulary',
+                                answer: finalAnswer,
+                                tags: [`Family:${rootWord || word}`]
+                            });
+                            hasParsed = true;
+                        }
+                    }
+                });
             });
-            return; // Skip standard processing for this line
+
+            if (hasParsed) return; // Skip standard processing only if we actually parsed something
         }
 
         // Standard Line Processing (No hyphen chain)
