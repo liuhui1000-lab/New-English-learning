@@ -1,6 +1,8 @@
 import mammoth from "mammoth";
 import { Question, QuestionType } from "@/types";
 
+export type ImportMode = 'recitation' | 'mock_paper' | 'error_set';
+
 export interface ParsedQuestion {
     id: string; // Temporary ID for review
     content: string;
@@ -9,11 +11,137 @@ export interface ParsedQuestion {
     tags: string[];
 }
 
-export async function parseDocument(file: File): Promise<ParsedQuestion[]> {
+export async function parseDocument(file: File, mode: ImportMode = 'mock_paper'): Promise<ParsedQuestion[]> {
     const text = await extractText(file);
-    const rawQuestions = splitQuestions(text);
-    return rawQuestions.map(classifyQuestion);
+
+    // 1. Remove "Answer Key" sections (Common for Mock Papers)
+    // Only apply strict truncation for mock papers 
+    if (mode === 'mock_paper' || mode === 'error_set') {
+        const answerKeyPatterns = [
+            /Reference Answers/i,
+            /Key to Exercises/i,
+            /Keys:/i,
+            /Answers:/i,
+            /参考答案/
+        ];
+        let cleanText = text;
+        for (const pattern of answerKeyPatterns) {
+            const match = cleanText.search(pattern);
+            if (match !== -1) {
+                console.log("Found Answer Key section, truncating for Mock Paper mode...");
+                cleanText = cleanText.substring(0, match);
+                break;
+            }
+        }
+        const rawQuestions = splitQuestions(cleanText);
+        return processMockPaperMode(rawQuestions);
+    }
+    else if (mode === 'recitation') {
+        // Recitation mode: Parse full text line-by-line for vocabulary/lists
+        return processRecitationMode(text);
+    }
+
+    return [];
 }
+
+function processRecitationMode(fullText: string): ParsedQuestion[] {
+    // Strategy: Line-by-Line Parsing for Vocabulary/Lists
+    // User goal: Import a list of words or transformations for Dictation/Selection.
+    // Format assumed: "1. word definition" or "word ... definition" or "root -> derived"
+
+    const lines = fullText.split('\n').filter(line => line.trim().length > 0);
+    const parsedItems: ParsedQuestion[] = [];
+
+    // Regex to match: Optional Number -> Word -> Separator -> Definition
+    // Group 1: Numbering (e.g. "1.", "(1)")
+    // Group 2: The Word / Root (Content) - greedy until separator. Allows letters, hyphens, spaces, parens.
+    // Group 3: Separator (spaces, dots, arrow, or common patterns like ' adj. ')
+    // Group 4: Definition / Derived Word (Answer)
+
+    // Improved Regex to catch "apple n. 苹果" where " n. " is the separator
+    const lineRegex = /^(\d+[\.\、\)\s]*)?([a-zA-Z\-\s\(\)]+?)([\s\.\…]+|->\s*|\s+[a-z]+\.\s+)(.+)$/;
+
+    lines.forEach(line => {
+        // Skip obvious junk headers
+        if (line.includes("List") || line.includes("Unit") || line.length < 3) return;
+
+        const match = line.match(lineRegex);
+        if (match) {
+            let word = match[2].trim();
+            let definition = match[4].trim();
+
+            // Special handling if separator was part of speech (e.g. " n. ")
+            // We might want to prepend it back to definition or definition usually has it?
+            // If regex group 3 was " n. ", it's consumed. match[4] is "苹果".
+            // Let's refine: simpler regex often better.
+
+            // Fallback simplistic split if regex fails or for robustness:
+            // Split by first large gap or "->"?
+        }
+
+        // Alternative: Simple Line Splitter
+        // Look for first non-ascii character (Chinese definition)?
+        // Or look for "->"
+
+        let content = "";
+        let answer = "";
+        let type: QuestionType = 'vocabulary';
+
+        if (line.includes("->")) {
+            // Transformation: happy -> happiness
+            const parts = line.split("->");
+            content = parts[0].replace(/^\d+[\.\s]*/, '').trim();
+            answer = parts[1].trim();
+            type = 'word_transformation'; // Or keep as vocabulary with tag?
+        } else {
+            // Match first Chinese char?
+            const firstChinese = line.search(/[\u4e00-\u9fa5]/);
+            if (firstChinese !== -1) {
+                // English ... Chinese
+                const firstPart = line.substring(0, firstChinese).trim();
+                content = firstPart.replace(/^\d+[\.\s]*/, '').trim();
+
+                // If content ends with part of speech like " n.", move it to answer?
+                // For now, simple split.
+                answer = line.substring(firstChinese).trim();
+            } else {
+                // All English? Try strict regex match again
+                const m = line.match(lineRegex);
+                if (m) {
+                    content = m[2].trim();
+                    answer = m[4].trim();
+                }
+            }
+        }
+
+        if (content && answer) {
+            parsedItems.push({
+                id: crypto.randomUUID(),
+                content: content,
+                answer: answer,
+                type: type, // 'vocabulary' or 'word_transformation'
+                tags: ['Recitation']
+            });
+        }
+    });
+
+    console.log(`Recitation Mode: Parsed ${parsedItems.length} items.`);
+    return parsedItems;
+}
+
+function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
+    // Strategy: Strict Filter. Keep only Questions (blanks/options).
+    const filteredQuestions = rawItems.filter(q => {
+        const hasBlank = /_+|\(\s{3,}\)|\[\s{3,}\]/.test(q);
+        const hasOptions = /A\..*B\./.test(q);
+        return hasBlank || hasOptions;
+    });
+
+    console.log(`Mock Paper Mode: Filtered ${rawItems.length} items down to ${filteredQuestions.length}`);
+    return filteredQuestions.map(classifyQuestion);
+}
+
+// ... Shared Helpers ...
 
 async function extractText(file: File): Promise<string> {
     if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
@@ -21,11 +149,7 @@ async function extractText(file: File): Promise<string> {
         const result = await mammoth.extractRawText({ arrayBuffer });
         return result.value;
     } else if (file.type === "application/pdf") {
-        // Dynamic import to avoid SSR issues with canvas/DOMMatrix
         const pdfjsLib = await import("pdfjs-dist");
-
-        // Set worker source
-        // Use local file in public/ for reliability (copied from node_modules)
         pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`;
 
         const arrayBuffer = await file.arrayBuffer();
@@ -37,29 +161,25 @@ async function extractText(file: File): Promise<string> {
         let fullText = "";
         let useOCR = false;
 
-        // Pass 1: Try Text Extraction
         for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
             const items: any[] = textContent.items as any[];
             const pageText = items.map((item) => item.str).join(" ");
 
-            // Check for garbage/obfuscated text pattern (e.g. {#{...}#})
             if (/\{#\{.*?\}#\}/.test(pageText) || pageText.trim().length === 0) {
-                console.warn(`Page ${i} seems obfuscated or empty, switching to OCR...`);
+                console.warn(`Page ${i} seems obfuscated, switching to OCR...`);
                 useOCR = true;
-                fullText = ""; // Reset
+                fullText = "";
                 break;
             }
             fullText += pageText + "\n";
         }
 
-        // Pass 2: OCR Fallback (if needed)
         if (useOCR) {
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 try {
-                    // Start with high quality, fallback to lower if needed
                     const ocrText = await ocrPdfPage(page);
                     fullText += ocrText + "\n";
                 } catch (e: any) {
@@ -68,60 +188,46 @@ async function extractText(file: File): Promise<string> {
                 }
             }
         }
-
         return fullText;
     }
     throw new Error("Unsupported file type");
 }
 
 function splitQuestions(text: string): string[] {
-    // Regex to match question numbers like "1.", "26.", "(1)", etc.
-    // This is a heuristic and might need tuning based on actual papers
-    const splitRegex = /(\n\s*\(?\d+[\.\)]\s*)/g;
-
-    // Split and keep delimiters
+    const splitRegex = /(\n\s*(?:\(?\d+[\.\)、]\s*|\d+\s+))/g;
     const parts = text.split(splitRegex);
-
     const questions: string[] = [];
     let currentQuestion = "";
-
     for (let i = 0; i < parts.length; i++) {
         if (splitRegex.test(parts[i])) {
-            // Found a new number, push previous question if exists
-            if (currentQuestion.trim()) {
-                questions.push(currentQuestion.trim());
-            }
-            currentQuestion = parts[i]; // Start new question with the number
+            if (currentQuestion.trim()) questions.push(currentQuestion.trim());
+            currentQuestion = parts[i];
         } else {
             currentQuestion += parts[i];
         }
     }
-    if (currentQuestion.trim()) {
-        questions.push(currentQuestion.trim());
-    }
-
+    if (currentQuestion.trim()) questions.push(currentQuestion.trim());
     return questions;
 }
 
 function classifyQuestion(content: string): ParsedQuestion {
-    let type: QuestionType = 'grammar'; // Default
+    let type: QuestionType = 'grammar';
     const tags: string[] = [];
 
-    // Heuristic Logic
-    if (content.includes('______') && /\([a-zA-Z]+\)$/.test(content.trim())) {
+    if (/\(.*\)/.test(content) && content.includes('______')) {
         type = 'word_transformation';
-        // Extract root word from (word)
         const match = content.match(/\(([a-zA-Z]+)\)$/);
         if (match) tags.push(`Root:${match[1]}`);
-    } else if (/A\..*B\..*C\..*D\./.test(content) || /A\..*B\..*C\./.test(content)) {
+    }
+    else if (content.includes('______') && !/\([a-zA-Z]+\)$/.test(content.trim())) {
+        type = 'collocation';
+    }
+    // Check for grammar options
+    else if (/A\..*B\./.test(content)) {
         type = 'grammar';
-        // Detect Collocation Keywords
-        const keywords = ['look forward', 'interested in', 'fond of', 'succeed in'];
+        const keywords = ['look forward', 'interested in', 'fond of', 'succeed in', 'keen on'];
         for (const kw of keywords) {
-            if (content.toLowerCase().includes(kw)) {
-                // Could be collocation
-                tags.push(`Collocation:${kw}`);
-            }
+            if (content.toLowerCase().includes(kw)) tags.push(`Collocation:${kw}`);
         }
     }
 
@@ -129,23 +235,22 @@ function classifyQuestion(content: string): ParsedQuestion {
         id: crypto.randomUUID(),
         content: content,
         type: type,
-        answer: '', // Extracted if possible, otherwise empty
+        answer: '',
         tags: tags
     };
 }
 
-// Helper: OCR a single PDF page with retry logic
+// ... OCR Helpers ...
+
 async function ocrPdfPage(page: any): Promise<string> {
     try {
-        // Attempt 1: High Quality (Scale 1.5, JPEG 0.8)
         return await extractPageText(page, 1.5, 0.8);
     } catch (e: any) {
-        console.warn("OCR Attempt 1 failed, retrying with lower quality...", e);
+        console.warn("OCR Attempt 1 failed, retrying...", e);
         try {
-            // Attempt 2: Standard Quality (Scale 1.0, JPEG 0.5) - Smaller payload
             return await extractPageText(page, 1.0, 0.5);
         } catch (retryError: any) {
-            throw new Error(retryError.message || "OCR Failed after retries");
+            throw new Error(retryError.message || "OCR Failed");
         }
     }
 }
@@ -154,42 +259,29 @@ async function extractPageText(page: any, scale: number, quality: number): Promi
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
-    if (!context) throw new Error("Canvas context not available");
+    if (!context) throw new Error("Canvas context missing");
 
     canvas.height = viewport.height;
     canvas.width = viewport.width;
 
-    await page.render({
-        canvasContext: context,
-        viewport: viewport
-    }).promise;
+    await page.render({ canvasContext: context, viewport: viewport }).promise;
 
     let currentQuality = quality;
     let base64Image = canvas.toDataURL('image/jpeg', currentQuality);
-
-    // Safety Check: Vercel has a 4.5MB body limit. 
-    // Base64 is ~1.33x larger than binary. 
-    // We aim for < 3MB Base64 string (~2.2MB image) to be ultra safe.
     const MAX_BASE64_LENGTH = 3 * 1024 * 1024;
 
     while (base64Image.length > MAX_BASE64_LENGTH && currentQuality > 0.1) {
-        console.warn(`OCR Payload too large (${(base64Image.length / 1024 / 1024).toFixed(2)}MB), compressing...`);
         currentQuality -= 0.2;
         base64Image = canvas.toDataURL('image/jpeg', currentQuality);
     }
 
-    // Double check: if still too big, scale down the canvas
     if (base64Image.length > MAX_BASE64_LENGTH) {
-        console.warn("Still too large after compression, resizing canvas...");
-        // Logic to redraw on smaller canvas could go here, but for now we try sending.
-        // Or throw specific error to trigger outer retry
-        throw new Error("Page image too complex/large even after compression");
+        throw new Error("Page image too large");
     }
 
     const image = base64Image.replace(/^data:image\/\w+;base64,/, "");
-
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 50000); // 50s Client Timeout
+    const timeoutId = setTimeout(() => controller.abort(), 50000);
 
     try {
         const response = await fetch('/api/ocr', {
@@ -200,23 +292,14 @@ async function extractPageText(page: any, scale: number, quality: number): Promi
         });
         clearTimeout(timeoutId);
 
-        if (!response.ok) {
-            let errText = "";
-            try {
-                errText = await response.text();
-            } catch (e) { }
-            throw new Error(`OCR Service Error: ${response.status} ${errText.substring(0, 100)}`);
-        }
-
+        if (!response.ok) throw new Error(`OCR Error: ${response.status}`);
         const data = await response.json();
         if (data.error) throw new Error(data.error);
 
         return data.text || "";
     } catch (error: any) {
         clearTimeout(timeoutId);
-        if (error.name === 'AbortError') {
-            throw new Error("OCR Request Client Timeout ( > 50s)");
-        }
+        if (error.name === 'AbortError') throw new Error("OCR Timeout");
         throw error;
     }
 }
