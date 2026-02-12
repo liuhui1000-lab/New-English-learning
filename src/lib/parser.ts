@@ -83,16 +83,17 @@ function processRecitationMode(fullText: string): ParsedQuestion[] {
         // Look for first non-ascii character (Chinese definition)?
         // Or look for "->"
 
-        let content = "";
-        let answer = "";
-        let type: QuestionType = 'vocabulary';
-
         if (line.includes("->")) {
             // Transformation: happy -> happiness
             const parts = line.split("->");
-            content = parts[0].replace(/^\d+[\.\s]*/, '').trim();
-            answer = parts[1].trim();
-            type = 'word_transformation'; // Or keep as vocabulary with tag?
+            content = parts[0].replace(/^\d+[\.\s]*/, '').trim(); // "happy"
+            answer = parts[1].trim(); // "happiness"
+            type = 'word_transformation';
+
+            // groupTag logic: Use the root word as the family identifier
+            // This fulfills the user request: "Words appear in groups/families"
+            const rootWord = content.split(' ')[0].toLowerCase(); // Simple heuristic
+            tags.push(`Family:${rootWord}`);
         } else {
             // Match first Chinese char?
             const firstChinese = line.search(/[\u4e00-\u9fa5]/);
