@@ -62,71 +62,100 @@ function processRecitationMode(fullText: string): ParsedQuestion[] {
     const lineRegex = /^(\d+[\.\、\)\s]*)?([a-zA-Z\-\s\(\)]+?)([\s\.\…]+|->\s*|\s+[a-z]+\.\s+)(.+)$/;
 
     lines.forEach(line => {
-        // Skip obvious junk headers
         if (line.includes("List") || line.includes("Unit") || line.length < 3) return;
 
+        // Strategy: First try to split by ' - ' or ' – ' which indicates a word family chain
+        // Example: "able (adj.) 能够的 - unable (adj.) 不能够的 - ability (n.) 能力"
+
+        // Normalize separators
+        const normalizedLine = line.replace(/–/g, '-');
+
+        if (normalizedLine.includes(' - ')) {
+            // Complex Family Line
+            const parts = normalizedLine.split(' - ').map(p => p.trim());
+
+            // Heuristic to identify the "Root" (Family Name)
+            // Usually the first word of the first part.
+            // Part 0: "1. able (adj.) 能够的"
+            let rootWord = "";
+            const familyId = crypto.randomUUID(); // Or use root word string
+
+            parts.forEach((part, index) => {
+                // Parse each part as a standalone item
+                // Formats: 
+                // "1. able (adj.) 能够的"
+                // "unable (adj.) 不能够的"
+
+                // Regex to capture: Word | (POS) | Definition
+                // Matches: "unable" | "(adj.)" | "不能够的"
+                // Or: "enable" | "(v.)" | "使能够"
+                const partMatch = part.match(/^(\d+[\.\s]*)?([a-zA-Z\-\s]+?)\s*(\([a-z\.]+\))?\s*(.+)$/);
+
+                if (partMatch) {
+                    const word = partMatch[2].trim();
+                    const rawPos = partMatch[3] ? partMatch[3].replace(/[\(\)]/g, '') : ""; // "adj."
+                    const def = partMatch[4].trim();
+
+                    if (index === 0) rootWord = word;
+
+                    // Standardize Answer format for Game: "pos. def"
+                    // If rawPos exists, prepend to def
+                    const finalAnswer = rawPos ? `${rawPos} ${def}` : def;
+
+                    parsedItems.push({
+                        id: crypto.randomUUID(),
+                        content: word,
+                        type: 'vocabulary',
+                        answer: finalAnswer,
+                        tags: [`Family:${rootWord || word}`]
+                    });
+                }
+            });
+            return; // Skip standard processing for this line
+        }
+
+        // Standard Line Processing (No hyphen chain)
         const match = line.match(lineRegex);
         if (match) {
-            let word = match[2].trim();
-            let definition = match[4].trim();
-
-            // Special handling if separator was part of speech (e.g. " n. ")
-            // We might want to prepend it back to definition or definition usually has it?
-            // If regex group 3 was " n. ", it's consumed. match[4] is "苹果".
-            // Let's refine: simpler regex often better.
-
-            // Fallback simplistic split if regex fails or for robustness:
-            // Split by first large gap or "->"?
-        }
-
-        // Alternative: Simple Line Splitter
-        // Look for first non-ascii character (Chinese definition)?
-        // Or look for "->"
-
-        let content = "";
-        let answer = "";
-        let type: QuestionType = 'vocabulary';
-        let tags: string[] = ['Recitation'];
-
-        if (line.includes("->")) {
-            // Transformation: happy -> happiness
-            const parts = line.split("->");
-            content = parts[0].replace(/^\d+[\.\s]*/, '').trim(); // "happy"
-            answer = parts[1].trim(); // "happiness"
-            type = 'word_transformation';
-
-            // groupTag logic: Use the root word as the family identifier
-            // This fulfills the user request: "Words appear in groups/families"
-            const rootWord = content.split(' ')[0].toLowerCase(); // Simple heuristic
-            tags.push(`Family:${rootWord}`);
-        } else {
-            // Match first Chinese char?
-            const firstChinese = line.search(/[\u4e00-\u9fa5]/);
-            if (firstChinese !== -1) {
-                // English ... Chinese
-                const firstPart = line.substring(0, firstChinese).trim();
-                content = firstPart.replace(/^\d+[\.\s]*/, '').trim();
-
-                // If content ends with part of speech like " n.", move it to answer?
-                // For now, simple split.
-                answer = line.substring(firstChinese).trim();
-            } else {
-                // All English? Try strict regex match again
-                const m = line.match(lineRegex);
-                if (m) {
-                    content = m[2].trim();
-                    answer = m[4].trim();
-                }
+            let content = match[2].trim();
+            // Handle (adj.) in content?
+            // If regex captured "able (adj.)" as Group 2, we need to extract POS.
+            const posInContent = content.match(/^([a-zA-Z\-\s]+)\s*(\([a-z\.]+\))$/);
+            let extraPos = "";
+            if (posInContent) {
+                content = posInContent[1].trim();
+                extraPos = posInContent[2].replace(/[\(\)]/g, '');
             }
-        }
 
-        if (content && answer) {
+            let definition = match[4].trim();
+            if (extraPos) definition = `${extraPos} ${definition}`;
+
             parsedItems.push({
                 id: crypto.randomUUID(),
                 content: content,
-                answer: answer,
-                type: type, // 'vocabulary' or 'word_transformation'
-                tags: ['Recitation']
+                answer: definition,
+                type: 'vocabulary',
+                tags: []
+            });
+            return;
+        }
+
+        // ... Fallbacks (Chinese split etc) ...
+        // (Keeping existing logic for "->" transformation below if needed, or replace/merge?)
+        // The user specifically mentioned " - " lists.
+
+        if (line.includes("->")) {
+            // ... existing "arrow" logic ...
+            const parts = line.split("->");
+            const c = parts[0].replace(/^\d+[\.\s]*/, '').trim();
+            const a = parts[1].trim();
+            const root = c.split(' ')[0].toLowerCase();
+            parsedItems.push({
+                id: crypto.randomUUID(),
+                content: c,
+                answer: a,
+                type: 'word_transformation',
+                tags: [`Family:${root}`]
             });
         }
     });
