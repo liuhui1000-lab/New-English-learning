@@ -21,7 +21,11 @@ export default function StudyPage() {
 
     // Check for saved session on mount
     useEffect(() => {
-        console.log("App Version: v4.3-ClientFix-" + new Date().toISOString())
+        const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+        const projectRef = url?.split('//')[1]?.split('.')[0] || 'unknown'
+        console.log("App Version: v4.4-DB-Check-" + new Date().toISOString())
+        addLog(`DB: ...${projectRef.slice(-4)}`) // Show last 4 chars of project ID
+
         // v4 cache key for debug session
         const savedBatch = sessionStorage.getItem('current_study_session_v4')
         if (savedBatch) {
