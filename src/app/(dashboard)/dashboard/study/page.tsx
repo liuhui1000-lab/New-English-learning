@@ -10,10 +10,10 @@ export default function StudyPage() {
     const [loading, setLoading] = useState(true)
     const [batch, setBatch] = useState<Question[]>([])
     const [sessionComplete, setSessionComplete] = useState(false)
-    const supabase = createBrowserClient(
+    const [supabase] = useState(() => createBrowserClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+    ))
 
     // State for debug logs
     const [debugLogs, setDebugLogs] = useState<string[]>([])
@@ -21,7 +21,7 @@ export default function StudyPage() {
 
     // Check for saved session on mount
     useEffect(() => {
-        console.log("App Version: v4.2-SSR-Fix-" + new Date().toISOString())
+        console.log("App Version: v4.3-ClientFix-" + new Date().toISOString())
         // v4 cache key for debug session
         const savedBatch = sessionStorage.getItem('current_study_session_v4')
         if (savedBatch) {
