@@ -28,8 +28,11 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
     const [midCol, setMidCol] = useState<MatchItem[]>([])
     const [rightCol, setRightCol] = useState<MatchItem[]>([])
 
-    // Track matched IDs within the CURRENT group
-    const [matchedIds, setMatchedIds] = useState<Set<string>>(new Set())
+    // Track VISIBILITY of individual cards (e.g. "w-1", "p-2")
+    const [completedCardIds, setCompletedCardIds] = useState<Set<string>>(new Set())
+
+    // Track solved QUESTIONS to know when group is done
+    const [solvedQuestionIds, setSolvedQuestionIds] = useState<Set<string>>(new Set())
 
     // Feedback State
     const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null)
@@ -57,11 +60,17 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
         setLeftCol(shuffle(l))
         setMidCol(shuffle(m))
         setRightCol(shuffle(r))
-        setMatchedIds(new Set()) // Reset matches for new group
+        setCompletedCardIds(new Set())
+        setSolvedQuestionIds(new Set())
     }, [currentGroup])
 
     const shuffle = (array: any[]) => {
         return [...array].sort(() => Math.random() - 0.5)
+    }
+
+    // Fuzzy Matching Helper
+    const normalizeText = (text: string) => {
+        return text.toLowerCase().replace(/[^a-z]/g, "")
     }
 
     // 3-COLUMN MATCH LOGIC
@@ -72,7 +81,7 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
     }>({})
 
     const onCardClick = (item: MatchItem, col: 'word' | 'pos' | 'def') => {
-        if (matchedIds.has(item.matchId)) return
+        if (completedCardIds.has(item.id)) return
 
         const newSel = { ...selections, [col]: item }
         setSelections(newSel)
@@ -83,18 +92,44 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
     }
 
     const checkTripleMatch = (w: MatchItem, p: MatchItem, d: MatchItem) => {
-        if (w.matchId === p.matchId && p.matchId === d.matchId) {
+        // 1. Word and Definition MUST strictly match (ID must be same)
+        const isWordDefMatch = w.matchId === d.matchId
+
+        // 2. Word and POS can be Loose Match (Content fuzzy match)
+        // Find the "expected" POS text for this Word
+        const targetQuestion = currentGroup.items.find(q => q.id === w.matchId)
+        let isPosMatch = false
+
+        if (targetQuestion) {
+            const posMatch = targetQuestion.answer.match(/^([a-z]+\.)\s*(.*)/)
+            const expectedPos = posMatch ? posMatch[1] : "???"
+
+            // Check if selected POS card has effectively the same text
+            if (normalizeText(p.text) === normalizeText(expectedPos)) {
+                isPosMatch = true
+            }
+        }
+
+        if (isWordDefMatch && isPosMatch) {
             // SUCCESS
-            const id = w.matchId
-            const newMatched = new Set(matchedIds).add(id)
-            setMatchedIds(newMatched)
+            const newCompleted = new Set(completedCardIds)
+            newCompleted.add(w.id)
+            newCompleted.add(p.id)
+            newCompleted.add(d.id)
+            setCompletedCardIds(newCompleted)
+
+            const newSolved = new Set(solvedQuestionIds)
+            newSolved.add(w.matchId)
+            setSolvedQuestionIds(newSolved)
+
             setSelections({})
 
             setFeedback('correct')
             setTimeout(() => setFeedback(null), 500)
 
-            // Check if Level Complete (Current Group)
-            if (newMatched.size === currentGroup.items.length) {
+            // Check if Level Complete (All Questions Solved)
+            // Note: We check if verified questions count matches total items
+            if (newSolved.size === currentGroup.items.length) {
                 setTimeout(() => {
                     handleGroupComplete()
                 }, 1000)
@@ -104,10 +139,8 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
             setShaking(`${w.id},${p.id},${d.id}`)
             setFeedback('wrong')
 
-            // Trigger Penalty
+            // Trigger Penalty (blame the Word's ID)
             onError(w.matchId)
-            onError(p.matchId)
-            onError(d.matchId)
 
             setTimeout(() => {
                 setShaking(null)
@@ -155,7 +188,7 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
                             key={item.id}
                             item={item}
                             selected={selections.pos?.id === item.id}
-                            matched={matchedIds.has(item.matchId)}
+                            matched={completedCardIds.has(item.id)}
                             shake={shaking?.includes(item.id)}
                             onClick={() => onCardClick(item, 'pos')}
                             color="bg-pink-100 border-pink-300 text-pink-700"
@@ -171,7 +204,7 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
                             key={item.id}
                             item={item}
                             selected={selections.word?.id === item.id}
-                            matched={matchedIds.has(item.matchId)}
+                            matched={completedCardIds.has(item.id)}
                             shake={shaking?.includes(item.id)}
                             onClick={() => onCardClick(item, 'word')}
                             color="bg-blue-100 border-blue-300 text-blue-800 font-mono text-lg"
@@ -187,7 +220,7 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
                             key={item.id}
                             item={item}
                             selected={selections.def?.id === item.id}
-                            matched={matchedIds.has(item.matchId)}
+                            matched={completedCardIds.has(item.id)}
                             shake={shaking?.includes(item.id)}
                             onClick={() => onCardClick(item, 'def')}
                             color="bg-green-100 border-green-300 text-green-800"
