@@ -255,9 +255,14 @@ export default function StudyPage() {
 
     if (batch.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center h-[60vh]">
+            <div className="relative flex flex-col items-center justify-center h-[60vh]">
                 <h2 className="text-2xl font-bold text-gray-700 mb-2">🎉 全部完成!</h2>
                 <p className="text-gray-500">今日没有待复习的单词，也没有新单词了。</p>
+                <div className="text-xs text-gray-400 mt-2 max-w-xs text-center border p-2 rounded border-dashed">
+                    如果这不正常，请检查:
+                    1. 是否已导入单词?
+                    2. 是否运行了 RLS 权限修复脚本?
+                </div>
                 <button
                     onClick={() => {
                         sessionStorage.removeItem('current_study_session_v4') // Cleanup just in case
@@ -267,6 +272,25 @@ export default function StudyPage() {
                 >
                     返回
                 </button>
+
+                {/* Debug Overlay kept visible */}
+                <div className="fixed bottom-0 left-0 right-0 bg-black/90 text-green-400 p-2 text-xs font-mono z-50 max-h-48 overflow-y-auto">
+                    <div className="border-b border-gray-700 pb-1 mb-1">
+                        DEBUG LOGS
+                    </div>
+                    {debugLogs.map((log, i) => (
+                        <div key={i} className="opacity-80">&gt; {log}</div>
+                    ))}
+                    <button
+                        onClick={() => {
+                            sessionStorage.removeItem('current_study_session_v4')
+                            window.location.reload()
+                        }}
+                        className="bg-red-600 text-white px-2 py-1 rounded mt-2"
+                    >
+                        Reset
+                    </button>
+                </div>
             </div>
         )
     }
