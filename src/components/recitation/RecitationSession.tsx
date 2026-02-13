@@ -87,6 +87,14 @@ export default function RecitationSession({ batch, onComplete }: RecitationSessi
             })
         })
 
+        // Sort groups alphabetically by Group ID (Root Word)
+        // Format: "group-able", "group-accept"
+        groupArray.sort((a, b) => {
+            const idA = a.id.replace('group-', '').toLowerCase()
+            const idB = b.id.replace('group-', '').toLowerCase()
+            return idA.localeCompare(idB)
+        })
+
         return groupArray
     })[0]
 
