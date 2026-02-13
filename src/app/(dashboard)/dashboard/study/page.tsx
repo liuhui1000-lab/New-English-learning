@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createBrowserClient } from "@supabase/ssr"
 import { Loader2, Trophy, AlertTriangle } from "lucide-react"
 import RecitationSession, { SessionResult } from "@/components/recitation/RecitationSession"
 import { Question } from "@/types"
@@ -10,7 +10,10 @@ export default function StudyPage() {
     const [loading, setLoading] = useState(true)
     const [batch, setBatch] = useState<Question[]>([])
     const [sessionComplete, setSessionComplete] = useState(false)
-    const supabase = createClientComponentClient()
+    const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
 
     // State for debug logs
     const [debugLogs, setDebugLogs] = useState<string[]>([])
@@ -18,7 +21,7 @@ export default function StudyPage() {
 
     // Check for saved session on mount
     useEffect(() => {
-        console.log("App Version: v4.1-FixedBuild-" + new Date().toISOString())
+        console.log("App Version: v4.2-SSR-Fix-" + new Date().toISOString())
         // v4 cache key for debug session
         const savedBatch = sessionStorage.getItem('current_study_session_v4')
         if (savedBatch) {
