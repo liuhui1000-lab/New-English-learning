@@ -11,9 +11,33 @@ export default function StudyPage() {
     const [loading, setLoading] = useState(true)
     const [sessionComplete, setSessionComplete] = useState(false)
 
+    // Check for saved session on mount
     useEffect(() => {
+        const savedBatch = sessionStorage.getItem('current_study_session')
+        if (savedBatch) {
+            try {
+                const parsed = JSON.parse(savedBatch)
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    console.log("Restoring session from storage...")
+                    setBatch(parsed)
+                    setLoading(false)
+                    return
+                }
+            } catch (e) {
+                console.error("Failed to parse saved session", e)
+                sessionStorage.removeItem('current_study_session')
+            }
+        }
+
         fetchStudyBatch()
     }, [])
+
+    // Save session whenever batch changes (and isn't empty)
+    useEffect(() => {
+        if (batch.length > 0 && !sessionComplete) {
+            sessionStorage.setItem('current_study_session', JSON.stringify(batch))
+        }
+    }, [batch, sessionComplete])
 
     const fetchStudyBatch = async () => {
         setLoading(true)
@@ -32,7 +56,7 @@ export default function StudyPage() {
 
             if (rError) throw rError
 
-            let questions: Question[] = reviews?.map((r: any) => r.questions) || []
+            let questions: Question[] = reviews?.map((r: any) => r.questions).filter(q => q) || []
 
             // 2. If not enough reviews, fill with New Words
             if (questions.length < 5) {
@@ -45,6 +69,7 @@ export default function StudyPage() {
                     .eq('user_id', user.id)
 
                 const ignoreIds = progress?.map((p: any) => p.question_id) || []
+                // Add current batch IDs to ignore list if we are refetching (though we usually don't refetch mid-session)
 
                 let query = supabase
                     .from('questions')
@@ -53,6 +78,7 @@ export default function StudyPage() {
                     .limit(limit)
 
                 if (ignoreIds.length > 0) {
+                    // Safe filter
                     query = query.not('id', 'in', `(${ignoreIds.join(',')})`)
                 }
 
@@ -64,13 +90,17 @@ export default function StudyPage() {
                 }
             }
 
+            if (questions.length === 0) {
+                // Nothing to study?
+            }
+
             // Shuffle? Maybe keep families together?
             // For now, simple shuffle or keep order.
             setBatch(questions)
 
         } catch (error) {
             console.error(error)
-            alert("Failed to load study batch")
+            alert("加载学习任务失败，请刷新重试")
         } finally {
             setLoading(false)
         }
@@ -80,52 +110,49 @@ export default function StudyPage() {
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return
 
-        // Process Results
-        for (const res of results) {
-            // Logic:
-            // If Passed & No Penalty -> Upgrade Stage (Ebbinghaus)
-            // If Failed or Penalty -> Force Review Tomorrow (Stage 0/1?)
+        try {
+            const updates = results.map(res => {
+                const now = new Date()
+                let nextReview = new Date()
 
-            const now = new Date()
-            let nextReview = new Date()
-            let newStage = 0
+                // Logic:
+                // If Passed & No Penalty -> Next Review Tomorrow (Start of Ebbinghaus)
+                // If Failed or Penalty -> Review Tomorrow (Reset)
 
-            if (res.isPassed && !res.hasFamilyPenalty) {
-                // Success
-                // Calculate next interval based on current stage?
-                // Need to fetch current stage first. simplified:
-                // default to stage 1 (1 day) -> 2 (2 days) -> 3 (4 days) -> 4 (7 days) ...
-                // For now, rough logic:
-                nextReview.setDate(now.getDate() + 1) // Default 1 day
-                // Ideally read current stage from DB, but for now we upsert.
-                // We will simply push it to tomorrow for new words, or +interval for reviews
-            } else {
-                // Failure / Penalty
-                // Force review tomorrow
-                nextReview.setDate(now.getDate() + 1)
-                newStage = 0 // Reset stage
+                nextReview.setDate(now.getDate() + 1) // Default 1 day for MVP
+
+                const status = (res.isPassed && !res.hasFamilyPenalty) ? 'reviewing' : 'learning'
+
+                return {
+                    user_id: user.id,
+                    question_id: res.questionId,
+                    status: status,
+                    last_practiced_at: now.toISOString(),
+                    next_review_at: nextReview.toISOString(),
+                    consecutive_correct: (res.isPassed && !res.hasFamilyPenalty) ? 1 : 0
+                }
+            })
+
+            const { error } = await supabase.from('user_progress').upsert(updates, {
+                onConflict: 'user_id,question_id'
+            })
+
+            if (error) {
+                console.error("Upsert Error:", error)
+                throw error
             }
 
-            // Upsert Progress
-            // We need to fetch existing progress to know current stage if success.
-            // Simplified for MVP:
-            // If Penalty -> next_review = tomorrow.
-            // If Success -> next_review = tomorrow + stage_factor.
+            // Clear session storage only on success
+            sessionStorage.removeItem('current_study_session')
+            setSessionComplete(true)
 
-            const status = (res.isPassed && !res.hasFamilyPenalty) ? 'reviewing' : 'learning'
-
-            await supabase.from('user_progress').upsert({
-                user_id: user.id,
-                question_id: res.questionId,
-                status: status,
-                last_practiced_at: now.toISOString(),
-                next_review_at: nextReview.toISOString(),
-                // If penalty, reset consecutive_correct?
-                consecutive_correct: (res.isPassed && !res.hasFamilyPenalty) ? 1 : 0
-            }, { onConflict: 'user_id,question_id' })
+        } catch (error: any) {
+            console.error("Failed to save progress:", error)
+            alert(`保存进度失败: ${error.message || '网络错误'}，请不要关闭页面，尝试重新提交。`)
+            // Provide retry button? For now, alert implies they can try again if we exposed a button, 
+            // but the UI component calls this on complete.
+            // Ideally RecitationSession should accept a 'saving' state.
         }
-
-        setSessionComplete(true)
     }
 
     if (loading) {
@@ -145,12 +172,13 @@ export default function StudyPage() {
                     太棒了! 任务完成!
                 </h1>
                 <p className="text-gray-600 mb-8 max-w-md text-center">
-                    您已完成本组单词的学习与考核。
-                    {/* Add stats summary? */}
+                    进度已永久保存到云端。
                 </p>
                 <div className="flex space-x-4">
                     <button
-                        onClick={() => window.location.href = '/dashboard'}
+                        onClick={() => {
+                            window.location.href = '/dashboard'
+                        }}
                         className="px-6 py-3 rounded-full border-2 border-indigo-200 text-indigo-600 font-bold hover:bg-indigo-50"
                     >
                         返回主页
@@ -172,7 +200,10 @@ export default function StudyPage() {
                 <h2 className="text-2xl font-bold text-gray-700 mb-2">🎉 全部完成!</h2>
                 <p className="text-gray-500">今日没有待复习的单词，也没有新单词了。</p>
                 <button
-                    onClick={() => window.location.href = '/dashboard'}
+                    onClick={() => {
+                        sessionStorage.removeItem('current_study_session') // Cleanup just in case
+                        window.location.href = '/dashboard'
+                    }}
                     className="mt-6 px-6 py-2 bg-indigo-600 text-white rounded-full"
                 >
                     返回
