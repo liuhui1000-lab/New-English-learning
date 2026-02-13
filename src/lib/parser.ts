@@ -61,6 +61,9 @@ function processRecitationMode(fullText: string): ParsedQuestion[] {
     // Improved Regex to catch "apple n. 苹果" where " n. " is the separator
     const lineRegex = /^(\d+[\.\、\)\s]*)?([a-zA-Z\-\s\(\)]+?)([\s\.\…]+|->\s*|\s+[a-z]+\.\s+)(.+)$/;
 
+    // State for grouping across lines
+    let currentFamilyRoot = "";
+
     lines.forEach(line => {
         if (line.includes("List") || line.includes("Unit") || line.length < 3) return;
 
@@ -80,7 +83,8 @@ function processRecitationMode(fullText: string): ParsedQuestion[] {
                 // 2. Family Splitting (Hyphen with optional spaces)
                 const parts = block.split(/\s*[-–]\s*/).map(p => p.trim()).filter(p => p.length > 0);
 
-                let rootWord = "";
+                // Local root for this block (if hyphenated chain, first is root)
+                let blockRoot = "";
 
                 parts.forEach((part, index) => {
                     // Regex Fixes:
@@ -100,13 +104,30 @@ function processRecitationMode(fullText: string): ParsedQuestion[] {
                         const rawPos = strictMatch ? successfulMatch[3].replace(/[\(\)]/g, '') : "";
                         const def = strictMatch ? successfulMatch[4].trim() : successfulMatch[3].trim();
 
-                        if (index === 0) rootWord = word;
+                        // Determine Family Logic for BLOCK
+                        // If it's a hyphen chain, first word is root.
+                        if (index === 0) {
+                            blockRoot = word;
+                            // Check if this block is related to previous line's family?
+                            // Usually hyphen chains are self-contained.
+                            // But we can update global currentFamilyRoot.
+                            if (!isRelated(currentFamilyRoot, word)) {
+                                currentFamilyRoot = word;
+                            }
+                        }
+
+                        // Use global root if related, else block root
+                        // Actually for hyphen chains: "accept - acceptable" -> clearly same family.
+                        // blockRoot is safe here.
+
+                        // BUT, if the user has:
+                        // accept ...
+                        // acceptable ... (separate lines)
+                        // Then we fall through to "Standard Line Processing" below.
 
                         // Answer Format: "pos. def" or just "def"
                         let finalAnswer = def;
                         if (rawPos) {
-                            // If definition is empty, just show POS? Or keep as is.
-                            // Usually "adj. 意思是"
                             finalAnswer = def ? `${rawPos} ${def}` : rawPos;
                         }
 
@@ -116,7 +137,7 @@ function processRecitationMode(fullText: string): ParsedQuestion[] {
                                 content: word,
                                 type: 'vocabulary',
                                 answer: finalAnswer,
-                                tags: [`Family:${rootWord || word}`]
+                                tags: [`Family:${blockRoot || word}`]
                             });
                             hasParsed = true;
                         }
@@ -132,7 +153,6 @@ function processRecitationMode(fullText: string): ParsedQuestion[] {
         if (match) {
             let content = match[2].trim();
             // Handle (adj.) in content?
-            // If regex captured "able (adj.)" as Group 2, we need to extract POS.
             const posInContent = content.match(/^([a-zA-Z\-\s]+)\s*(\([a-z\.]+\))$/);
             let extraPos = "";
             if (posInContent) {
@@ -143,38 +163,93 @@ function processRecitationMode(fullText: string): ParsedQuestion[] {
             let definition = match[4].trim();
             if (extraPos) definition = `${extraPos} ${definition}`;
 
+            // GROUPING LOGIC ACROSS LINES
+            if (currentFamilyRoot === "") {
+                currentFamilyRoot = content;
+            } else {
+                if (!isRelated(currentFamilyRoot, content)) {
+                    currentFamilyRoot = content;
+                }
+            }
+
             parsedItems.push({
                 id: crypto.randomUUID(),
                 content: content,
                 answer: definition,
                 type: 'vocabulary',
-                tags: []
+                tags: [`Family:${currentFamilyRoot}`] // Use the persistent root
             });
             return;
         }
 
-        // ... Fallbacks (Chinese split etc) ...
-        // (Keeping existing logic for "->" transformation below if needed, or replace/merge?)
-        // The user specifically mentioned " - " lists.
-
+        // ... Fallback for arrows ...
         if (line.includes("->")) {
-            // ... existing "arrow" logic ...
             const parts = line.split("->");
             const c = parts[0].replace(/^\d+[\.\s]*/, '').trim();
             const a = parts[1].trim();
-            const root = c.split(' ')[0].toLowerCase();
+            // Arrow usually implies derivation, so assume new root unless related
+            if (!isRelated(currentFamilyRoot, c)) {
+                currentFamilyRoot = c.split(' ')[0]; // simple split
+            }
+
             parsedItems.push({
                 id: crypto.randomUUID(),
                 content: c,
                 answer: a,
                 type: 'word_transformation',
-                tags: [`Family:${root}`]
+                tags: [`Family:${currentFamilyRoot}`]
             });
         }
     });
 
     console.log(`Recitation Mode: Parsed ${parsedItems.length} items.`);
     return parsedItems;
+}
+
+// Heuristic to check if words are related (Part of same family)
+function isRelated(root: string, target: string): boolean {
+    if (!root || !target) return false;
+    const r = root.toLowerCase().replace(/[^a-z]/g, '');
+    const t = target.toLowerCase().replace(/[^a-z]/g, '');
+
+    // Safety for very short words
+    if (r.length < 3 || t.length < 3) return r === t;
+
+    // 1. Containment (e.g. "accept" in "acceptable")
+    if (t.includes(r) || r.includes(t)) return true;
+
+    // 2. Common Prefix (e.g. "pre" + "fer" ?) - risk of false positives.
+    // Let's use a strict prefix check of 50% length?
+    // "ab" vs "ac" -> no.
+    // "reproduce" vs "production" -> "produc" match?
+    // Let's stick to: share at least 4 chars prefix OR containment.
+
+    let prefix = 0;
+    while (prefix < r.length && prefix < t.length && r[prefix] === t[prefix]) {
+        prefix++;
+    }
+
+    // "acc" (3) for "accept" and "access" -> false positive?
+    // "accept" (6) -> 3 is 50%.
+    // "access" (6) -> "acc" (3).
+    // Let's require min(r.len, t.len) * 0.6 common prefix?
+    // accept (6) -> 3.6 -> 4.
+    // able (4) -> 2.4 -> 3. "abl"
+    // ability (7) -> "abi" (3). "abl" vs "abi" - no match.
+    // So "ability" would NOT match "able" by prefix. But "able" is NOT in "ability".
+    // "le" -> "il".
+
+    // Adjust heuristic:
+    // If share first 3 chars AND length diff < 5?
+
+    // For now, let's trust Leniency for user's sequential list.
+    // If the user put them next to each other, they imply relation.
+    // We only want to break if they are *clearly* different.
+    // "accept" vs "banana" -> 0 prefix.
+
+    if (prefix >= 3) return true;
+
+    return false;
 }
 
 function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
