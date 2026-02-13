@@ -93,7 +93,7 @@ export default function FlashcardView({ groups, onComplete }: FlashcardViewProps
                         {/* Family Tag Hint */}
                         {currentGroup.items[0].tags?.find((t: string) => t.startsWith('Family:')) && (
                             <div className="mt-6 pt-4 border-t border-white/20 text-indigo-200 text-sm">
-                                🔒 属于词族: {currentGroup.items[0].tags.find((t: string) => t.startsWith('Family:')).split(':')[1]}
+                                🔒 属于词族: {currentGroup.items[0].tags.find((t: string) => t.startsWith('Family:'))?.split(':')[1]}
                             </div>
                         )}
                     </div>

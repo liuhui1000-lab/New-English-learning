@@ -95,7 +95,7 @@ export default function Dictation({ groups, onComplete, onError }: DictationProp
                 </h3>
                 {currentGroup.items[0].tags?.find((t: string) => t.startsWith('Family:')) && (
                     <span className="text-sm text-indigo-400 font-mono bg-indigo-50 px-3 py-1 rounded-full">
-                        Family: {currentGroup.items[0].tags.find((t: string) => t.startsWith('Family:')).split(':')[1]}
+                        Family: {currentGroup.items[0].tags.find((t: string) => t.startsWith('Family:'))?.split(':')[1]}
                     </span>
                 )}
             </div>
