@@ -43,25 +43,24 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
 
         // Initialize Game Board for CURRENT GROUP
         const l: MatchItem[] = []
-        const m: MatchItem[] = []
         const r: MatchItem[] = []
 
         currentGroup.items.forEach(q => {
             // Parse Answer
             const posMatch = q.answer.match(/^([a-z]+\.)\s*(.*)/)
-            const posText = posMatch ? posMatch[1] : "???"
+            const posText = posMatch ? posMatch[1] : ""
             const defText = posMatch ? posMatch[2] : q.answer
 
             l.push({ id: `w-${q.id}`, text: q.content, type: 'word', matchId: q.id })
-            m.push({ id: `p-${q.id}`, text: posText, type: 'pos', matchId: q.id })
-            // Ambiguity Fix: Include POS in Definition Card text
-            const clearDefText = `(${posText}) ${defText}`
-            r.push({ id: `d-${q.id}`, text: clearDefText, type: 'def', matchId: q.id })
+
+            // Combine POS and Def into Right Column
+            const rightText = posText ? `${posText} ${defText}` : defText
+            r.push({ id: `d-${q.id}`, text: rightText, type: 'def', matchId: q.id })
         })
 
         setLeftCol(shuffle(l))
-        setMidCol(shuffle(m))
         setRightCol(shuffle(r))
+        setMidCol([]) // Clear middle column
         setCompletedCardIds(new Set())
         setSolvedQuestionIds(new Set())
     }, [currentGroup])
@@ -70,53 +69,39 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
         return [...array].sort(() => Math.random() - 0.5)
     }
 
-    // Fuzzy Matching Helper
-    const normalizeText = (text: string) => {
-        return text.toLowerCase().replace(/[^a-z]/g, "")
-    }
-
-    // 3-COLUMN MATCH LOGIC
+    // 2-COLUMN MATCH LOGIC
     const [selections, setSelections] = useState<{
         word?: MatchItem,
-        pos?: MatchItem,
         def?: MatchItem
     }>({})
 
-    const onCardClick = (item: MatchItem, col: 'word' | 'pos' | 'def') => {
+    const onCardClick = (item: MatchItem, col: 'word' | 'def') => {
         if (completedCardIds.has(item.id)) return
+
+        // Toggle selection if clicking same item
+        if (selections[col]?.id === item.id) {
+            const newSel = { ...selections }
+            delete newSel[col]
+            setSelections(newSel)
+            return
+        }
 
         const newSel = { ...selections, [col]: item }
         setSelections(newSel)
 
-        if (newSel.word && newSel.pos && newSel.def) {
-            checkTripleMatch(newSel.word, newSel.pos, newSel.def)
+        if (newSel.word && newSel.def) {
+            checkPairMatch(newSel.word, newSel.def)
         }
     }
 
-    const checkTripleMatch = (w: MatchItem, p: MatchItem, d: MatchItem) => {
-        // 1. Word and Definition MUST strictly match (ID must be same)
-        const isWordDefMatch = w.matchId === d.matchId
+    const checkPairMatch = (w: MatchItem, d: MatchItem) => {
+        // Strict Match (ID must be same)
+        const isMatch = w.matchId === d.matchId
 
-        // 2. Word and POS can be Loose Match (Content fuzzy match)
-        // Find the "expected" POS text for this Word
-        const targetQuestion = currentGroup.items.find(q => q.id === w.matchId)
-        let isPosMatch = false
-
-        if (targetQuestion) {
-            const posMatch = targetQuestion.answer.match(/^([a-z]+\.)\s*(.*)/)
-            const expectedPos = posMatch ? posMatch[1] : "???"
-
-            // Check if selected POS card has effectively the same text
-            if (normalizeText(p.text) === normalizeText(expectedPos)) {
-                isPosMatch = true
-            }
-        }
-
-        if (isWordDefMatch && isPosMatch) {
+        if (isMatch) {
             // SUCCESS
             const newCompleted = new Set(completedCardIds)
             newCompleted.add(w.id)
-            newCompleted.add(p.id)
             newCompleted.add(d.id)
             setCompletedCardIds(newCompleted)
 
@@ -129,8 +114,6 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
             setFeedback('correct')
             setTimeout(() => setFeedback(null), 500)
 
-            // Check if Level Complete (All Questions Solved)
-            // Note: We check if verified questions count matches total items
             if (newSolved.size === currentGroup.items.length) {
                 setTimeout(() => {
                     handleGroupComplete()
@@ -138,10 +121,10 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
             }
         } else {
             // FAIL
-            setShaking(`${w.id},${p.id},${d.id}`)
+            setShaking(`${w.id},${d.id}`)
             setFeedback('wrong')
 
-            // Trigger Penalty (blame the Word's ID)
+            // Trigger Penalty
             onError(w.matchId)
 
             setTimeout(() => {
@@ -169,7 +152,7 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
     if (!currentGroup) return <div>Loading...</div>
 
     return (
-        <div className="p-4 max-w-5xl mx-auto select-none min-h-[60vh] flex flex-col justify-center">
+        <div className="p-4 max-w-4xl mx-auto select-none min-h-[60vh] flex flex-col justify-center">
             <div className="flex justify-between items-center mb-6">
                 <h3 className="text-xl font-bold text-indigo-800 font-comic">
                     🚀 连连看 ({currentGroupIndex + 1} / {groups.length})
@@ -181,25 +164,9 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
                 )}
             </div>
 
-            <div className="grid grid-cols-3 gap-6">
-                {/* Left: POS */}
-                <div className="space-y-3">
-                    <h4 className="text-center font-bold text-gray-500 text-sm mb-2">词性</h4>
-                    {midCol.map(item => (
-                        <Card
-                            key={item.id}
-                            item={item}
-                            selected={selections.pos?.id === item.id}
-                            matched={completedCardIds.has(item.id)}
-                            shake={shaking?.includes(item.id)}
-                            onClick={() => onCardClick(item, 'pos')}
-                            color="bg-pink-100 border-pink-300 text-pink-700"
-                        />
-                    ))}
-                </div>
-
-                {/* Center: Word */}
-                <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-12">
+                {/* Left: Word */}
+                <div className="space-y-4">
                     <h4 className="text-center font-bold text-gray-500 text-sm mb-2">单词</h4>
                     {leftCol.map(item => (
                         <Card
@@ -214,9 +181,9 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
                     ))}
                 </div>
 
-                {/* Right: Definition */}
-                <div className="space-y-3">
-                    <h4 className="text-center font-bold text-gray-500 text-sm mb-2">词义</h4>
+                {/* Right: Definition (with POS) */}
+                <div className="space-y-4">
+                    <h4 className="text-center font-bold text-gray-500 text-sm mb-2">释义</h4>
                     {rightCol.map(item => (
                         <Card
                             key={item.id}
@@ -225,7 +192,7 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
                             matched={completedCardIds.has(item.id)}
                             shake={shaking?.includes(item.id)}
                             onClick={() => onCardClick(item, 'def')}
-                            color="bg-green-100 border-green-300 text-green-800"
+                            color="bg-green-100 border-green-300 text-green-800 font-medium"
                         />
                     ))}
                 </div>
