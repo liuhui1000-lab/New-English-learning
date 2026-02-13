@@ -56,11 +56,11 @@ export default function StudyPage() {
 
             if (rError) throw rError
 
-            let questions: Question[] = reviews?.map((r: any) => r.questions).filter(q => q) || []
+            let candidates: Question[] = reviews?.map((r: any) => r.questions).filter(q => q) || []
 
-            // 2. If not enough reviews, fill with New Words
-            if (questions.length < 5) {
-                const limit = 6 - questions.length
+            // 2. Fill with New Words if needed
+            if (candidates.length < 5) {
+                const limit = 6 - candidates.length
 
                 // Get IDs already in progress to exclude
                 const { data: progress } = await supabase
@@ -69,34 +69,74 @@ export default function StudyPage() {
                     .eq('user_id', user.id)
 
                 const ignoreIds = progress?.map((p: any) => p.question_id) || []
-                // Add current batch IDs to ignore list if we are refetching (though we usually don't refetch mid-session)
+                const currentIds = candidates.map(c => c.id)
+                const allIgnore = [...ignoreIds, ...currentIds]
 
                 let query = supabase
                     .from('questions')
                     .select('*')
-                    .eq('type', 'vocabulary') // Only vocab for recitation
+                    .eq('type', 'vocabulary')
                     .limit(limit)
 
-                if (ignoreIds.length > 0) {
-                    // Safe filter
-                    query = query.not('id', 'in', `(${ignoreIds.join(',')})`)
+                if (allIgnore.length > 0) {
+                    query = query.not('id', 'in', `(${allIgnore.join(',')})`)
                 }
 
                 const { data: newWords, error: nError } = await query
                 if (nError) throw nError
 
                 if (newWords) {
-                    questions = [...questions, ...newWords]
+                    candidates = [...candidates, ...newWords]
                 }
             }
 
-            if (questions.length === 0) {
-                // Nothing to study?
+            if (candidates.length === 0) {
+                setBatch([])
+                return
             }
 
-            // Shuffle? Maybe keep families together?
-            // For now, simple shuffle or keep order.
-            setBatch(questions)
+            // 3. FETCH SIBLINGS (The Critical Fix)
+            // Extract all Family tags from candidates
+            const familyTags = new Set<string>()
+            candidates.forEach(q => {
+                const tag = q.tags?.find(t => t.startsWith('Family:'))
+                if (tag) familyTags.add(tag)
+            })
+
+            if (familyTags.size > 0) {
+                // Fetch ALL questions that belong to these families
+                // We construct an OR filter like: tags.cs.["Family:accept"],tags.cs.["Family:act"]...
+                // Supabase syntax for JSON array contains is slightly tricky for OR.
+                // Easier approach: Client-side merge if dataset is small, OR separate queries.
+                // Given we usually have 1-5 families max per batch, parallel queries are fine.
+
+                const familyQueries = Array.from(familyTags).map(tag =>
+                    supabase
+                        .from('questions')
+                        .select('*')
+                        .contains('tags', [tag])
+                )
+
+                const results = await Promise.all(familyQueries)
+
+                // Merge results
+                // We use a Map to Deduplicate by ID
+                const finalMap = new Map<string, Question>()
+
+                // Add original candidates first
+                candidates.forEach(c => finalMap.set(c.id, c))
+
+                // Add siblings
+                results.forEach(res => {
+                    if (res.data) {
+                        res.data.forEach((q: Question) => finalMap.set(q.id, q))
+                    }
+                })
+
+                setBatch(Array.from(finalMap.values()))
+            } else {
+                setBatch(candidates)
+            }
 
         } catch (error) {
             console.error(error)
