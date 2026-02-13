@@ -18,7 +18,7 @@ export default function StudyPage() {
 
     // Check for saved session on mount
     useEffect(() => {
-        console.log("App Version: v4-FORCE-PUSH-" + new Date().toISOString())
+        console.log("App Version: v4.1-FixedBuild-" + new Date().toISOString())
         // v4 cache key for debug session
         const savedBatch = sessionStorage.getItem('current_study_session_v4')
         if (savedBatch) {
