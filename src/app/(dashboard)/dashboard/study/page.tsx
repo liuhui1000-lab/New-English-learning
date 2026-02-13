@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { createBrowserClient } from "@supabase/ssr"
+import { supabase } from "@/lib/supabase"
 import { Loader2, Trophy, AlertTriangle } from "lucide-react"
 import RecitationSession, { SessionResult } from "@/components/recitation/RecitationSession"
 import { Question } from "@/types"
@@ -10,10 +10,7 @@ export default function StudyPage() {
     const [loading, setLoading] = useState(true)
     const [batch, setBatch] = useState<Question[]>([])
     const [sessionComplete, setSessionComplete] = useState(false)
-    const [supabase] = useState(() => createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    ))
+    // Removed local client creation, using imported singleton
 
     // State for debug logs
     const [debugLogs, setDebugLogs] = useState<string[]>([])
@@ -56,7 +53,7 @@ export default function StudyPage() {
         const projectRef = url?.split('//')[1]?.split('.')[0] || 'unknown'
 
         // Reset logs but START with DB info
-        setDebugLogs([`App v4.6-AuthCheck | DB: ...${projectRef.slice(-4)}`])
+        setDebugLogs([`App v4.7-SharedClient | DB: ...${projectRef.slice(-4)}`])
 
         try {
             const { data: { user }, error: uError } = await supabase.auth.getUser()
