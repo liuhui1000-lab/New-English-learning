@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import FlashcardView from "./FlashcardView"
 import MatchingGame from "./MatchingGame"
@@ -57,7 +57,9 @@ export default function RecitationSession({ batch, onComplete }: RecitationSessi
 
     // Helper to group by Family for Flashcard View
     // Use memo to avoid re-calculation
-    const groupedQuestions = useState(() => {
+    // Helper to group by Family for Flashcard View
+    // Use memo to avoid re-calculation
+    const groupedQuestions = useMemo(() => {
         const groups: { [key: string]: Question[] } = {}
         const standalone: Question[] = []
 
@@ -96,7 +98,7 @@ export default function RecitationSession({ batch, onComplete }: RecitationSessi
         })
 
         return groupArray
-    })[0]
+    }, [batch])
 
     return (
         <div className="min-h-screen bg-indigo-50 flex flex-col">
