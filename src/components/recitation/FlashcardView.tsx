@@ -17,17 +17,14 @@ interface FlashcardViewProps {
 
 export default function FlashcardView({ groups, onComplete }: FlashcardViewProps) {
     const [index, setIndex] = useState(0)
-    const [isFlipped, setIsFlipped] = useState(false)
 
     const next = () => {
-        setIsFlipped(false)
         if (index < groups.length - 1) {
             setIndex(index + 1)
         }
     }
 
     const prev = () => {
-        setIsFlipped(false)
         if (index > 0) setIndex(index - 1)
     }
 
@@ -41,63 +38,55 @@ export default function FlashcardView({ groups, onComplete }: FlashcardViewProps
                 📚 认一认 ({index + 1} / {groups.length})
             </h3>
 
-            <div className="relative w-full aspect-[4/3] perspective-1000 group cursor-pointer" onClick={() => setIsFlipped(!isFlipped)}>
-                <motion.div
-                    className="w-full h-full relative transition-all duration-500 transform-style-3d"
-                    animate={{ rotateY: isFlipped ? 180 : 0 }}
-                    transition={{ duration: 0.6 }}
-                >
-                    {/* Front: Words */}
-                    <div className="absolute inset-0 bg-white rounded-2xl shadow-xl border-4 border-indigo-100 flex flex-col items-center justify-center p-8 backface-hidden">
-                        <span className="text-sm font-bold text-indigo-400 uppercase tracking-widest mb-4">
-                            Phase 1: Memory
-                        </span>
+            <div className="relative w-full aspect-[4/3] group cursor-pointer">
+                <AnimatePresence mode="wait">
+                    <motion.div
+                        key={currentGroup.id}
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        transition={{ duration: 0.3 }}
+                        className="w-full h-full relative"
+                    >
+                        <div className="absolute inset-0 bg-white rounded-2xl shadow-xl border-4 border-indigo-100 flex flex-col items-center justify-center p-8 overflow-y-auto custom-scrollbar">
+                            <span className="text-sm font-bold text-indigo-400 uppercase tracking-widest mb-4">
+                                Phase 1: Memory
+                            </span>
 
-                        <div className="flex flex-col gap-4 text-center">
-                            {currentGroup.items.map((item, idx) => (
-                                <h2 key={item.id} className="text-4xl font-extrabold text-gray-800">
-                                    {item.content}
-                                </h2>
-                            ))}
-                        </div>
+                            <div className="flex flex-col gap-6 w-full">
+                                {currentGroup.items.map((item, idx) => {
+                                    const posMatch = item.answer.match(/^([a-z]+\.)\s*(.*)/)
+                                    const pos = posMatch ? posMatch[1] : ""
+                                    const def = posMatch ? posMatch[2] : item.answer
 
-                        <p className="text-gray-400 text-sm mt-8">(点击翻转看释义)</p>
-                    </div>
+                                    return (
+                                        <div key={item.id} className="flex flex-col items-center border-b border-indigo-50 last:border-0 pb-4 last:pb-0">
+                                            <div className="text-3xl font-extrabold text-gray-800 mb-2">
+                                                {item.content}
+                                            </div>
 
-                    {/* Back: Defs & POS */}
-                    <div className="absolute inset-0 bg-indigo-600 rounded-2xl shadow-xl flex flex-col items-center justify-center p-8 backface-hidden rotate-y-180 text-white overflow-y-auto custom-scrollbar">
-                        <div className="flex flex-col gap-6 w-full">
-                            {currentGroup.items.map((item, idx) => {
-                                const posMatch = item.answer.match(/^([a-z]+\.)\s*(.*)/)
-                                const pos = posMatch ? posMatch[1] : ""
-                                const def = posMatch ? posMatch[2] : item.answer
-
-                                return (
-                                    <div key={item.id} className="flex flex-col items-center border-b border-white/20 last:border-0 pb-4 last:pb-0">
-                                        <div className="flex items-baseline gap-2 mb-1">
-                                            <span className="text-xl font-bold">{item.content}</span>
-                                            {pos && (
-                                                <span className="px-2 py-0.5 bg-white/20 rounded-full text-xs font-bold">
-                                                    {pos}
-                                                </span>
-                                            )}
+                                            <div className="flex items-center gap-2 text-gray-600">
+                                                {pos && (
+                                                    <span className="px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded text-xs font-bold font-mono">
+                                                        {pos}
+                                                    </span>
+                                                )}
+                                                <span className="text-lg">{def}</span>
+                                            </div>
                                         </div>
-                                        <h3 className="text-lg font-medium text-center leading-relaxed opacity-90">
-                                            {def}
-                                        </h3>
-                                    </div>
-                                )
-                            })}
-                        </div>
-
-                        {/* Family Tag Hint */}
-                        {currentGroup.items[0].tags?.find((t: string) => t.startsWith('Family:')) && (
-                            <div className="mt-6 pt-4 border-t border-white/20 text-indigo-200 text-sm">
-                                🔒 属于词族: {currentGroup.items[0].tags.find((t: string) => t.startsWith('Family:'))?.split(':')[1]}
+                                    )
+                                })}
                             </div>
-                        )}
-                    </div>
-                </motion.div>
+
+                            {/* Family Tag Hint */}
+                            {currentGroup.items[0].tags?.find((t: string) => t.startsWith('Family:')) && (
+                                <div className="mt-6 pt-4 border-t border-indigo-50 text-indigo-300 text-sm">
+                                    🔒 Word Family: {currentGroup.items[0].tags.find((t: string) => t.startsWith('Family:'))?.split(':')[1]}
+                                </div>
+                            )}
+                        </div>
+                    </motion.div>
+                </AnimatePresence>
             </div>
 
             {/* Navigation */}
@@ -116,14 +105,14 @@ export default function FlashcardView({ groups, onComplete }: FlashcardViewProps
                         className="px-8 py-3 bg-green-500 hover:bg-green-600 text-white rounded-full font-bold shadow-lg transform hover:scale-105 transition flex items-center"
                     >
                         <Play className="fill-current w-5 h-5 mr-2" />
-                        开始挑战
+                        Start Phase 2
                     </button>
                 ) : (
                     <button
                         onClick={next}
                         className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full font-bold shadow-lg transform hover:scale-105 transition"
                     >
-                        下一个
+                        Next
                     </button>
                 )}
 
