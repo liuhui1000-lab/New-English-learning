@@ -56,11 +56,21 @@ export default function StudyPage() {
         const projectRef = url?.split('//')[1]?.split('.')[0] || 'unknown'
 
         // Reset logs but START with DB info
-        setDebugLogs([`App v4.5 | DB: ...${projectRef.slice(-4)}`])
+        setDebugLogs([`App v4.6-AuthCheck | DB: ...${projectRef.slice(-4)}`])
 
         try {
-            const { data: { user } } = await supabase.auth.getUser()
-            if (!user) return
+            const { data: { user }, error: uError } = await supabase.auth.getUser()
+
+            if (uError) {
+                addLog(`Auth Error: ${uError.message}`)
+                console.error("Auth Fail:", uError)
+                return
+            }
+            if (!user) {
+                addLog("No User Session Found!")
+                return
+            }
+            addLog(`User: ...${user.id.slice(-4)}`)
 
             addLog("Fetching initial candidates...")
             // 1. Get Initial Candidates (Due Reviews)
