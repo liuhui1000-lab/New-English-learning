@@ -1,52 +1,60 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { supabase } from "@/lib/supabase"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { Loader2, Trophy, AlertTriangle } from "lucide-react"
 import RecitationSession, { SessionResult } from "@/components/recitation/RecitationSession"
 import { Question } from "@/types"
-import { Loader2, Trophy } from "lucide-react"
 
 export default function StudyPage() {
-    const [batch, setBatch] = useState<Question[]>([])
     const [loading, setLoading] = useState(true)
+    const [batch, setBatch] = useState<Question[]>([])
     const [sessionComplete, setSessionComplete] = useState(false)
+    const supabase = createClientComponentClient()
+
+    // State for debug logs
+    const [debugLogs, setDebugLogs] = useState<string[]>([])
+    const addLog = (msg: string) => setDebugLogs(prev => [...prev.slice(-4), msg])
 
     // Check for saved session on mount
     useEffect(() => {
-        // v3 cache key for debug session
-        const savedBatch = sessionStorage.getItem('current_study_session_v3')
+        // v4 cache key for debug session
+        const savedBatch = sessionStorage.getItem('current_study_session_v4')
         if (savedBatch) {
             try {
                 const parsed = JSON.parse(savedBatch)
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                    console.log("Restoring session from storage...")
+                    setDebugLogs(["Refreshed from Cache (v4)"])
                     setBatch(parsed)
                     setLoading(false)
                     return
                 }
             } catch (e) {
-                console.error("Failed to parse saved session", e)
-                sessionStorage.removeItem('current_study_session_v3')
+                sessionStorage.removeItem('current_study_session_v4')
             }
         }
 
+        // If not restored, fetch fresh
+        // We need to wait a tick to ensure hydration? No, usually fine.
         fetchStudyBatch()
     }, [])
 
     // Save session whenever batch changes (and isn't empty)
     useEffect(() => {
         if (batch.length > 0 && !sessionComplete) {
-            sessionStorage.setItem('current_study_session_v3', JSON.stringify(batch))
+            sessionStorage.setItem('current_study_session_v4', JSON.stringify(batch))
         }
     }, [batch, sessionComplete])
 
     const fetchStudyBatch = async () => {
         setLoading(true)
+        setDebugLogs([]) // Reset logs
         try {
             const { data: { user } } = await supabase.auth.getUser()
             if (!user) return
 
-            // 1. Get Initial Candidates
+            addLog("Fetching initial candidates...")
+            // 1. Get Initial Candidates (Due Reviews)
             const { data: reviews, error: rError } = await supabase
                 .from('user_progress')
                 .select('question_id, questions(*)')
@@ -58,6 +66,7 @@ export default function StudyPage() {
             if (rError) throw rError
 
             let candidates: Question[] = reviews?.map((r: any) => r.questions).filter(q => q) || []
+            addLog(`Found ${candidates.length} reviews`)
 
             // 2. Fill with New Words
             if (candidates.length < 5) {
@@ -84,10 +93,14 @@ export default function StudyPage() {
                 }
 
                 const { data: newWords, error: nError } = await query
-                if (nError) throw nError
+                if (nError) {
+                    addLog(`New words error: ${nError.message}`)
+                    throw nError
+                }
 
                 if (newWords) {
                     candidates = [...candidates, ...newWords]
+                    addLog(`Added ${newWords.length} new words`)
                 }
             }
 
@@ -96,55 +109,63 @@ export default function StudyPage() {
                 return
             }
 
-            // 3. FETCH SIBLINGS (Enhanced Debug Logic)
-            // Extract all Family tags from candidates
+            // 3. FETCH SIBLINGS
             const familyTags = new Set<string>()
+            const familyRoots = new Set<string>()
+
             candidates.forEach(q => {
                 const tag = q.tags?.find(t => t.startsWith('Family:'))
-                if (tag) familyTags.add(tag)
+                if (tag) {
+                    familyTags.add(tag)
+                    // Extract root: "Family:accept" -> "accept"
+                    const root = tag.split(':')[1]?.trim()
+                    if (root && root.length > 2) familyRoots.add(root)
+                }
             })
 
-            console.log("Found Family Tags:", Array.from(familyTags))
+            addLog(`Families: ${Array.from(familyTags).join(', ')}`)
 
             if (familyTags.size > 0) {
-                // Fetch ALL questions that belong to these families
-                // We construct an OR filter like: tags.cs.["Family:accept"],tags.cs.["Family:act"]...
-                // Supabase syntax for JSON array contains is slightly tricky for OR.
-                // Easier approach: Client-side merge if dataset is small, OR separate queries.
-                // Given we usually have 1-5 families max per batch, parallel queries are fine.
-
-                const familyQueries = Array.from(familyTags).map(tag =>
-                    supabase
-                        .from('questions')
-                        .select('*')
-                        .contains('tags', [tag])
+                // Query by Tag
+                const tagQueries = Array.from(familyTags).map(tag =>
+                    supabase.from('questions').select('*').contains('tags', [tag])
                 )
 
-                const results = await Promise.all(familyQueries)
+                // Query by Content (Fallback: 'accept%')
+                const contentQueries = Array.from(familyRoots).map(root =>
+                    supabase.from('questions').select('*').ilike('content', `${root}%`)
+                )
 
-                // Merge results
-                // We use a Map to Deduplicate by ID
+                const allQueries = [...tagQueries, ...contentQueries]
+                const results = await Promise.all(allQueries)
+
                 const finalMap = new Map<string, Question>()
-
-                // Add original candidates first
                 candidates.forEach(c => finalMap.set(c.id, c))
 
-                // Add siblings
+                let foundSiblings = 0
                 results.forEach((res, index) => {
-                    if (res.error) console.error(`Family query failed for ${Array.from(familyTags)[index]}:`, res.error)
+                    if (res.error) {
+                        addLog(`Err Q${index}: ${res.error.message}`)
+                    }
                     if (res.data) {
-                        res.data.forEach((q: Question) => finalMap.set(q.id, q))
+                        res.data.forEach((q: Question) => {
+                            if (!finalMap.has(q.id)) {
+                                finalMap.set(q.id, q)
+                                foundSiblings++
+                            }
+                        })
                     }
                 })
 
-                console.log("Final Batch Size:", finalMap.size)
+                addLog(`Merged ${foundSiblings} siblings. Total: ${finalMap.size}`)
                 setBatch(Array.from(finalMap.values()))
             } else {
                 setBatch(candidates)
             }
 
-        } catch (error) {
+        } catch (error: any) {
             console.error(error)
+            addLog(`Fatal: ${error.message}`)
             alert("加载学习任务失败，请刷新重试")
         } finally {
             setLoading(false)
@@ -159,12 +180,7 @@ export default function StudyPage() {
             const updates = results.map(res => {
                 const now = new Date()
                 let nextReview = new Date()
-
-                // Logic:
-                // If Passed & No Penalty -> Next Review Tomorrow (Start of Ebbinghaus)
-                // If Failed or Penalty -> Review Tomorrow (Reset)
-
-                nextReview.setDate(now.getDate() + 1) // Default 1 day for MVP
+                nextReview.setDate(now.getDate() + 1)
 
                 const status = (res.isPassed && !res.hasFamilyPenalty) ? 'reviewing' : 'learning'
 
@@ -182,21 +198,15 @@ export default function StudyPage() {
                 onConflict: 'user_id,question_id'
             })
 
-            if (error) {
-                console.error("Upsert Error:", error)
-                throw error
-            }
+            if (error) throw error
 
             // Clear session storage only on success
-            sessionStorage.removeItem('current_study_session_v3')
+            sessionStorage.removeItem('current_study_session_v4')
             setSessionComplete(true)
 
         } catch (error: any) {
             console.error("Failed to save progress:", error)
             alert(`保存进度失败: ${error.message || '网络错误'}，请不要关闭页面，尝试重新提交。`)
-            // Provide retry button? For now, alert implies they can try again if we exposed a button, 
-            // but the UI component calls this on complete.
-            // Ideally RecitationSession should accept a 'saving' state.
         }
     }
 
@@ -246,7 +256,7 @@ export default function StudyPage() {
                 <p className="text-gray-500">今日没有待复习的单词，也没有新单词了。</p>
                 <button
                     onClick={() => {
-                        sessionStorage.removeItem('current_study_session_v3') // Cleanup just in case
+                        sessionStorage.removeItem('current_study_session_v4') // Cleanup just in case
                         window.location.href = '/dashboard'
                     }}
                     className="mt-6 px-6 py-2 bg-indigo-600 text-white rounded-full"
@@ -261,23 +271,28 @@ export default function StudyPage() {
     return (
         <div className="relative">
             {/* DEBUG OVERLAY - Remove after fixing */}
-            <div className="fixed bottom-0 left-0 right-0 bg-black/80 text-green-400 p-2 text-xs font-mono z-50 max-h-32 overflow-y-auto">
-                <div>DEBUG INFO (v3 Cache) | Batch Size: {batch.length}</div>
-                <div>
+            <div className="fixed bottom-0 left-0 right-0 bg-black/90 text-green-400 p-2 text-xs font-mono z-50 max-h-48 overflow-y-auto">
+                <div className="border-b border-gray-700 pb-1 mb-1">
+                    v4 Cache | Batch: {batch.length} | logs: {debugLogs.length}
+                </div>
+                {debugLogs.map((log, i) => (
+                    <div key={i} className="opacity-80">&gt; {log}</div>
+                ))}
+                <div className="mt-2 pt-2 border-t border-gray-700">
                     {batch.map(q => (
-                        <span key={q.id} className="mr-2">
-                            [{q.content}: {q.tags?.join(',') || 'NoTags'}]
+                        <span key={q.id} className="mr-2 inline-block">
+                            [{q.content}: {q.tags?.find(t => t.startsWith('Family:'))?.split(':')[1] || '-'}]
                         </span>
                     ))}
                 </div>
                 <button
                     onClick={() => {
-                        sessionStorage.removeItem('current_study_session_v3')
+                        sessionStorage.removeItem('current_study_session_v4')
                         window.location.reload()
                     }}
-                    className="bg-red-600 text-white px-2 py-1 rounded mt-1"
+                    className="bg-red-600 text-white px-2 py-1 rounded mt-2 hover:bg-red-500"
                 >
-                    Force Reset Cache
+                    Reset Cache & Retry
                 </button>
             </div>
 
