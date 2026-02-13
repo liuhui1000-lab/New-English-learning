@@ -54,7 +54,9 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
 
             l.push({ id: `w-${q.id}`, text: q.content, type: 'word', matchId: q.id })
             m.push({ id: `p-${q.id}`, text: posText, type: 'pos', matchId: q.id })
-            r.push({ id: `d-${q.id}`, text: defText, type: 'def', matchId: q.id })
+            // Ambiguity Fix: Include POS in Definition Card text
+            const clearDefText = `(${posText}) ${defText}`
+            r.push({ id: `d-${q.id}`, text: clearDefText, type: 'def', matchId: q.id })
         })
 
         setLeftCol(shuffle(l))

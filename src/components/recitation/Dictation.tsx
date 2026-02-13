@@ -135,7 +135,9 @@ export default function Dictation({ groups, onComplete, onError }: DictationProp
                                         ${status === 'correct' ? 'border-green-500 text-green-600 bg-green-50' : ''}
                                         ${status === 'wrong' ? 'border-red-500 text-red-600 bg-red-50' : ''}
                                     `}
-                                    placeholder={activeHint === item.id ? item.content.replace(/./g, (c, i) => i % 2 === 0 ? c : '_') : ""}
+                                    placeholder={activeHint === item.id
+                                        ? `${item.content[0]}${item.content.slice(1).replace(/./g, '_')}` // Show 1st char + blanks
+                                        : ""}
                                     autoComplete="off"
                                 />
 
@@ -147,14 +149,34 @@ export default function Dictation({ groups, onComplete, onError }: DictationProp
                                 )}
                             </div>
 
-                            {/* Help Button */}
-                            <button
-                                type="button"
-                                onClick={() => setActiveHint(item.id)}
-                                className="text-gray-300 hover:text-indigo-400 transition"
-                            >
-                                <HelpCircle className="w-5 h-5" />
-                            </button>
+                            {/* Help Button / Skip Button */}
+                            <div className="flex gap-2">
+                                {/* Regular Help Button (Cost?) */}
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveHint(activeHint === item.id ? null : item.id)}
+                                    className="text-gray-300 hover:text-indigo-400 transition"
+                                    title="Show/Hide Hint"
+                                >
+                                    <HelpCircle className="w-5 h-5" />
+                                </button>
+
+                                {/* Give Up / Show Answer Button (Only if wrong) */}
+                                {status === 'wrong' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            // Mark as failed and fill correct answer
+                                            handleInputChange(item.id, item.content) // Auto-fill
+                                            setFieldStatus(prev => ({ ...prev, [item.id]: 'idle' })) // Reset status to let them submit 'correctly' (but we already recorded error)
+                                            // Note: onError was already called when they got it wrong
+                                        }}
+                                        className="text-red-300 hover:text-red-500 transition text-xs font-bold"
+                                    >
+                                        I Give Up
+                                    </button>
+                                )}
+                            </div>
                         </motion.div>
                     )
                 })}
