@@ -13,7 +13,8 @@ export default function StudyPage() {
 
     // Check for saved session on mount
     useEffect(() => {
-        const savedBatch = sessionStorage.getItem('current_study_session_v2')
+        // v3 cache key for debug session
+        const savedBatch = sessionStorage.getItem('current_study_session_v3')
         if (savedBatch) {
             try {
                 const parsed = JSON.parse(savedBatch)
@@ -25,7 +26,7 @@ export default function StudyPage() {
                 }
             } catch (e) {
                 console.error("Failed to parse saved session", e)
-                sessionStorage.removeItem('current_study_session_v2')
+                sessionStorage.removeItem('current_study_session_v3')
             }
         }
 
@@ -35,7 +36,7 @@ export default function StudyPage() {
     // Save session whenever batch changes (and isn't empty)
     useEffect(() => {
         if (batch.length > 0 && !sessionComplete) {
-            sessionStorage.setItem('current_study_session_v2', JSON.stringify(batch))
+            sessionStorage.setItem('current_study_session_v3', JSON.stringify(batch))
         }
     }, [batch, sessionComplete])
 
@@ -45,7 +46,7 @@ export default function StudyPage() {
             const { data: { user } } = await supabase.auth.getUser()
             if (!user) return
 
-            // 1. Get Due Reviews (Priority)
+            // 1. Get Initial Candidates
             const { data: reviews, error: rError } = await supabase
                 .from('user_progress')
                 .select('question_id, questions(*)')
@@ -58,11 +59,11 @@ export default function StudyPage() {
 
             let candidates: Question[] = reviews?.map((r: any) => r.questions).filter(q => q) || []
 
-            // 2. Fill with New Words if needed
+            // 2. Fill with New Words
             if (candidates.length < 5) {
                 const limit = 6 - candidates.length
 
-                // Get IDs already in progress to exclude
+                // Exclude existing progress items
                 const { data: progress } = await supabase
                     .from('user_progress')
                     .select('question_id')
@@ -95,13 +96,15 @@ export default function StudyPage() {
                 return
             }
 
-            // 3. FETCH SIBLINGS (The Critical Fix)
+            // 3. FETCH SIBLINGS (Enhanced Debug Logic)
             // Extract all Family tags from candidates
             const familyTags = new Set<string>()
             candidates.forEach(q => {
                 const tag = q.tags?.find(t => t.startsWith('Family:'))
                 if (tag) familyTags.add(tag)
             })
+
+            console.log("Found Family Tags:", Array.from(familyTags))
 
             if (familyTags.size > 0) {
                 // Fetch ALL questions that belong to these families
@@ -127,12 +130,14 @@ export default function StudyPage() {
                 candidates.forEach(c => finalMap.set(c.id, c))
 
                 // Add siblings
-                results.forEach(res => {
+                results.forEach((res, index) => {
+                    if (res.error) console.error(`Family query failed for ${Array.from(familyTags)[index]}:`, res.error)
                     if (res.data) {
                         res.data.forEach((q: Question) => finalMap.set(q.id, q))
                     }
                 })
 
+                console.log("Final Batch Size:", finalMap.size)
                 setBatch(Array.from(finalMap.values()))
             } else {
                 setBatch(candidates)
@@ -183,7 +188,7 @@ export default function StudyPage() {
             }
 
             // Clear session storage only on success
-            sessionStorage.removeItem('current_study_session_v2')
+            sessionStorage.removeItem('current_study_session_v3')
             setSessionComplete(true)
 
         } catch (error: any) {
@@ -241,7 +246,7 @@ export default function StudyPage() {
                 <p className="text-gray-500">今日没有待复习的单词，也没有新单词了。</p>
                 <button
                     onClick={() => {
-                        sessionStorage.removeItem('current_study_session_v2') // Cleanup just in case
+                        sessionStorage.removeItem('current_study_session_v3') // Cleanup just in case
                         window.location.href = '/dashboard'
                     }}
                     className="mt-6 px-6 py-2 bg-indigo-600 text-white rounded-full"
@@ -254,9 +259,32 @@ export default function StudyPage() {
 
     // MAIN RENDER: The Session Container
     return (
-        <RecitationSession
-            batch={batch}
-            onComplete={handleSessionComplete}
-        />
+        <div className="relative">
+            {/* DEBUG OVERLAY - Remove after fixing */}
+            <div className="fixed bottom-0 left-0 right-0 bg-black/80 text-green-400 p-2 text-xs font-mono z-50 max-h-32 overflow-y-auto">
+                <div>DEBUG INFO (v3 Cache) | Batch Size: {batch.length}</div>
+                <div>
+                    {batch.map(q => (
+                        <span key={q.id} className="mr-2">
+                            [{q.content}: {q.tags?.join(',') || 'NoTags'}]
+                        </span>
+                    ))}
+                </div>
+                <button
+                    onClick={() => {
+                        sessionStorage.removeItem('current_study_session_v3')
+                        window.location.reload()
+                    }}
+                    className="bg-red-600 text-white px-2 py-1 rounded mt-1"
+                >
+                    Force Reset Cache
+                </button>
+            </div>
+
+            <RecitationSession
+                batch={batch}
+                onComplete={handleSessionComplete}
+            />
+        </div>
     )
 }
