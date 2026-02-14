@@ -21,7 +21,7 @@ type ProviderMeta = {
 
 const AI_PROVIDERS: ProviderMeta[] = [
     { id: 'deepseek', name: 'DeepSeek (深度求索)', defaultBaseUrl: 'https://api.deepseek.com', defaultModel: 'deepseek-chat', description: 'Recommended for reasoning' },
-    { id: 'zhipu', name: 'Zhipu AI (智谱清言)', defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-4', description: 'Balanced performance' },
+    { id: 'zhipu', name: 'Zhipu AI (智谱清言)', defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-5', description: 'Latest flagship model' },
     { id: 'moonshot', name: 'Moonshot (Kimi)', defaultBaseUrl: 'https://api.moonshot.cn/v1', defaultModel: 'moonshot-v1-8k', description: 'Long context support' },
     { id: 'qwen', name: 'Qwen (通义千问)', defaultBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModel: 'qwen-turbo', description: 'Alibaba Cloud' },
     { id: 'doubao', name: 'Doubao (豆包)', defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3', defaultModel: 'doubao-pro-32k', description: 'ByteDance Volcengine' },
@@ -52,51 +52,34 @@ export default function AdminSettingsPage() {
         fetchSettings()
     }, [])
 
-    // Helper: Get auth headers with FRESH access token
-    const getAuthHeaders = async () => {
-        // Force token refresh to avoid expired token errors
-        const { data: { session }, error } = await supabase.auth.refreshSession()
-        if (error || !session?.access_token) {
-            // Fallback: try getSession in case refresh fails but session is still valid
-            const { data: fallback } = await supabase.auth.getSession()
-            if (!fallback.session?.access_token) throw new Error('未登录')
-            return {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${fallback.session.access_token}`
-            }
-        }
-        return {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`
-        }
-    }
-
-    // Helper: Call server-side API for settings operations
-    const apiSaveSettings = async (updates: { key: string, value: string }[]) => {
-        const headers = await getAuthHeaders()
-        const res = await fetch('/api/settings', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ updates })
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || '保存失败')
-        return data
+    // Helper: Upsert settings directly via Supabase client
+    const upsertSettings = async (updates: { key: string, value: string }[]) => {
+        const upsertData = updates.map(u => ({
+            key: u.key,
+            value: u.value,
+            updated_at: new Date().toISOString()
+        }))
+        const { error } = await supabase
+            .from('system_settings')
+            .upsert(upsertData)
+        if (error) throw new Error(error.message)
     }
 
     const fetchSettings = async () => {
         setLoading(true)
         try {
-            const headers = await getAuthHeaders()
-            const res = await fetch('/api/settings', { headers })
-            const data = await res.json()
+            const { data, error } = await supabase
+                .from('system_settings')
+                .select('key, value')
 
-            if (data.settings) {
+            if (error) throw error
+
+            if (data) {
                 const configs: Record<string, AIProviderConfig> = {}
                 let active = 'deepseek'
                 let ocr = { url: '', token: '' }
 
-                data.settings.forEach((item: any) => {
+                data.forEach((item: any) => {
                     if (item.key === 'ai_provider') active = item.value
                     if (item.key.startsWith('ai_config_')) {
                         const providerId = item.key.replace('ai_config_', '')
@@ -123,7 +106,7 @@ export default function AdminSettingsPage() {
     const handleSaveOCR = async () => {
         setSaving(true)
         try {
-            await apiSaveSettings([
+            await upsertSettings([
                 { key: 'ocr_url', value: ocrConfig.url },
                 { key: 'ocr_token', value: ocrConfig.token }
             ])
@@ -137,7 +120,7 @@ export default function AdminSettingsPage() {
     const handleActivateProvider = async (providerId: string) => {
         setSaving(true)
         try {
-            await apiSaveSettings([{ key: 'ai_provider', value: providerId }])
+            await upsertSettings([{ key: 'ai_provider', value: providerId }])
             setActiveProvider(providerId)
             setMessage({ type: 'success', text: `已切换至 ${AI_PROVIDERS.find(p => p.id === providerId)?.name}` })
         } catch (e: any) {
@@ -163,7 +146,7 @@ export default function AdminSettingsPage() {
         const newConfigs = { ...providerConfigs, [editingProvider]: editForm }
 
         try {
-            await apiSaveSettings([{
+            await upsertSettings([{
                 key: `ai_config_${editingProvider}`,
                 value: JSON.stringify(editForm)
             }])
