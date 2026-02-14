@@ -34,7 +34,7 @@ export default function ImportPage() {
                     setImportStatus(`正在解析第 ${i + 1}/${selectedFiles.length} 个文件: ${file.name}...`)
 
                     try {
-                        const parsed = await parseDocument(file, importMode)
+                        const parsed = await parseDocument(file, importMode, (msg) => setImportStatus(msg))
                         // Add source filename to tags so we know where it came from
                         const tagged = parsed.map(q => ({
                             ...q,

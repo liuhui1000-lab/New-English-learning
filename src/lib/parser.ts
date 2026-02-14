@@ -11,8 +11,10 @@ export interface ParsedQuestion {
     tags: string[];
 }
 
-export async function parseDocument(file: File, mode: ImportMode = 'mock_paper'): Promise<ParsedQuestion[]> {
-    const text = await extractText(file);
+export async function parseDocument(file: File, mode: ImportMode = 'mock_paper', onProgress?: (msg: string) => void): Promise<ParsedQuestion[]> {
+    const text = await extractText(file, onProgress);
+
+    if (onProgress) onProgress("正在解析文本结构...");
 
     // 1. Remove "Answer Key" sections (Common for Mock Papers)
     // Only apply strict truncation for mock papers 
@@ -333,8 +335,9 @@ function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
 
 // ... Shared Helpers ...
 
-async function extractText(file: File): Promise<string> {
+async function extractText(file: File, onProgress?: (msg: string) => void): Promise<string> {
     if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        if (onProgress) onProgress("正在读取 Word 文档...");
         const arrayBuffer = await file.arrayBuffer();
         const result = await mammoth.extractRawText({ arrayBuffer });
         return result.value;
@@ -351,14 +354,18 @@ async function extractText(file: File): Promise<string> {
         let fullText = "";
         let useOCR = false;
 
-        for (let i = 1; i <= pdf.numPages; i++) {
+        const totalPages = pdf.numPages;
+        if (onProgress) onProgress(`PDF 加载成功，共 ${totalPages} 页。开始提取文本...`);
+
+        for (let i = 1; i <= totalPages; i++) {
+            if (onProgress) onProgress(`正在读取第 ${i}/${totalPages} 页 (文本模式)...`);
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
             const items: any[] = textContent.items as any[];
             const pageText = items.map((item) => item.str).join(" ");
 
             // Improved OCR Trigger: If text is empty OR very short/garbage (likely scanned with few artifacts)
-            if (/\{#\{.*?\}#\}/.test(pageText) || pageText.trim().length < 100) {
+            if (/\{#\{.*?\}#\}/.test(pageText) || pageText.trim().length < 50) { // Reduced threshold slightly
                 console.warn(`Page ${i} text length ${pageText.trim().length}, switching to OCR...`);
                 useOCR = true;
                 fullText = "";
@@ -368,7 +375,9 @@ async function extractText(file: File): Promise<string> {
         }
 
         if (useOCR) {
-            for (let i = 1; i <= pdf.numPages; i++) {
+            if (onProgress) onProgress(`检测到扫描件，切换至 OCR 模式 (较慢)...`);
+            for (let i = 1; i <= totalPages; i++) {
+                if (onProgress) onProgress(`正在 OCR 识别第 ${i}/${totalPages} 页...`);
                 const page = await pdf.getPage(i);
                 try {
                     const ocrText = await ocrPdfPage(page);
