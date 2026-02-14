@@ -2,20 +2,46 @@
 
 import { useState, useEffect } from "react"
 import { createBrowserClient } from "@supabase/ssr"
-import { Save, AlertCircle, CheckCircle, Cpu } from "lucide-react"
+import { Save, AlertCircle, CheckCircle, Cpu, Edit2, Check, X, Server } from "lucide-react"
+
+// Types
+type AIProviderConfig = {
+    apiKey: string
+    baseUrl: string
+    model: string
+}
+
+type ProviderMeta = {
+    id: string
+    name: string
+    defaultBaseUrl: string
+    defaultModel: string
+    description?: string
+}
+
+const AI_PROVIDERS: ProviderMeta[] = [
+    { id: 'deepseek', name: 'DeepSeek (深度求索)', defaultBaseUrl: 'https://api.deepseek.com', defaultModel: 'deepseek-chat', description: 'Recommended for reasoning' },
+    { id: 'zhipu', name: 'Zhipu AI (智谱清言)', defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-4', description: 'Balanced performance' },
+    { id: 'moonshot', name: 'Moonshot (Kimi)', defaultBaseUrl: 'https://api.moonshot.cn/v1', defaultModel: 'moonshot-v1-8k', description: 'Long context support' },
+    { id: 'qwen', name: 'Qwen (通义千问)', defaultBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModel: 'qwen-turbo', description: 'Alibaba Cloud' },
+    { id: 'doubao', name: 'Doubao (豆包)', defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3', defaultModel: 'doubao-pro-32k', description: 'ByteDance Volcengine' },
+    { id: 'openai', name: 'OpenAI (GPT)', defaultBaseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-3.5-turbo', description: 'Global Standard' },
+]
 
 export default function AdminSettingsPage() {
     // State
-    const [settings, setSettings] = useState({
-        // AI Settings
-        ai_provider: 'deepseek',
-        ai_api_key: '',
-        ai_base_url: 'https://api.deepseek.com',
-        ai_model: 'deepseek-chat',
-        // OCR Settings
-        ocr_url: '',
-        ocr_token: ''
+    const [activeProvider, setActiveProvider] = useState<string>('deepseek')
+    const [providerConfigs, setProviderConfigs] = useState<Record<string, AIProviderConfig>>({})
+
+    // OCR State
+    const [ocrConfig, setOcrConfig] = useState({
+        url: '',
+        token: ''
     })
+
+    // Editing State
+    const [editingProvider, setEditingProvider] = useState<string | null>(null)
+    const [editForm, setEditForm] = useState<AIProviderConfig>({ apiKey: '', baseUrl: '', model: '' })
 
     // Status
     const [loading, setLoading] = useState(true)
@@ -38,206 +64,299 @@ export default function AdminSettingsPage() {
             .select('key, value')
 
         if (data) {
-            const newSettings: any = { ...settings }
+            const configs: Record<string, AIProviderConfig> = {}
+            let active = 'deepseek'
+            let ocr = { url: '', token: '' }
+
             data.forEach((item: any) => {
-                if (newSettings.hasOwnProperty(item.key)) {
-                    newSettings[item.key] = item.value
+                // Parse Active Provider
+                if (item.key === 'ai_provider') active = item.value
+
+                // Parse Provider Configs
+                if (item.key.startsWith('ai_config_')) {
+                    const providerId = item.key.replace('ai_config_', '')
+                    try {
+                        configs[providerId] = JSON.parse(item.value)
+                    } catch (e) {
+                        console.error(`Failed to parse config for ${providerId}`)
+                    }
                 }
+
+                // Legacy Field Migration (if config missing but legacy fields exist)
+                // This is a one-time read logic, enabling smooth transition
+                if (item.key === 'ai_api_key' && !configs[active]) {
+                    // We don't overwrite if we already found a config object
+                    // This part is tricky without conflicting. 
+                    // Let's rely on 'ai_config_' primarily. 
+                }
+
+                // Parse OCR
+                if (item.key === 'ocr_url') ocr.url = item.value
+                if (item.key === 'ocr_token') ocr.token = item.value
             })
-            setSettings(newSettings)
+
+            // If active provider has no config (first run?), init with specific fields if they existed in legacy
+            // or defaults
+
+            setActiveProvider(active)
+            setProviderConfigs(configs)
+            setOcrConfig(ocr)
         }
         setLoading(false)
     }
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        setSettings({ ...settings, [e.target.name]: e.target.value })
+    const handleSaveOCR = async () => {
+        setSaving(true)
+        const updates = [
+            { key: 'ocr_url', value: ocrConfig.url, updated_at: new Date().toISOString() },
+            { key: 'ocr_token', value: ocrConfig.token, updated_at: new Date().toISOString() }
+        ]
+        const { error } = await supabase.from('system_settings').upsert(updates)
+        if (error) setMessage({ type: 'error', text: 'OCR 保存失败' })
+        else setMessage({ type: 'success', text: 'OCR 配置已保存' })
+        setSaving(false)
     }
 
-    const handleSave = async () => {
+    const handleActivateProvider = async (providerId: string) => {
         setSaving(true)
-        setMessage(null)
-
-        const updates = Object.entries(settings).map(([key, value]) => ({
-            key,
-            value,
+        const { error } = await supabase.from('system_settings').upsert({
+            key: 'ai_provider',
+            value: providerId,
             updated_at: new Date().toISOString()
-        }))
+        })
 
-        const { error } = await supabase
-            .from('system_settings')
-            .upsert(updates)
-
-        if (error) {
-            setMessage({ type: 'error', text: '保存失败: ' + error.message })
+        if (!error) {
+            setActiveProvider(providerId)
+            // Also sync legacy fields for backward compatibility if needed? 
+            // Ideally we stop using legacy fields in API.
+            // But for now, let's just save the active pointer.
+            setMessage({ type: 'success', text: `已切换至 ${AI_PROVIDERS.find(p => p.id === providerId)?.name}` })
         } else {
-            setMessage({ type: 'success', text: '设置已更新' })
+            setMessage({ type: 'error', text: '切换失败' })
         }
         setSaving(false)
     }
 
-    const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const provider = e.target.value
-        let baseUrl = settings.ai_base_url
-        let model = settings.ai_model
-
-        switch (provider) {
-            case 'deepseek':
-                baseUrl = 'https://api.deepseek.com'
-                model = 'deepseek-chat'
-                break
-            case 'zhipu':
-                baseUrl = 'https://open.bigmodel.cn/api/paas/v4'
-                model = 'glm-4'
-                break
-            case 'moonshot':
-                baseUrl = 'https://api.moonshot.cn/v1'
-                model = 'moonshot-v1-8k'
-                break
-            case 'qwen':
-                baseUrl = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
-                model = 'qwen-turbo'
-                break
-            case 'doubao':
-                baseUrl = 'https://ark.cn-beijing.volces.com/api/v3'
-                model = 'doubao-model-id' // User needs to fill specific endpoint
-                break
-            case 'openai':
-                baseUrl = 'https://api.openai.com/v1'
-                model = 'gpt-3.5-turbo'
-                break
-            default:
-                break
+    const openEditModal = (providerId: string) => {
+        const currentconfig = providerConfigs[providerId] || {
+            apiKey: '',
+            baseUrl: AI_PROVIDERS.find(p => p.id === providerId)?.defaultBaseUrl || '',
+            model: AI_PROVIDERS.find(p => p.id === providerId)?.defaultModel || ''
         }
+        setEditForm(currentconfig)
+        setEditingProvider(providerId)
+    }
 
-        setSettings({ ...settings, ai_provider: provider, ai_base_url: baseUrl, ai_model: model })
+    const saveProviderConfig = async () => {
+        if (!editingProvider) return
+        setSaving(true)
+
+        const newConfigs = { ...providerConfigs, [editingProvider]: editForm }
+        setProviderConfigs(newConfigs)
+
+        // Save to DB
+        const { error } = await supabase.from('system_settings').upsert({
+            key: `ai_config_${editingProvider}`,
+            value: JSON.stringify(editForm),
+            updated_at: new Date().toISOString()
+        })
+
+        if (!error) {
+            setMessage({ type: 'success', text: '配置已保存' })
+            setEditingProvider(null)
+        } else {
+            setMessage({ type: 'error', text: '保存失败: ' + error.message })
+        }
+        setSaving(false)
     }
 
     return (
-        <div className="max-w-2xl mx-auto space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-                <Cpu className="mr-2" />
-                系统设置
-            </h2>
+        <div className="max-w-4xl mx-auto space-y-8 pb-12">
 
-            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-                <h3 className="text-lg font-bold text-gray-900 mb-4 border-b pb-2">
-                    AI 自动打标配置
-                </h3>
-
-                <div className="space-y-4">
-                    {/* Provider */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">AI 供应商 / 模型</label>
-                        <select
-                            name="ai_provider"
-                            value={settings.ai_provider}
-                            onChange={handleProviderChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                        >
-                            <option value="deepseek">DeepSeek (深度求索)</option>
-                            <option value="zhipu">Zhipu AI (智谱清言)</option>
-                            <option value="moonshot">Moonshot (Kimi / 月之暗面)</option>
-                            <option value="qwen">Qwen (通义千问)</option>
-                            <option value="doubao">Doubao (豆包 / 火山引擎)</option>
-                            <option value="openai">OpenAI (GPT)</option>
-                        </select>
+            {/* Header */}
+            <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold text-gray-900 flex items-center">
+                    <Cpu className="mr-2" />
+                    系统设置
+                </h2>
+                {message && (
+                    <div className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                        }`}>
+                        {message.type === 'success' ? <CheckCircle className="w-4 h-4 mr-2" /> : <AlertCircle className="w-4 h-4 mr-2" />}
+                        {message.text}
                     </div>
+                )}
+            </div>
 
-                    {/* API Key */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
-                        <input
-                            type="password"
-                            name="ai_api_key"
-                            value={settings.ai_api_key}
-                            onChange={handleChange}
-                            placeholder="sk-..."
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 font-mono"
-                        />
-                    </div>
+            {/* AI Providers Section */}
+            <div className="space-y-4">
+                <h3 className="text-lg font-bold text-gray-900 border-b pb-2">AI 模型供应商 (多线路管理)</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {AI_PROVIDERS.map(provider => {
+                        const isConfigured = !!providerConfigs[provider.id]?.apiKey
+                        const isActive = activeProvider === provider.id
 
-                    {/* Base URL */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Base URL (API Endpoint)</label>
-                        <input
-                            type="text"
-                            name="ai_base_url"
-                            value={settings.ai_base_url}
-                            onChange={handleChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
-                        />
-                    </div>
+                        return (
+                            <div key={provider.id} className={`relative p-5 rounded-xl border-2 transition-all ${isActive
+                                    ? 'border-indigo-500 bg-indigo-50/30'
+                                    : 'border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm'
+                                }`}>
+                                {/* Header */}
+                                <div className="flex justify-between items-start mb-3">
+                                    <div>
+                                        <h4 className="font-bold text-gray-900">{provider.name}</h4>
+                                        <p className="text-xs text-gray-500 mt-1">{provider.description}</p>
+                                    </div>
+                                    <div className="flex flex-col items-end space-y-2">
+                                        {isActive && (
+                                            <span className="bg-indigo-100 text-indigo-700 text-xs px-2 py-1 rounded-full font-bold flex items-center">
+                                                <Check className="w-3 h-3 mr-1" /> 当前使用
+                                            </span>
+                                        )}
+                                        {!isActive && isConfigured && (
+                                            <span className="bg-green-50 text-green-700 text-xs px-2 py-1 rounded-full font-medium">
+                                                已配置
+                                            </span>
+                                        )}
+                                        {!isConfigured && (
+                                            <span className="bg-gray-100 text-gray-400 text-xs px-2 py-1 rounded-full">
+                                                未配置
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
 
-                    {/* Model */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Model Name</label>
-                        <input
-                            type="text"
-                            name="ai_model"
-                            value={settings.ai_model}
-                            onChange={handleChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
-                        />
-                        <p className="text-xs text-gray-400 mt-1">
-                            Current: {settings.ai_model} | Provider: {settings.ai_provider}
-                        </p>
-                    </div>
+                                {/* Config Info Preview */}
+                                {isConfigured && (
+                                    <div className="text-xs text-gray-500 font-mono bg-gray-50 p-2 rounded mb-4">
+                                        <div className="truncate">URL: {providerConfigs[provider.id].baseUrl}</div>
+                                        <div>Model: {providerConfigs[provider.id].model}</div>
+                                    </div>
+                                )}
+
+                                {/* Actions */}
+                                <div className="flex space-x-2 mt-auto">
+                                    <button
+                                        onClick={() => openEditModal(provider.id)}
+                                        className="flex-1 bg-white border border-gray-300 text-gray-700 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition flex items-center justify-center"
+                                    >
+                                        <Edit2 className="w-3 h-3 mr-1" /> 配置
+                                    </button>
+
+                                    {isConfigured && !isActive && (
+                                        <button
+                                            onClick={() => handleActivateProvider(provider.id)}
+                                            disabled={saving}
+                                            className="flex-1 bg-indigo-600 text-white py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition disabled:opacity-50"
+                                        >
+                                            启用
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        )
+                    })}
+                </div>
+            </div>
+
+            {/* OCR Section */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                    <h3 className="text-lg font-bold text-gray-900">OCR 文字识别配置</h3>
+                    <button
+                        onClick={handleSaveOCR}
+                        disabled={saving}
+                        className="text-sm bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-100 font-medium"
+                    >
+                        保存 OCR 设置
+                    </button>
                 </div>
 
-                <h3 className="text-lg font-bold text-gray-900 mb-4 mt-8 border-b pb-2">
-                    OCR 文字识别配置
-                </h3>
-                <div className="space-y-4">
-                    {/* OCR URL */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">OCR API URL</label>
                         <input
                             type="text"
-                            name="ocr_url"
-                            value={settings.ocr_url}
-                            onChange={handleChange}
+                            value={ocrConfig.url}
+                            onChange={e => setOcrConfig({ ...ocrConfig, url: e.target.value })}
                             placeholder="https://..."
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm font-mono"
                         />
-                        <p className="text-xs text-gray-400 mt-1">Default: PaddleHub / AIStudio Space URL</p>
+                        <p className="text-xs text-gray-400 mt-1">默认为 PaddleHub / AIStudio Space URL</p>
                     </div>
-
-                    {/* OCR Token */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">OCR Access Token (Optional)</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Access Token (选填)</label>
                         <input
                             type="password"
-                            name="ocr_token"
-                            value={settings.ocr_token}
-                            onChange={handleChange}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 font-mono"
+                            value={ocrConfig.token}
+                            onChange={e => setOcrConfig({ ...ocrConfig, token: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono"
                         />
-                    </div>
-
-                    <div className="mt-8 flex items-center justify-between">
-                        <div className="text-sm">
-                            {message && (
-                                <div className={`flex items-center ${message.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-                                    {message.type === 'success' ? <CheckCircle className="w-4 h-4 mr-1" /> : <AlertCircle className="w-4 h-4 mr-1" />}
-                                    {message.text}
-                                </div>
-                            )}
-                        </div>
-                        <button
-                            onClick={handleSave}
-                            disabled={saving}
-                            className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition flex items-center disabled:opacity-50"
-                        >
-                            {saving ? '保存中...' : (
-                                <>
-                                    <Save className="w-4 h-4 mr-2" />
-                                    保存设置
-                                </>
-                            )}
-                        </button>
                     </div>
                 </div>
             </div>
+
+            {/* Edit Modal */}
+            {editingProvider && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+                        <div className="px-6 py-4 border-b flex justify-between items-center bg-gray-50">
+                            <h3 className="font-bold text-gray-900">
+                                配置 {AI_PROVIDERS.find(p => p.id === editingProvider)?.name}
+                            </h3>
+                            <button onClick={() => setEditingProvider(null)} className="text-gray-400 hover:text-gray-600">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Base URL</label>
+                                <input
+                                    type="text"
+                                    value={editForm.baseUrl}
+                                    onChange={e => setEditForm({ ...editForm, baseUrl: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 font-mono text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                                <input
+                                    type="password"
+                                    value={editForm.apiKey}
+                                    onChange={e => setEditForm({ ...editForm, apiKey: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 font-mono text-sm"
+                                    placeholder="sk-..."
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Model Name</label>
+                                <input
+                                    type="text"
+                                    value={editForm.model}
+                                    onChange={e => setEditForm({ ...editForm, model: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 font-mono text-sm"
+                                />
+                            </div>
+                        </div>
+                        <div className="px-6 py-4 bg-gray-50 flex justify-end space-x-3">
+                            <button
+                                onClick={() => setEditingProvider(null)}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg"
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={saveProviderConfig}
+                                disabled={saving}
+                                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50"
+                            >
+                                {saving ? '保存中...' : '确认保存'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div>
     )
 }

@@ -49,12 +49,31 @@ export async function POST(request: Request) {
         .from('system_settings')
         .select('key, value')
 
-    const settings: any = {}
+    const settingsMap: Record<string, string> = {}
     if (settingsData) {
-        settingsData.forEach((s: any) => settings[s.key] = s.value)
+        settingsData.forEach((s: any) => settingsMap[s.key] = s.value)
     }
 
-    if (!settings.ai_api_key) {
+    // Determine Active Provider
+    const activeProvider = settingsMap['ai_provider'] || 'deepseek'
+    let apiKey = settingsMap['ai_api_key']
+    let baseUrl = settingsMap['ai_base_url']
+    let model = settingsMap['ai_model']
+
+    // Try to load from specific config
+    const configKey = `ai_config_${activeProvider}`
+    if (settingsMap[configKey]) {
+        try {
+            const config = JSON.parse(settingsMap[configKey])
+            if (config.apiKey) apiKey = config.apiKey
+            if (config.baseUrl) baseUrl = config.baseUrl
+            if (config.model) model = config.model
+        } catch (e) {
+            console.error("Failed to parse provider config", e)
+        }
+    }
+
+    if (!apiKey) {
         return NextResponse.json({ error: 'AI API Key not configured' }, { status: 400 })
     }
 
@@ -77,7 +96,7 @@ Input Questions:
     // 5. Call AI Provider
     try {
         const payload = {
-            model: settings.ai_model || 'deepseek-chat',
+            model: model || 'deepseek-chat',
             messages: [
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userPrompt }
@@ -85,11 +104,11 @@ Input Questions:
             temperature: 0.1
         }
 
-        const response = await fetch(`${settings.ai_base_url}/chat/completions`, {
+        const response = await fetch(`${baseUrl}/chat/completions`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${settings.ai_api_key}`
+                'Authorization': `Bearer ${apiKey}`
             },
             body: JSON.stringify(payload)
         })
