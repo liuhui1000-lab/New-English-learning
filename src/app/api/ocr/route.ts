@@ -27,33 +27,34 @@ export async function POST(req: NextRequest) {
             }
         )
 
-        // 1. Get Token (Env -> DB -> Default)
-        let token = process.env.PADDLE_OCR_TOKEN || process.env.BAIDU_OCR_API_KEY; // Reusing var for convenience
+        // 1. Get Settings from DB
+        let token = process.env.PADDLE_OCR_TOKEN || process.env.BAIDU_OCR_API_KEY;
+        let apiUrl = PADDLE_API_URL;
 
-        if (!token) {
-            const { data: settings } = await supabase
-                .from('system_settings')
-                .select('*')
-                .in('key', ['baidu_ocr_api_key', 'paddle_ocr_token']);
+        const { data: settings } = await supabase
+            .from('system_settings')
+            .select('*')
+            .in('key', ['ocr_token', 'ocr_url', 'paddle_ocr_token', 'baidu_ocr_api_key']);
 
-            if (settings) {
-                const map: Record<string, string> = {};
-                settings.forEach((s: any) => map[s.key] = s.value);
-                token = map['paddle_ocr_token'] || map['baidu_ocr_api_key'];
-            }
+        if (settings) {
+            const map: Record<string, string> = {};
+            settings.forEach((s: any) => map[s.key] = s.value);
+
+            // Prioritize new generic keys
+            if (map['ocr_token']) token = map['ocr_token'];
+            else if (map['paddle_ocr_token']) token = map['paddle_ocr_token'];
+            else if (map['baidu_ocr_api_key']) token = map['baidu_ocr_api_key'];
+
+            if (map['ocr_url']) apiUrl = map['ocr_url'];
         }
 
-        // Fallback to the user-provided token if nothing configured (for immediate testing)
-        if (!token) {
-            token = DEFAULT_TOKEN;
-            // console.warn("Using hardcoded default Paddle Token");
-        }
+        // Fallback
+        if (!token) token = DEFAULT_TOKEN;
 
         const { image } = await req.json(); // Base64 image
         if (!image) return NextResponse.json({ error: "No image provided" }, { status: 400 });
 
-        // 2. Prepare Payload for Layout Parsing API
-        // fileType: 1 for Images (since we slice PDFs in parser.ts)
+        // 2. Prepare Payload
         const payload = {
             file: image,
             fileType: 1,
@@ -63,7 +64,8 @@ export async function POST(req: NextRequest) {
         };
 
         // 3. Call External API
-        const response = await fetch(PADDLE_API_URL, {
+        console.log("Calling OCR API:", apiUrl);
+        const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
                 "Authorization": `token ${token}`,

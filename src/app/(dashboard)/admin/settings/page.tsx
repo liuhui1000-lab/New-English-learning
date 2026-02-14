@@ -7,10 +7,14 @@ import { Save, AlertCircle, CheckCircle, Cpu } from "lucide-react"
 export default function AdminSettingsPage() {
     // State
     const [settings, setSettings] = useState({
+        // AI Settings
         ai_provider: 'deepseek',
         ai_api_key: '',
         ai_base_url: 'https://api.deepseek.com',
-        ai_model: 'deepseek-chat'
+        ai_model: 'deepseek-chat',
+        // OCR Settings
+        ocr_url: '',
+        ocr_token: ''
     })
 
     // Status
@@ -76,15 +80,33 @@ export default function AdminSettingsPage() {
         let baseUrl = settings.ai_base_url
         let model = settings.ai_model
 
-        if (provider === 'deepseek') {
-            baseUrl = 'https://api.deepseek.com'
-            model = 'deepseek-chat'
-        } else if (provider === 'zhipu') {
-            baseUrl = 'https://open.bigmodel.cn/api/paas/v4'
-            model = 'glm-4'
-        } else if (provider === 'openai') {
-            baseUrl = 'https://api.openai.com/v1'
-            model = 'gpt-3.5-turbo'
+        switch (provider) {
+            case 'deepseek':
+                baseUrl = 'https://api.deepseek.com'
+                model = 'deepseek-chat'
+                break
+            case 'zhipu':
+                baseUrl = 'https://open.bigmodel.cn/api/paas/v4'
+                model = 'glm-4'
+                break
+            case 'moonshot':
+                baseUrl = 'https://api.moonshot.cn/v1'
+                model = 'moonshot-v1-8k'
+                break
+            case 'qwen':
+                baseUrl = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+                model = 'qwen-turbo'
+                break
+            case 'doubao':
+                baseUrl = 'https://ark.cn-beijing.volces.com/api/v3'
+                model = 'doubao-model-id' // User needs to fill specific endpoint
+                break
+            case 'openai':
+                baseUrl = 'https://api.openai.com/v1'
+                model = 'gpt-3.5-turbo'
+                break
+            default:
+                break
         }
 
         setSettings({ ...settings, ai_provider: provider, ai_base_url: baseUrl, ai_model: model })
@@ -105,7 +127,7 @@ export default function AdminSettingsPage() {
                 <div className="space-y-4">
                     {/* Provider */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">AI 供应商</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">AI 供应商 / 模型</label>
                         <select
                             name="ai_provider"
                             value={settings.ai_provider}
@@ -114,6 +136,9 @@ export default function AdminSettingsPage() {
                         >
                             <option value="deepseek">DeepSeek (深度求索)</option>
                             <option value="zhipu">Zhipu AI (智谱清言)</option>
+                            <option value="moonshot">Moonshot (Kimi / 月之暗面)</option>
+                            <option value="qwen">Qwen (通义千问)</option>
+                            <option value="doubao">Doubao (豆包 / 火山引擎)</option>
                             <option value="openai">OpenAI (GPT)</option>
                         </select>
                     </div>
@@ -129,12 +154,11 @@ export default function AdminSettingsPage() {
                             placeholder="sk-..."
                             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 font-mono"
                         />
-                        <p className="text-xs text-gray-400 mt-1">Key stored securely.</p>
                     </div>
 
                     {/* Base URL */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Base URL</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Base URL (API Endpoint)</label>
                         <input
                             type="text"
                             name="ai_base_url"
@@ -154,30 +178,64 @@ export default function AdminSettingsPage() {
                             onChange={handleChange}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
                         />
+                        <p className="text-xs text-gray-400 mt-1">
+                            Current: {settings.ai_model} | Provider: {settings.ai_provider}
+                        </p>
                     </div>
                 </div>
 
-                <div className="mt-8 flex items-center justify-between">
-                    <div className="text-sm">
-                        {message && (
-                            <div className={`flex items-center ${message.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-                                {message.type === 'success' ? <CheckCircle className="w-4 h-4 mr-1" /> : <AlertCircle className="w-4 h-4 mr-1" />}
-                                {message.text}
-                            </div>
-                        )}
+                <h3 className="text-lg font-bold text-gray-900 mb-4 mt-8 border-b pb-2">
+                    OCR 文字识别配置
+                </h3>
+                <div className="space-y-4">
+                    {/* OCR URL */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">OCR API URL</label>
+                        <input
+                            type="text"
+                            name="ocr_url"
+                            value={settings.ocr_url}
+                            onChange={handleChange}
+                            placeholder="https://..."
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                        />
+                        <p className="text-xs text-gray-400 mt-1">Default: PaddleHub / AIStudio Space URL</p>
                     </div>
-                    <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition flex items-center disabled:opacity-50"
-                    >
-                        {saving ? '保存中...' : (
-                            <>
-                                <Save className="w-4 h-4 mr-2" />
-                                保存设置
-                            </>
-                        )}
-                    </button>
+
+                    {/* OCR Token */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">OCR Access Token (Optional)</label>
+                        <input
+                            type="password"
+                            name="ocr_token"
+                            value={settings.ocr_token}
+                            onChange={handleChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 font-mono"
+                        />
+                    </div>
+
+                    <div className="mt-8 flex items-center justify-between">
+                        <div className="text-sm">
+                            {message && (
+                                <div className={`flex items-center ${message.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                                    {message.type === 'success' ? <CheckCircle className="w-4 h-4 mr-1" /> : <AlertCircle className="w-4 h-4 mr-1" />}
+                                    {message.text}
+                                </div>
+                            )}
+                        </div>
+                        <button
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition flex items-center disabled:opacity-50"
+                        >
+                            {saving ? '保存中...' : (
+                                <>
+                                    <Save className="w-4 h-4 mr-2" />
+                                    保存设置
+                                </>
+                            )}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
