@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 export const maxDuration = 60; // Allow up to 60 seconds for OCR processing
 
@@ -10,6 +11,22 @@ const DEFAULT_TOKEN = "483605608bc2d69ed9979463871dd4bc6095285a";
 
 export async function POST(req: NextRequest) {
     try {
+        const cookieStore = await cookies()
+        const supabase = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            {
+                cookies: {
+                    getAll() {
+                        return cookieStore.getAll()
+                    },
+                    setAll(cookiesToSet) {
+                        // Ignoring writes in GET/POST API usually fine
+                    },
+                },
+            }
+        )
+
         // 1. Get Token (Env -> DB -> Default)
         let token = process.env.PADDLE_OCR_TOKEN || process.env.BAIDU_OCR_API_KEY; // Reusing var for convenience
 

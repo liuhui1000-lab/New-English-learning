@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createBrowserClient } from "@supabase/ssr"
 import { FileDown, AlertTriangle, CheckCircle, RefreshCw } from "lucide-react"
 
 export default function ErrorNotebookPage() {
@@ -9,7 +9,10 @@ export default function ErrorNotebookPage() {
     const [loading, setLoading] = useState(true)
     const [filter, setFilter] = useState<'all' | 'recitation' | 'quiz'>('all')
 
-    const supabase = createClientComponentClient()
+    const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
 
     useEffect(() => {
         fetchMistakes()

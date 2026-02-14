@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createBrowserClient } from "@supabase/ssr"
 import { UserProfile } from "@/types"
 import { Search, MoreVertical, TrendingUp, AlertTriangle, Settings } from "lucide-react"
 import Link from "next/link"
@@ -9,7 +9,10 @@ import Link from "next/link"
 export default function AdminDashboardPage() {
     const [students, setStudents] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
-    const supabase = createClientComponentClient()
+    const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
 
     useEffect(() => {
         fetchStudents()

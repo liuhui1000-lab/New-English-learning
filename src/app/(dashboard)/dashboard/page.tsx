@@ -5,7 +5,7 @@ import { BookOpen, PenTool, Upload, AlertCircle, TrendingUp } from "lucide-react
 import StudyStatsCard from "@/components/dashboard/StudyStatsCard"
 import QuizStatsCard from "@/components/dashboard/QuizStatsCard"
 import { useEffect, useState } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createBrowserClient } from "@supabase/ssr"
 
 export default function StudentDashboardPage() {
     const [loading, setLoading] = useState(true)
@@ -21,7 +21,10 @@ export default function StudentDashboardPage() {
         correctCount: 0,
         errorCount: 0
     })
-    const supabase = createClientComponentClient()
+    const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
 
     useEffect(() => {
         const fetchStats = async () => {

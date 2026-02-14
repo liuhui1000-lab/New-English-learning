@@ -1,21 +1,27 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createBrowserClient } from "@supabase/ssr"
 import { Save, AlertCircle, CheckCircle, Cpu } from "lucide-react"
 
 export default function AdminSettingsPage() {
+    // State
     const [settings, setSettings] = useState({
         ai_provider: 'deepseek',
         ai_api_key: '',
         ai_base_url: 'https://api.deepseek.com',
         ai_model: 'deepseek-chat'
     })
+
+    // Status
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
-    const supabase = createClientComponentClient()
+    const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
 
     useEffect(() => {
         fetchSettings()
