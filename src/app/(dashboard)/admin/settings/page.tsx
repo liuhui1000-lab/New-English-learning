@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { createBrowserClient } from "@supabase/ssr"
 import { Save, AlertCircle, CheckCircle, Cpu, Edit2, Check, X, Server } from "lucide-react"
 
 // Types
@@ -48,91 +47,79 @@ export default function AdminSettingsPage() {
     const [saving, setSaving] = useState(false)
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
-    const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-
     useEffect(() => {
         fetchSettings()
     }, [])
 
+    // Helper: Call server-side API for settings operations
+    const apiSaveSettings = async (updates: { key: string, value: string }[]) => {
+        const res = await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ updates })
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || '保存失败')
+        return data
+    }
+
     const fetchSettings = async () => {
         setLoading(true)
-        const { data, error } = await supabase
-            .from('system_settings')
-            .select('key, value')
+        try {
+            const res = await fetch('/api/settings')
+            const data = await res.json()
 
-        if (data) {
-            const configs: Record<string, AIProviderConfig> = {}
-            let active = 'deepseek'
-            let ocr = { url: '', token: '' }
+            if (data.settings) {
+                const configs: Record<string, AIProviderConfig> = {}
+                let active = 'deepseek'
+                let ocr = { url: '', token: '' }
 
-            data.forEach((item: any) => {
-                // Parse Active Provider
-                if (item.key === 'ai_provider') active = item.value
-
-                // Parse Provider Configs
-                if (item.key.startsWith('ai_config_')) {
-                    const providerId = item.key.replace('ai_config_', '')
-                    try {
-                        configs[providerId] = JSON.parse(item.value)
-                    } catch (e) {
-                        console.error(`Failed to parse config for ${providerId}`)
+                data.settings.forEach((item: any) => {
+                    if (item.key === 'ai_provider') active = item.value
+                    if (item.key.startsWith('ai_config_')) {
+                        const providerId = item.key.replace('ai_config_', '')
+                        try {
+                            configs[providerId] = JSON.parse(item.value)
+                        } catch (e) {
+                            console.error(`Failed to parse config for ${providerId}`)
+                        }
                     }
-                }
+                    if (item.key === 'ocr_url') ocr.url = item.value
+                    if (item.key === 'ocr_token') ocr.token = item.value
+                })
 
-                // Legacy Field Migration (if config missing but legacy fields exist)
-                // This is a one-time read logic, enabling smooth transition
-                if (item.key === 'ai_api_key' && !configs[active]) {
-                    // We don't overwrite if we already found a config object
-                    // This part is tricky without conflicting. 
-                    // Let's rely on 'ai_config_' primarily. 
-                }
-
-                // Parse OCR
-                if (item.key === 'ocr_url') ocr.url = item.value
-                if (item.key === 'ocr_token') ocr.token = item.value
-            })
-
-            // If active provider has no config (first run?), init with specific fields if they existed in legacy
-            // or defaults
-
-            setActiveProvider(active)
-            setProviderConfigs(configs)
-            setOcrConfig(ocr)
+                setActiveProvider(active)
+                setProviderConfigs(configs)
+                setOcrConfig(ocr)
+            }
+        } catch (e: any) {
+            console.error('Failed to fetch settings:', e)
         }
         setLoading(false)
     }
 
     const handleSaveOCR = async () => {
         setSaving(true)
-        const updates = [
-            { key: 'ocr_url', value: ocrConfig.url, updated_at: new Date().toISOString() },
-            { key: 'ocr_token', value: ocrConfig.token, updated_at: new Date().toISOString() }
-        ]
-        const { error } = await supabase.from('system_settings').upsert(updates)
-        if (error) setMessage({ type: 'error', text: 'OCR 保存失败: ' + error.message })
-        else setMessage({ type: 'success', text: 'OCR 配置已保存' })
+        try {
+            await apiSaveSettings([
+                { key: 'ocr_url', value: ocrConfig.url },
+                { key: 'ocr_token', value: ocrConfig.token }
+            ])
+            setMessage({ type: 'success', text: 'OCR 配置已保存' })
+        } catch (e: any) {
+            setMessage({ type: 'error', text: 'OCR 保存失败: ' + e.message })
+        }
         setSaving(false)
     }
 
     const handleActivateProvider = async (providerId: string) => {
         setSaving(true)
-        const { error } = await supabase.from('system_settings').upsert({
-            key: 'ai_provider',
-            value: providerId,
-            updated_at: new Date().toISOString()
-        })
-
-        if (!error) {
+        try {
+            await apiSaveSettings([{ key: 'ai_provider', value: providerId }])
             setActiveProvider(providerId)
-            // Also sync legacy fields for backward compatibility if needed? 
-            // Ideally we stop using legacy fields in API.
-            // But for now, let's just save the active pointer.
             setMessage({ type: 'success', text: `已切换至 ${AI_PROVIDERS.find(p => p.id === providerId)?.name}` })
-        } else {
-            setMessage({ type: 'error', text: '切换失败' })
+        } catch (e: any) {
+            setMessage({ type: 'error', text: '切换失败: ' + e.message })
         }
         setSaving(false)
     }
@@ -152,20 +139,17 @@ export default function AdminSettingsPage() {
         setSaving(true)
 
         const newConfigs = { ...providerConfigs, [editingProvider]: editForm }
-        setProviderConfigs(newConfigs)
 
-        // Save to DB
-        const { error } = await supabase.from('system_settings').upsert({
-            key: `ai_config_${editingProvider}`,
-            value: JSON.stringify(editForm),
-            updated_at: new Date().toISOString()
-        })
-
-        if (!error) {
+        try {
+            await apiSaveSettings([{
+                key: `ai_config_${editingProvider}`,
+                value: JSON.stringify(editForm)
+            }])
+            setProviderConfigs(newConfigs)
             setMessage({ type: 'success', text: '配置已保存' })
             setEditingProvider(null)
-        } else {
-            setMessage({ type: 'error', text: '保存失败: ' + error.message })
+        } catch (e: any) {
+            setMessage({ type: 'error', text: '保存失败: ' + e.message })
         }
         setSaving(false)
     }
