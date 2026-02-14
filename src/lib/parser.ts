@@ -85,15 +85,13 @@ function extractTargetSections(text: string): string {
 
     // 2. Find End (Start of Next Section)
     const endPatterns = [
-        /Part\s*3\s*Reading/i,
-        /III\.\s*Reading/i,
-        /Reading\s*Comprehension/i,
-        /Writing/i,
-        /Read\s*the\s*passage/i,     // Catch "Read the passage"
-        /Cloze/i,                    // Catch Cloze tests
-        /Complete\s*the\s*passage/i, // Catch "Complete the passage"
-        /Short\s*passage/i,           // Catch "Short passage"
-        /首字母/                     // Catch "First letter" indicator in header
+        /(?:^|\n)\s*(?:Part\s*|III\.|IV\.)?\s*Reading/i,
+        /(?:^|\n)\s*(?:Part\s*|III\.|IV\.|[A-Z]\.)?\s*Writing/i, // Anchored Writing
+        /(?:^|\n)\s*(?:[A-Z]\.\s+)?Read\s*the\s*passage/i,     // Catch "Read the passage"
+        /(?:^|\n)\s*(?:[A-Z]\.\s+)?Cloze/i,                    // Catch Cloze tests
+        /(?:^|\n)\s*Complete\s*the\s*passage/i, // Catch "Complete the passage"
+        /(?:^|\n)\s*Short\s*passage/i,           // Catch "Short passage"
+        /(?:^|\n)\s*首字母/                     // Catch "First letter" indicator in header
     ];
 
     let endIndex = text.length;
