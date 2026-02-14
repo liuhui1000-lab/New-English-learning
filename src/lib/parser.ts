@@ -483,7 +483,10 @@ function splitQuestions(text: string): string[] {
     // Improved Header Regex:
     // Catch "V. Complete...", "C. Read...", "Section B", "Listen to..."
     // Relaxed to allow [A-Z]. Start if followed by instruction keywords or standard section names
-    const sectionHeaderRegex = /(?:^|\n)\s*(?:Part\s+[A-Z]|Section\s+[A-Z]|[IVX]+\.\s+.*|[A-Z]\.\s+(?:Read|Complete|Fill|Choose|Section|Listen).*?)(?:\n|$)/gi;
+    // Improved Header Regex:
+    // Catch "V. Complete...", "C. Read...", "Section B", "Listen to..."
+    // Added support for markdown style headers (###, ##) which might appear from mammoth conversion
+    const sectionHeaderRegex = /(?:^|\n)\s*(?:#{2,}\s*)?(?:Part\s+[A-Z]|Section\s+[A-Z]|[IVX]+\.\s+.*|[A-Z]\.\s+(?:Read|Complete|Fill|Choose|Section|Listen).*?)(?:\n|$)/gi;
 
     // Improved Regex for Questions:
     // 1. Matches Start of String (^), Newline (\n), OR Wide Spaces (\s{3,})
