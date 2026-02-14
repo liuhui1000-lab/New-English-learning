@@ -52,10 +52,19 @@ export default function AdminSettingsPage() {
         fetchSettings()
     }, [])
 
-    // Helper: Get auth headers with access token
+    // Helper: Get auth headers with FRESH access token
     const getAuthHeaders = async () => {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.access_token) throw new Error('未登录')
+        // Force token refresh to avoid expired token errors
+        const { data: { session }, error } = await supabase.auth.refreshSession()
+        if (error || !session?.access_token) {
+            // Fallback: try getSession in case refresh fails but session is still valid
+            const { data: fallback } = await supabase.auth.getSession()
+            if (!fallback.session?.access_token) throw new Error('未登录')
+            return {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${fallback.session.access_token}`
+            }
+        }
         return {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${session.access_token}`
