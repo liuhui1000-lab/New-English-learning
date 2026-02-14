@@ -112,7 +112,7 @@ export default function AdminSettingsPage() {
             { key: 'ocr_token', value: ocrConfig.token, updated_at: new Date().toISOString() }
         ]
         const { error } = await supabase.from('system_settings').upsert(updates)
-        if (error) setMessage({ type: 'error', text: 'OCR 保存失败' })
+        if (error) setMessage({ type: 'error', text: 'OCR 保存失败: ' + error.message })
         else setMessage({ type: 'success', text: 'OCR 配置已保存' })
         setSaving(false)
     }
@@ -198,8 +198,8 @@ export default function AdminSettingsPage() {
 
                         return (
                             <div key={provider.id} className={`relative p-5 rounded-xl border-2 transition-all ${isActive
-                                    ? 'border-indigo-500 bg-indigo-50/30'
-                                    : 'border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm'
+                                ? 'border-indigo-500 bg-indigo-50/30'
+                                : 'border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm'
                                 }`}>
                                 {/* Header */}
                                 <div className="flex justify-between items-start mb-3">
