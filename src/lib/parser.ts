@@ -358,7 +358,7 @@ function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
     const filteredQuestions = rawItems.filter(q => {
         // 1. Must have a blank or options
         const hasBlank = /_+|\(\s{3,}\)|\[\s{3,}\]/.test(q);
-        const hasOptions = /A\..*B\./.test(q);
+        const hasOptions = /[A-D][\)\.].*[A-D][\)\.]/.test(q);
 
         if (!hasBlank && !hasOptions) return false;
 
