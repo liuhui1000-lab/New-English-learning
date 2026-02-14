@@ -70,7 +70,8 @@ function extractTargetSections(text: string): string {
         /Part\s*2\s*Grammar\s*and\s*Vocabulary/i,
         /II\.\s*Grammar\s*and\s*Vocabulary/i,
         /Section\s*B\s*Vocabulary/i,
-        /Grammar\s*and\s*Vocabulary/i
+        /Grammar\s*and\s*Vocabulary/i,
+        /Choose\s*the\s*best\s*answer/i // Fallback for when "Part II" is missing
     ];
 
     let startIndex = -1;
@@ -484,7 +485,8 @@ function splitQuestions(text: string): string[] {
     // Improved Header Regex:
     // Catch "V. Complete...", "C. Read...", "Section B", "Listen to..."
     // Added support for markdown style headers (###, ##) which might appear from mammoth conversion
-    const sectionHeaderRegex = /(?:^|\n)\s*(?:#{2,}\s*)?(?:Part\s+[A-Z]|Section\s+[A-Z]|[IVX]+\.\s+.*|[A-Z]\.\s+(?:Read|Complete|Fill|Choose|Section|Listen).*?)(?:\n|$)/gi;
+    // Added support for "Choose the best answer" without prefix
+    const sectionHeaderRegex = /(?:^|\n)\s*(?:#{2,}\s*)?(?:Part\s+[A-Z]|Section\s+[A-Z]|[IVX]+\.\s+.*|[A-Z]\.\s+(?:Read|Complete|Fill|Choose|Section|Listen).*?|Choose\s+the\s+best\s+answer.*?)(?:\n|$)/gi;
 
     // Improved Regex for Questions:
     // 1. Matches Start of String (^), Newline (\n), OR Wide Spaces (\s{3,})
