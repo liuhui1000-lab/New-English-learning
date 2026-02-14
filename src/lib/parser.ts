@@ -335,7 +335,7 @@ function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
 
 // ... Shared Helpers ...
 
-async function extractText(file: File, onProgress?: (msg: string) => void): Promise<string> {
+async function extractText(file: File, onProgress?: (msg: string) => void, skipOCR: boolean = false): Promise<string> {
     if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
         if (onProgress) onProgress("正在读取 Word 文档...");
         const arrayBuffer = await file.arrayBuffer();
@@ -386,7 +386,8 @@ async function extractText(file: File, onProgress?: (msg: string) => void): Prom
                 const pageText = items.map((item) => item.str).join(" ");
 
                 // Improved OCR Trigger: If text is empty OR very short/garbage (likely scanned with few artifacts)
-                if (/\{#\{.*?\}#\}/.test(pageText) || pageText.trim().length < 50) { // Reduced threshold slightly
+                // BUT ONLY IF NOT SKIPPING OCR
+                if (!skipOCR && (/\{#\{.*?\}#\}/.test(pageText) || pageText.trim().length < 50)) { // Reduced threshold slightly
                     console.warn(`Page ${i} text length ${pageText.trim().length}, switching to OCR...`);
                     useOCR = true;
                     fullText = "";
@@ -395,7 +396,7 @@ async function extractText(file: File, onProgress?: (msg: string) => void): Prom
                 fullText += pageText + "\n";
             }
 
-            if (useOCR) {
+            if (useOCR && !skipOCR) {
                 if (onProgress) onProgress(`检测到扫描件，切换至 OCR 模式 (较慢)...`);
                 for (let i = 1; i <= totalPages; i++) {
                     if (onProgress) onProgress(`正在 OCR 识别第 ${i}/${totalPages} 页 (此步骤最耗时)...`);
