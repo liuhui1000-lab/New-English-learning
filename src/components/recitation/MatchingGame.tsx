@@ -37,6 +37,9 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
     // Feedback State
     const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null)
     const [shaking, setShaking] = useState<string | null>(null) // ID of item to shake
+    // Lock state for penalty phase
+    const [isLocked, setIsLocked] = useState(false)
+    const [teachingIds, setTeachingIds] = useState<string[]>([])
 
     useEffect(() => {
         if (!currentGroup) return
@@ -121,17 +124,34 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
             }
         } else {
             // FAIL
-            setShaking(`${w.id},${d.id}`)
             setFeedback('wrong')
 
-            // Trigger Penalty
+            // 1. Trigger Penalty (Queue for Dictation)
             onError(w.matchId)
 
+            // 2. TEACH MODE: Find the CORRECT partner for the WORD (Left Col)
+            // We want to highlight the user's selected WORD and its TRUE definition
+            const correctDefId = rightCol.find(item => item.matchId === w.matchId)?.id
+
+            // Highlight them (Blue + Green pair) 
+            // We'll use a special "teaching" state
+            setTeachingIds([w.id, correctDefId || ''])
+
+            // 3. Lock Board
+            setIsLocked(true)
+
+            // 4. Wait, then Shuffle
             setTimeout(() => {
-                setShaking(null)
-                setSelections({})
                 setFeedback(null)
-            }, 800)
+                setTeachingIds([])
+                setSelections({})
+
+                // Shuffle both columns to force re-reading
+                setLeftCol(prev => shuffle(prev))
+                setRightCol(prev => shuffle(prev))
+
+                setIsLocked(false)
+            }, 2500) // 2.5s duration to study the correct pair
         }
     }
 
@@ -175,7 +195,8 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
                             selected={selections.word?.id === item.id}
                             matched={completedCardIds.has(item.id)}
                             shake={shaking?.includes(item.id)}
-                            onClick={() => onCardClick(item, 'word')}
+                            isTeaching={teachingIds.includes(item.id)}
+                            onClick={() => !isLocked && onCardClick(item, 'word')}
                             color="bg-blue-100 border-blue-300 text-blue-800 font-mono text-lg"
                         />
                     ))}
@@ -191,7 +212,8 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
                             selected={selections.def?.id === item.id}
                             matched={completedCardIds.has(item.id)}
                             shake={shaking?.includes(item.id)}
-                            onClick={() => onCardClick(item, 'def')}
+                            isTeaching={teachingIds.includes(item.id)}
+                            onClick={() => !isLocked && onCardClick(item, 'def')}
                             color="bg-green-100 border-green-300 text-green-800 font-medium"
                         />
                     ))}
@@ -225,7 +247,7 @@ export default function MatchingGame({ groups, onComplete, onError }: MatchingGa
     )
 }
 
-function Card({ item, selected, matched, shake, onClick, color }: any) {
+function Card({ item, selected, matched, shake, isTeaching, onClick, color }: any) {
     if (matched) {
         return <div className="h-16 w-full opacity-0" /> // Placeholder to keep grid layout
     }
@@ -240,10 +262,14 @@ function Card({ item, selected, matched, shake, onClick, color }: any) {
                 h-16 flex items-center justify-center p-2 rounded-xl border-b-4 cursor-pointer shadow-sm
                 transition-all transform hover:-translate-y-1 hover:shadow-md
                 ${selected ? 'ring-4 ring-yellow-400 scale-105 z-10' : ''}
-                ${color}
+                ${isTeaching ? 'ring-4 ring-orange-500 bg-orange-100 scale-105 z-20 !border-orange-400' : ''}
+                ${!isTeaching && !selected ? color : ''}
             `}
         >
-            <span className="text-center font-bold truncate w-full">{item.text}</span>
+            <span className="text-center font-bold truncate w-full">
+                {isTeaching && "👈 "}
+                {item.text}
+            </span>
         </motion.div>
     )
 }
