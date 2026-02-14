@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 import { ImportHistory } from "@/types"
 import { Trash, Calendar, FileText, AlertTriangle } from "lucide-react"
+import Link from "next/link"
 
 export default function ImportHistoryPage() {
     const [history, setHistory] = useState<ImportHistory[]>([])
