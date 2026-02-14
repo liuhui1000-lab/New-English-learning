@@ -569,19 +569,63 @@ function classifyQuestion(content: string): ParsedQuestion {
     }
     // 4. Grammar (Default or explicit options)
     // If it mentions A) B) C) etc, it's definitely grammar.
+    // BUT we want to distinguish Collocation (Prepositions/Phrases) from Pure Grammar.
     else if (/[A-D][\)\.]/.test(content)) {
-        type = 'grammar';
+        if (isCollocationOptions(content)) {
+            type = 'collocation';
+        } else {
+            type = 'grammar';
+        }
     }
 
-
-
     return {
-        id: crypto.randomUUID(),
+        id: crypto.randomUUID(), // Use crypto for unique ID
         content: content,
         type: type,
         answer: '',
         tags: tags
     };
+}
+
+// Helper: Check if options suggest a Collocation/Preposition question
+function isCollocationOptions(content: string): boolean {
+    // Extract options part (heuristic: from first "A." or "A)" or "a." or "a)" to end)
+    const optionsMatch = content.match(/(?:[Aa][\.\)]|[Aa]\s)[\s\S]*$/);
+    if (!optionsMatch) return false;
+
+    const optionsText = optionsMatch[0].toLowerCase();
+
+    // Split into parts based on A/B/C/D markers (case insensitive for safety, though text is lowercased)
+    // Regex: Split by ANY expected option marker
+    const parts = optionsText.split(/[a-dA-D][\.\)]\s+/).map(p => p.trim()).filter(p => p);
+
+    if (parts.length < 2) return false;
+
+    // List of common prepositions/particles used in collocations
+    const prepositions = new Set([
+        "in", "on", "at", "for", "of", "by", "with", "about",
+        "after", "before", "up", "down", "out", "off", "to", "from", "into", "onto",
+        "over", "under", "above", "below", "through", "across", "along", "since", "until",
+        "between", "among", "without", "within", "during", "towards", "inside", "outside",
+        "near", "past", "round", "around", "behind", "beneath", "beside", "beyond"
+    ]);
+
+    let prepCount = 0;
+
+    parts.forEach(p => {
+        // Remove trailing option markers if any (e.g. "at B.") -> "at"
+        const clean = p.replace(/[A-D][\.\)]/g, '').trim();
+        // Check if the *entire* content is a preposition, or very short phrase
+        // Allow leading/trailing punctuation
+        const w = clean.replace(/[^a-z]/g, '');
+
+        if (prepositions.has(w)) {
+            prepCount++;
+        }
+    });
+
+    // If 2 or more options are prepositions, it's likely a collocation question
+    return prepCount >= 2;
 }
 
 // ... OCR Helpers ...
