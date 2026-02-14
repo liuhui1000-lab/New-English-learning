@@ -238,27 +238,28 @@ export default function ImportPage() {
                     continue;
                 }
 
-                const data = await res.json()
-                if (data.results) {
-                    // Update matching questions
-                    data.results.forEach((r: any, idx: number) => {
-                        const targetIndex = i + idx
-                        if (newQuestions[targetIndex]) {
-                            const q = newQuestions[targetIndex]
-                            const newTags = new Set(q.tags)
-                            if (r.topic) newTags.add(`Topic:${r.topic}`)
-                            if (r.difficulty) newTags.add(`Diff:${r.difficulty}`)
-                            if (r.key_point) newTags.add(`Point:${r.key_point}`)
+                const { results } = await res.json()
 
-                            newQuestions[targetIndex] = {
-                                ...q,
-                                tags: Array.from(newTags),
-                                // Optional: if AI provides better answer?
-                                // answer: r.answer || q.answer 
-                            }
+                // Merge AI results back to questions for the current batch
+                results.forEach((r: any, idx: number) => {
+                    const targetIndex = i + idx
+                    if (newQuestions[targetIndex]) {
+                        const q = newQuestions[targetIndex]
+                        // Clean up and merge tags
+                        const newTags = new Set(q.tags)
+                        if (r.topic) newTags.add(`Topic:${r.topic}`)
+                        if (r.key_point) newTags.add(`Point:${r.key_point}`)
+                        if (r.difficulty) newTags.add(`Diff:${r.difficulty}`)
+
+                        newQuestions[targetIndex] = {
+                            ...q,
+                            tags: Array.from(newTags),
+                            // Auto-fill answer if empty
+                            answer: (!q.answer && r.answer) ? r.answer : q.answer
                         }
-                    })
-                }
+                    } // Close if check
+                }) // Close forEach
+
                 // Small delay to be nice to API
                 await new Promise(resolve => setTimeout(resolve, 500))
             }
@@ -453,37 +454,74 @@ export default function ImportPage() {
                                                 }}
                                             />
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap align-top">
-                                            <select
-                                                className="block w-full text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                                                value={q.type}
-                                                onChange={(e) => handleTypeChange(q.id, e.target.value as QuestionType)}
-                                            >
-                                                <option value="vocabulary">词汇 (背诵)</option>
-                                                <option value="word_transformation">词汇转换</option>
-                                                <option value="sentence_transformation">句型转换</option>
-                                                <option value="collocation">固定搭配</option>
-                                                <option value="grammar">语法选择</option>
-                                            </select>
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col space-y-2">
+                                                <select
+                                                    value={q.type}
+                                                    onChange={(e) => {
+                                                        const newQ = [...questions];
+                                                        newQ[idx].type = e.target.value as QuestionType;
+                                                        setQuestions(newQ);
+                                                    }}
+                                                    className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                                                >
+                                                    <option value="grammar">语法选择</option>
+                                                    <option value="word_transformation">词汇转换</option>
+                                                    <option value="sentence_transformation">句型转换</option>
+                                                    <option value="collocation">固定搭配</option>
+                                                    <option value="vocabulary">词汇背诵</option>
+                                                </select>
+                                                <span className={`px-2 py-1 text-xs rounded-full inline-block text-center
+                                                ${q.type === 'grammar' ? 'bg-blue-100 text-blue-800' :
+                                                        q.type === 'word_transformation' ? 'bg-purple-100 text-purple-800' :
+                                                            q.type === 'sentence_transformation' ? 'bg-orange-100 text-orange-800' :
+                                                                'bg-gray-100 text-gray-800'}`}>
+                                                    {q.type}
+                                                </span>
+                                            </div>
                                         </td>
-                                        <td className="px-6 py-4 align-top">
-                                            <input
-                                                type="text"
-                                                className="w-full text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                                                placeholder="Tags..."
-                                                value={q.tags.join(", ")}
-                                                onChange={(e) => {
-                                                    const newQ = [...questions];
-                                                    newQ[idx].tags = e.target.value.split(",").map(t => t.trim()).filter(Boolean);
-                                                    setQuestions(newQ);
-                                                }}
-                                            />
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-wrap gap-1">
+                                                {q.tags.map((tag, tIdx) => (
+                                                    <span key={tIdx} className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-md border border-gray-200 flex items-center">
+                                                        {tag}
+                                                        <button
+                                                            onClick={() => {
+                                                                const newQ = [...questions];
+                                                                newQ[idx].tags = newQ[idx].tags.filter((_, i) => i !== tIdx);
+                                                                setQuestions(newQ);
+                                                            }}
+                                                            className="ml-1 text-gray-400 hover:text-red-500"
+                                                        >
+                                                            &times;
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                                <input
+                                                    type="text"
+                                                    placeholder="+标签"
+                                                    className="w-16 text-xs border-none bg-transparent focus:ring-0 text-gray-500 placeholder-gray-300"
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            const val = e.currentTarget.value.trim();
+                                                            if (val) {
+                                                                const newQ = [...questions];
+                                                                if (!newQ[idx].tags.includes(val)) {
+                                                                    newQ[idx].tags.push(val);
+                                                                    setQuestions(newQ);
+                                                                }
+                                                                e.currentTarget.value = '';
+                                                            }
+                                                        }
+                                                    }}
+                                                />
+                                            </div>
                                         </td>
-                                        <td className="px-6 py-4 align-top">
+                                        <td className="px-6 py-4">
                                             <textarea
-                                                className="w-full text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                                                placeholder="Answer..."
-                                                value={q.answer}
+                                                className="w-full text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 font-mono h-24"
+                                                placeholder="参考答案..."
+                                                value={q.answer || ''}
                                                 onChange={(e) => {
                                                     const newQ = [...questions];
                                                     newQ[idx].answer = e.target.value;

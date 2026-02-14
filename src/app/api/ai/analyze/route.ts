@@ -88,6 +88,7 @@ Return ONLY valid JSON array. Each object should have:
 - "topic": (string) e.g., "定语从句", "现在完成时", "固定搭配", "词义辨析"
 - "difficulty": (int) 1-5
 - "key_point": (string) short explanation of the tested point.
+- "answer": (string) The correct answer or completion. For multiple choice, return the letter (e.g. "A"). For fill-in-the-blank, return the word(s).
 
 Input Questions:
 `
