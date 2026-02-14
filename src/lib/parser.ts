@@ -498,7 +498,7 @@ function splitQuestions(text: string): string[] {
 
     // Insert markers before Section Headers so they become separate chunks
     textToProcess = textToProcess.replace(sectionHeaderRegex, (match) => {
-        return marker + "[[HEADER]]" + match.trim();
+        return marker + "[[HEADER]]" + match.trim() + "\n";
     });
 
     // Insert markers before Questions
