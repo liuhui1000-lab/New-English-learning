@@ -11,6 +11,7 @@ export default function ImportPage() {
     const [questions, setQuestions] = useState<ParsedQuestion[]>([])
     const [isParsing, setIsParsing] = useState(false)
     const [importMode, setImportMode] = useState<ImportMode>('mock_paper') // Default to Mock Paper
+    const [skipOCR, setSkipOCR] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
     const [importStatus, setImportStatus] = useState<string | null>(null)
 
@@ -34,7 +35,7 @@ export default function ImportPage() {
                     setImportStatus(`正在解析第 ${i + 1}/${selectedFiles.length} 个文件: ${file.name}...`)
 
                     try {
-                        const parsed = await parseDocument(file, importMode, (msg) => setImportStatus(msg))
+                        const parsed = await parseDocument(file, importMode, (msg) => setImportStatus(msg), skipOCR)
                         // Add source filename to tags so we know where it came from
                         const tagged = parsed.map(q => ({
                             ...q,
@@ -320,14 +321,30 @@ export default function ImportPage() {
                         className={`cursor-pointer p-4 rounded-lg border-2 transition flex items-center space-x-4
                         ${importMode === 'recitation' ? 'border-green-600 bg-green-50' : 'border-gray-200 hover:border-gray-300'}`}
                     >
-                        <div className={`p-2 rounded-full ${importMode === 'recitation' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                        <div className={`p-2 rounded-full ${importMode === 'recitation' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-500'}`}>
                             <BookOpen className="w-6 h-6" />
                         </div>
                         <div>
-                            <h3 className="font-bold text-gray-900">背诵清单 / 单词表</h3>
-                            <p className="text-sm text-gray-500">智能合并题目与答案。适合导入 Recitation 背诵材料。</p>
+                            <h3 className="font-semibold text-gray-900">单词/句子背诵模式</h3>
+                            <p className="text-sm text-gray-500">解析单词列表或同义句转换 (Recitation)</p>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Config Options */}
+            {!questions.length && !isParsing && (
+                <div className="flex items-center space-x-2 mb-4 bg-yellow-50 p-3 rounded border border-yellow-200">
+                    <input
+                        type="checkbox"
+                        id="skipOCR"
+                        checked={skipOCR}
+                        onChange={(e) => setSkipOCR(e.target.checked)}
+                        className="h-4 w-4 text-indigo-600 rounded"
+                    />
+                    <label htmlFor="skipOCR" className="text-sm text-gray-700 font-medium cursor-pointer">
+                        仅提取文本 (跳过 OCR) <span className="text-gray-500 font-normal">- 处理速度快，但不适用于扫描图片版 PDF。如果你网络很慢且文件不是扫描件，请勾选此项。</span>
+                    </label>
                 </div>
             )}
 

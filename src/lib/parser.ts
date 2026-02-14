@@ -11,8 +11,8 @@ export interface ParsedQuestion {
     tags: string[];
 }
 
-export async function parseDocument(file: File, mode: ImportMode = 'mock_paper', onProgress?: (msg: string) => void): Promise<ParsedQuestion[]> {
-    const text = await extractText(file, onProgress);
+export async function parseDocument(file: File, mode: ImportMode = 'mock_paper', onProgress?: (msg: string) => void, skipOCR: boolean = false): Promise<ParsedQuestion[]> {
+    const text = await extractText(file, onProgress, skipOCR);
 
     if (onProgress) onProgress("正在解析文本结构...");
 
