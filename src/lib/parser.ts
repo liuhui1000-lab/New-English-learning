@@ -86,6 +86,7 @@ function extractTargetSections(text: string): string {
 
     // 2. Find End (Start of Next Section)
     const endPatterns = [
+        /(?:^|\n)\s*(?:Part\s*|III\.|IV\.)?\s*Reading\s*and\s*Writing/i, // Explicitly discard "Reading and Writing"
         /(?:^|\n)\s*(?:Part\s*|III\.|IV\.)?\s*Reading/i,
         /(?:^|\n)\s*(?:Part\s*|III\.|IV\.|[A-Z]\.)?\s*Writing/i, // Anchored Writing
         /(?:^|\n)\s*(?:[A-Z]\.\s+)?Read\s*the\s*passage/i,     // Catch "Read the passage"
