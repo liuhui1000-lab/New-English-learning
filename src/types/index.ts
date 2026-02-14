@@ -43,3 +43,24 @@ export interface ImportHistory {
     question_count: number;
     status: 'success' | 'failed';
 }
+// ... (Existing types)
+
+export interface QuizResult {
+    id: string;
+    user_id: string;
+    question_id: string;
+    is_correct: boolean;
+    attempt_at: string;
+    source_type: 'recitation' | 'quiz'; // For distinguishing error types
+}
+
+export interface AISettings {
+    provider: 'deepseek' | 'zhipu' | 'openai';
+    apiKey: string;
+    baseUrl?: string;
+    model: string;
+}
+
+export interface AppSettings {
+    ai: AISettings;
+}

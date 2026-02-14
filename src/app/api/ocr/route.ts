@@ -57,6 +57,15 @@ export async function POST(req: NextRequest) {
 
         if (!response.ok) {
             const errText = await response.text();
+
+            // Handle Quota / Rate Limit explicitly
+            if (response.status === 429) {
+                return NextResponse.json({ error: "OCR Quota Exceeded (429). Please try again tomorrow." }, { status: 429 });
+            }
+            if (response.status === 401 || response.status === 403) {
+                return NextResponse.json({ error: "OCR API Key Invalid or expired." }, { status: 401 });
+            }
+
             throw new Error(`Paddle API Error: ${response.status} ${errText.substring(0, 100)}`);
         }
 

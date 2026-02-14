@@ -33,7 +33,9 @@ export async function parseDocument(file: File, mode: ImportMode = 'mock_paper')
                 break;
             }
         }
-        const rawQuestions = splitQuestions(cleanText);
+        let step1 = cleanOCRText(cleanText);
+        let step2 = extractTargetSections(step1);
+        const rawQuestions = splitQuestions(step2);
         return processMockPaperMode(rawQuestions);
     }
     else if (mode === 'recitation') {
@@ -42,6 +44,71 @@ export async function parseDocument(file: File, mode: ImportMode = 'mock_paper')
     }
 
     return [];
+}
+
+// Helper to clean common OCR noise (Headers, Footers, Page Numbers)
+function cleanOCRText(text: string): string {
+    return text
+        .replace(/^\s*\d+\s*$/gm, '') // Remove solitary page numbers on a line
+        .replace(/Page \d+ of \d+/gi, '') // Remove "Page x of y"
+        .replace(/第\s*\d+\s*页/g, '') // Remove Chinese page num
+        .replace(/_{5,}/g, '______') // Normalize long underlines
+        .replace(/…{3,}/g, '______') // Normalize ellipses to blanks
+        .replace(/\n\s*\n/g, '\n'); // Remove excessive blank lines
+}
+
+// Helper: Extract ONLY the "Grammar and Vocabulary" section if possible
+function extractTargetSections(text: string): string {
+    // Shanghai Paper Pattern: "II. Grammar and Vocabulary" ... "III. Reading and Writing"
+    // Also common: "Part 2 Vocabulary and Grammar"
+    // We look for the START of Grammar and END before Reading/Writing
+
+    // 1. Find Start
+    const startPatterns = [
+        /Part\s*2\s*Grammar\s*and\s*Vocabulary/i,
+        /II\.\s*Grammar\s*and\s*Vocabulary/i,
+        /Section\s*B\s*Vocabulary/i,
+        /Grammar\s*and\s*Vocabulary/i
+    ];
+
+    let startIndex = -1;
+    for (const p of startPatterns) {
+        const match = text.search(p);
+        if (match !== -1) {
+            startIndex = match;
+            console.log(`Found Section Start at index ${startIndex}: ${p}`);
+            break;
+        }
+    }
+
+    // 2. Find End (Start of Next Section)
+    const endPatterns = [
+        /Part\s*3\s*Reading/i,
+        /III\.\s*Reading/i,
+        /Reading\s*Comprehension/i,
+        /Writing/i
+    ];
+
+    let endIndex = text.length;
+    // Search for end pattern AFTER start index
+    const searchContext = startIndex !== -1 ? text.substring(startIndex) : text;
+
+    for (const p of endPatterns) {
+        const match = searchContext.search(p);
+        if (match !== -1) {
+            endIndex = (startIndex !== -1 ? startIndex : 0) + match;
+            console.log(`Found Section End at index ${endIndex}: ${p}`);
+            break;
+        }
+    }
+
+    if (startIndex !== -1) {
+        return text.substring(startIndex, endIndex);
+    }
+
+    // If no distinct section found, return full text (and rely on question filtering)
+    console.warn("No 'Grammar/Vocabulary' section header found, parsing full text.");
+    return text;
 }
 
 function processRecitationMode(fullText: string): ParsedQuestion[] {
@@ -290,8 +357,9 @@ async function extractText(file: File): Promise<string> {
             const items: any[] = textContent.items as any[];
             const pageText = items.map((item) => item.str).join(" ");
 
-            if (/\{#\{.*?\}#\}/.test(pageText) || pageText.trim().length === 0) {
-                console.warn(`Page ${i} seems obfuscated, switching to OCR...`);
+            // Improved OCR Trigger: If text is empty OR very short/garbage (likely scanned with few artifacts)
+            if (/\{#\{.*?\}#\}/.test(pageText) || pageText.trim().length < 100) {
+                console.warn(`Page ${i} text length ${pageText.trim().length}, switching to OCR...`);
                 useOCR = true;
                 fullText = "";
                 break;
@@ -317,7 +385,11 @@ async function extractText(file: File): Promise<string> {
 }
 
 function splitQuestions(text: string): string[] {
-    const splitRegex = /(\n\s*(?:\(?\d+[\.\)、]\s*|\d+\s+))/g;
+    // Improved Regex for OCR:
+    // 1. Matches "\n" + optional whitespace
+    // 2. Format A: (Optional bracket) + Digits + (Optional bracket) + (Dot/Comma/Chinese Dot/Space)
+    // 3. Format B: Digits + Double Space (to avoid matching years like 2024 or scores)
+    const splitRegex = /(\n\s*(?:(?:[\(（\[]?\d+[）\)\]]?[\.\,，、])|(?:\d+\s{2,})))/g;
     const parts = text.split(splitRegex);
     const questions: string[] = [];
     let currentQuestion = "";

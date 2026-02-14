@@ -7,7 +7,7 @@ import { UploadCloud, Save, Trash, AlertTriangle, FileText, Check, BookOpen, Key
 import { QuestionType } from "@/types"
 
 export default function ImportPage() {
-    const [file, setFile] = useState<File | null>(null)
+    const [files, setFiles] = useState<File[]>([])
     const [questions, setQuestions] = useState<ParsedQuestion[]>([])
     const [isParsing, setIsParsing] = useState(false)
     const [importMode, setImportMode] = useState<ImportMode>('mock_paper') // Default to Mock Paper
@@ -15,20 +15,90 @@ export default function ImportPage() {
     const [importStatus, setImportStatus] = useState<string | null>(null)
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const selected = e.target.files?.[0]
-        if (selected) {
-            setFile(selected)
+        const selectedFiles = Array.from(e.target.files || [])
+        if (selectedFiles.length > 0) {
+
+            if (selectedFiles.length > 5) {
+                if (!confirm(`您选择了 ${selectedFiles.length} 个文件。建议单次上传 3-5 个以避免处理超时。\n是否继续？`)) return;
+            }
+
+            setFiles(selectedFiles)
             setIsParsing(true)
+            setQuestions([]) // Clear previous results? Or append? Let's clear for new batch.
+
             try {
-                // Pass the selected import mode to the parser
-                const parsed = await parseDocument(selected, importMode)
-                setQuestions(parsed)
+                let allQuestions: ParsedQuestion[] = []
+
+                for (let i = 0; i < selectedFiles.length; i++) {
+                    const file = selectedFiles[i]
+                    setImportStatus(`正在解析第 ${i + 1}/${selectedFiles.length} 个文件: ${file.name}...`)
+
+                    try {
+                        const parsed = await parseDocument(file, importMode)
+                        // Add source filename to tags so we know where it came from
+                        const tagged = parsed.map(q => ({
+                            ...q,
+                            tags: [...q.tags, `Source:${file.name}`]
+                        }))
+                        allQuestions = [...allQuestions, ...tagged]
+                    } catch (err: any) {
+                        console.error(`Failed to parse ${file.name}`, err)
+                        alert(`文件 ${file.name} 解析失败: ${err.message}\n已跳过。`)
+                    }
+                }
+
+                setQuestions(allQuestions)
+                setImportStatus(null)
+
             } catch (err: any) {
-                alert("解析失败: " + err.message)
+                alert("批量解析中断: " + err.message)
             } finally {
                 setIsParsing(false)
+                setImportStatus(null)
             }
         }
+    }
+
+    // ... (rest of methods)
+
+    // ... (inside render)
+    {/* Upload Area */ }
+    {
+        !questions.length && (
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:bg-gray-50 transition relative">
+                <input
+                    type="file"
+                    multiple
+                    accept=".docx,.pdf"
+                    onChange={handleFileChange}
+                    className="hidden"
+                    id="file-upload"
+                />
+                <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
+                    <UploadCloud className="h-12 w-12 text-gray-400 mb-4" />
+                    <span className="text-indigo-600 font-medium hover:underline">
+                        点击上传文件 (支持批量)
+                    </span>
+                    <span className="text-gray-500 mt-2 text-sm">
+                        {files.length > 0 ? `已选 ${files.length} 个文件` : "或将文件拖拽至此"}
+                    </span>
+                    <p className="text-xs text-orange-500 mt-4 border border-orange-200 bg-orange-50 px-3 py-1 rounded-full">
+                        💡 建议单次上传 3-5 份试卷，避免 OCR/AI 处理超时
+                    </p>
+                </label>
+            </div>
+        )
+    }
+
+    {/* Parsing Status */ }
+    {
+        isParsing && (
+            <div className="text-center text-gray-600 py-10">
+                <div className="inline-block animate-spin h-8 w-8 border-4 border-indigo-500 border-t-transparent rounded-full mr-2"></div>
+                <p className="mt-2 text-lg font-medium">{importStatus || "正在智能解析文档..."}</p>
+                <p className="text-sm text-gray-400">PDF OCR 可能需要较长时间，请勿关闭页面</p>
+            </div>
+        )
     }
 
     const handleTypeChange = (id: string, newType: QuestionType) => {
@@ -40,7 +110,7 @@ export default function ImportPage() {
     }
 
     const handleSave = async () => {
-        if (!file || questions.length === 0) return
+        if (files.length === 0 || questions.length === 0) return
         setIsSaving(true)
         setImportStatus("正在创建导入记录...")
 
@@ -49,40 +119,59 @@ export default function ImportPage() {
             const { data: { user } } = await supabase.auth.getUser()
             if (!user) throw new Error("未登录")
 
-            // 2. Create Import History
-            const { data: history, error: historyError } = await supabase
-                .from('import_history')
-                .insert({
-                    filename: file.name,
-                    question_count: questions.length,
-                    uploaded_by: user.id
-                })
-                .select()
-                .single()
+            // 2. Group Questions by Source File
+            // Using Map to group
+            const groups = new Map<string, ParsedQuestion[]>()
+            const defaultFilename = files.length === 1 ? files[0].name : `Batch Import ${new Date().toLocaleString()}`
 
-            if (historyError) throw historyError
+            questions.forEach(q => {
+                // Find source tag
+                const sourceTag = q.tags.find(t => t.startsWith('Source:'))
+                const filename = sourceTag ? sourceTag.replace('Source:', '') : defaultFilename
 
-            // 3. Process Questions (Deduplication Check)
-            setImportStatus("正在保存题目 (自动去重)...")
+                if (!groups.has(filename)) groups.set(filename, [])
+                groups.get(filename)?.push(q)
+            })
 
-            const qData = questions.map(q => ({
-                type: q.type,
-                content: q.content,
-                answer: q.answer,
-                tags: q.tags,
-                import_history_id: history.id,
-                source_material_id: null,
-                occurrence_count: 1
-            }))
+            // 3. Save each group as separate history
+            let processedCount = 0
+            for (const [filename, groupQs] of groups) {
+                setImportStatus(`归档中: ${filename} ...`)
 
-            const { error: batchError } = await supabase.from('questions').insert(qData)
+                // Create History
+                const { data: history, error: historyError } = await supabase
+                    .from('import_history')
+                    .insert({
+                        filename: filename,
+                        question_count: groupQs.length,
+                        uploaded_by: user.id
+                    })
+                    .select()
+                    .single()
 
-            if (batchError) throw batchError
+                if (historyError) throw historyError
+
+                // Insert Questions
+                const qData = groupQs.map(q => ({
+                    type: q.type,
+                    content: q.content,
+                    answer: q.answer,
+                    tags: q.tags.filter(t => !t.startsWith('Source:')), // Optionally keep or remove source tag? Keep cleanliness.
+                    import_history_id: history.id,
+                    source_material_id: null,
+                    occurrence_count: 1
+                }))
+
+                const { error: batchError } = await supabase.from('questions').insert(qData)
+                if (batchError) throw batchError
+
+                processedCount++
+            }
 
             setImportStatus("Success")
-            alert("导入成功！")
+            alert(`导入成功！共归档 ${processedCount} 个文件，${questions.length} 道题目。`)
             setQuestions([])
-            setFile(null)
+            setFiles([])
 
         } catch (err: any) {
             setImportStatus("Error")
@@ -95,6 +184,92 @@ export default function ImportPage() {
     const handleBatchType = (type: QuestionType) => {
         if (confirm(`确定要将所有题目类型设置为 "${type}" 吗？`)) {
             setQuestions(questions.map(q => ({ ...q, type })))
+        }
+    }
+
+    const [isAnalyzing, setIsAnalyzing] = useState(false)
+
+    // ... (existing handlers)
+
+    const handleAIAnalyze = async () => {
+        if (questions.length === 0) return
+        if (!confirm(`即将发送 ${questions.length} 道题目给 AI 进行分析。\n这可能需要几十秒，请保持页面开启。`)) return
+
+        setIsAnalyzing(true)
+        setImportStatus("AI 分析中...")
+
+        try {
+            // Batch process to avoid Vercel timeouts (10s limit usually) and Token limits
+            const BATCH_SIZE = 5
+            const newQuestions = [...questions]
+
+            for (let i = 0; i < newQuestions.length; i += BATCH_SIZE) {
+                const batch = newQuestions.slice(i, i + BATCH_SIZE)
+                // Only analyze if content is long enough (skip single words)
+                // content array
+                const items = batch.map(q => q.content)
+
+                setImportStatus(`AI 分析中... (${i + 1}/${questions.length})`)
+
+                const res = await fetch('/api/ai/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items, mode: 'tagging' })
+                })
+
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({ error: res.statusText }));
+                    console.error(`Batch ${i} failed`, errData);
+
+                    if (res.status === 429) {
+                        alert(`AI 额度耗尽或请求过快 (Code 429)。\n已暂停。请稍后重试。`);
+                        break;
+                    }
+                    if (res.status === 401) {
+                        alert(`AI API Key 无效 (Code 401)。请检查设置。\n已暂停。`);
+                        break;
+                    }
+
+                    // For other errors (500, etc), maybe ask user to continue?
+                    if (!confirm(`批次 ${i / BATCH_SIZE + 1} 失败: ${errData.error}\n是否跳过此批次继续？`)) {
+                        break;
+                    }
+                    continue;
+                }
+
+                const data = await res.json()
+                if (data.results) {
+                    // Update matching questions
+                    data.results.forEach((r: any, idx: number) => {
+                        const targetIndex = i + idx
+                        if (newQuestions[targetIndex]) {
+                            const q = newQuestions[targetIndex]
+                            const newTags = new Set(q.tags)
+                            if (r.topic) newTags.add(`Topic:${r.topic}`)
+                            if (r.difficulty) newTags.add(`Diff:${r.difficulty}`)
+                            if (r.key_point) newTags.add(`Point:${r.key_point}`)
+
+                            newQuestions[targetIndex] = {
+                                ...q,
+                                tags: Array.from(newTags),
+                                // Optional: if AI provides better answer?
+                                // answer: r.answer || q.answer 
+                            }
+                        }
+                    })
+                }
+                // Small delay to be nice to API
+                await new Promise(resolve => setTimeout(resolve, 500))
+            }
+
+            setQuestions(newQuestions)
+            alert("AI 分析完成！已自动添加标签。")
+
+        } catch (err: any) {
+            alert("AI 分析中断: " + err.message)
+        } finally {
+            setIsAnalyzing(false)
+            setImportStatus(null)
         }
     }
 
@@ -118,7 +293,7 @@ export default function ImportPage() {
                         查看历史记录 &rarr;
                     </a>
                     <div className="text-sm text-gray-500">
-                        支持 .docx / .pdf
+                        支持 .docx / .pdf (批量)
                     </div>
                 </div>
             </div>
@@ -158,9 +333,10 @@ export default function ImportPage() {
 
             {/* Upload Area */}
             {!questions.length && (
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:bg-gray-50 transition">
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:bg-gray-50 transition relative">
                     <input
                         type="file"
+                        multiple
                         accept=".docx,.pdf"
                         onChange={handleFileChange}
                         className="hidden"
@@ -169,11 +345,14 @@ export default function ImportPage() {
                     <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
                         <UploadCloud className="h-12 w-12 text-gray-400 mb-4" />
                         <span className="text-indigo-600 font-medium hover:underline">
-                            点击上传文件
+                            点击上传文件 (支持批量)
                         </span>
                         <span className="text-gray-500 mt-2 text-sm">
-                            {file ? `已选: ${file.name}` : "或将文件拖拽至此"}
+                            {files.length > 0 ? `已选 ${files.length} 个文件` : "或将文件拖拽至此"}
                         </span>
+                        <p className="text-xs text-orange-500 mt-4 border border-orange-200 bg-orange-50 px-3 py-1 rounded-full">
+                            💡 建议单次上传 3-5 份试卷，避免 OCR/AI 处理超时
+                        </p>
                     </label>
                 </div>
             )}
@@ -182,7 +361,8 @@ export default function ImportPage() {
             {isParsing && (
                 <div className="text-center text-gray-600 py-10">
                     <div className="inline-block animate-spin h-8 w-8 border-4 border-indigo-500 border-t-transparent rounded-full mr-2"></div>
-                    <p className="mt-2">正在智能解析文档... (PDF OCR 可能需要较长时间)</p>
+                    <p className="mt-2 text-lg font-medium">{importStatus || "正在智能解析文档..."}</p>
+                    <p className="text-sm text-gray-400">PDF OCR 可能需要较长时间，请勿关闭页面</p>
                 </div>
             )}
 
@@ -198,6 +378,13 @@ export default function ImportPage() {
                             <button onClick={() => handleBatchType('word_transformation')} className="px-2 py-1 text-xs bg-white border rounded hover:bg-gray-100">词汇转换</button>
                             <button onClick={() => handleBatchType('collocation')} className="px-2 py-1 text-xs bg-white border rounded hover:bg-gray-100">固定搭配</button>
                             <button onClick={handleClearEmpty} className="px-2 py-1 text-xs text-red-600 border border-red-200 rounded hover:bg-red-50 ml-2">清理空白项</button>
+                            <button
+                                onClick={handleAIAnalyze}
+                                disabled={isAnalyzing}
+                                className="px-3 py-1 text-xs bg-indigo-100 text-indigo-700 border border-indigo-200 rounded hover:bg-indigo-200 ml-2 flex items-center font-bold"
+                            >
+                                {isAnalyzing ? '分析中...' : '✨ AI 智能分析'}
+                            </button>
                         </div>
 
                         <div className="flex space-x-2 w-full sm:w-auto">
@@ -205,7 +392,8 @@ export default function ImportPage() {
                                 onClick={() => {
                                     if (confirm("确定放弃当前解析结果吗？")) {
                                         setQuestions([]);
-                                        setFile(null);
+                                        setFiles([]);
+                                        setImportStatus(null);
                                     }
                                 }}
                                 className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100 flex-1 sm:flex-none justify-center flex"

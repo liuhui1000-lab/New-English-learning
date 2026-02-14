@@ -1,142 +1,176 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { supabase } from "@/lib/supabase"
-import { Save } from "lucide-react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { Save, AlertCircle, CheckCircle, Cpu } from "lucide-react"
 
-export default function SystemSettingsPage() {
-    const [settings, setSettings] = useState<Record<string, string>>({})
+export default function AdminSettingsPage() {
+    const [settings, setSettings] = useState({
+        ai_provider: 'deepseek',
+        ai_api_key: '',
+        ai_base_url: 'https://api.deepseek.com',
+        ai_model: 'deepseek-chat'
+    })
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
-    const [message, setMessage] = useState("")
+    const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+
+    const supabase = createClientComponentClient()
 
     useEffect(() => {
         fetchSettings()
     }, [])
 
     const fetchSettings = async () => {
-        const { data, error } = await supabase.from('system_settings').select('*')
+        setLoading(true)
+        const { data, error } = await supabase
+            .from('system_settings')
+            .select('key, value')
+
         if (data) {
-            const map: Record<string, string> = {}
+            const newSettings: any = { ...settings }
             data.forEach((item: any) => {
-                map[item.key] = item.value
+                if (newSettings.hasOwnProperty(item.key)) {
+                    newSettings[item.key] = item.value
+                }
             })
-            setSettings(map)
+            setSettings(newSettings)
         }
         setLoading(false)
     }
 
-    const handleChange = (key: string, value: string) => {
-        setSettings(prev => ({ ...prev, [key]: value }))
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        setSettings({ ...settings, [e.target.name]: e.target.value })
     }
 
     const handleSave = async () => {
         setSaving(true)
-        setMessage("")
+        setMessage(null)
 
-        // Upsert each setting
         const updates = Object.entries(settings).map(([key, value]) => ({
             key,
             value,
-            description: getDescription(key) // Optional: function to get description
+            updated_at: new Date().toISOString()
         }))
 
-        const { error } = await supabase.from('system_settings').upsert(updates)
+        const { error } = await supabase
+            .from('system_settings')
+            .upsert(updates)
 
         if (error) {
-            setMessage("保存失败: " + error.message)
+            setMessage({ type: 'error', text: '保存失败: ' + error.message })
         } else {
-            setMessage("设置已保存！")
+            setMessage({ type: 'success', text: '设置已更新' })
         }
         setSaving(false)
     }
 
-    const getDescription = (key: string) => {
-        switch (key) {
-            case 'baidu_ocr_api_key': return 'Baidu OCR API Key';
-            case 'baidu_ocr_secret_key': return 'Baidu OCR Secret Key';
-            case 'llm_provider': return 'LLM Provider (deepseek, openai)';
-            case 'llm_api_key': return 'LLM API Key';
-            default: return '';
+    const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const provider = e.target.value
+        let baseUrl = settings.ai_base_url
+        let model = settings.ai_model
+
+        if (provider === 'deepseek') {
+            baseUrl = 'https://api.deepseek.com'
+            model = 'deepseek-chat'
+        } else if (provider === 'zhipu') {
+            baseUrl = 'https://open.bigmodel.cn/api/paas/v4'
+            model = 'glm-4'
+        } else if (provider === 'openai') {
+            baseUrl = 'https://api.openai.com/v1'
+            model = 'gpt-3.5-turbo'
         }
+
+        setSettings({ ...settings, ai_provider: provider, ai_base_url: baseUrl, ai_model: model })
     }
 
-    if (loading) return <div>加载中...</div>
-
     return (
-        <div className="max-w-2xl mx-auto space-y-8">
-            <div>
-                <h2 className="text-2xl font-bold text-gray-900">系统设置</h2>
-                <p className="mt-1 text-sm text-gray-500">
-                    配置第三方服务接口 (OCR, LLM)
-                </p>
-            </div>
+        <div className="max-w-2xl mx-auto space-y-6">
+            <h2 className="text-2xl font-bold text-gray-900 flex items-center">
+                <Cpu className="mr-2" />
+                系统设置
+            </h2>
 
-            <div className="bg-white shadow rounded-lg p-6 space-y-6">
-                {/* OCR Section */}
-                <div>
-                    <h3 className="text-lg font-medium leading-6 text-gray-900 border-b pb-2 mb-4">百度 OCR 配置</h3>
-                    <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
-                        <div className="sm:col-span-6">
-                            <label className="block text-sm font-medium text-gray-700">API Key</label>
-                            <input
-                                type="text"
-                                value={settings['baidu_ocr_api_key'] || ''}
-                                onChange={(e) => handleChange('baidu_ocr_api_key', e.target.value)}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                            />
-                        </div>
-                        <div className="sm:col-span-6">
-                            <label className="block text-sm font-medium text-gray-700">Secret Key</label>
-                            <input
-                                type="password"
-                                value={settings['baidu_ocr_secret_key'] || ''}
-                                onChange={(e) => handleChange('baidu_ocr_secret_key', e.target.value)}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                            />
-                        </div>
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                <h3 className="text-lg font-bold text-gray-900 mb-4 border-b pb-2">
+                    AI 自动打标配置
+                </h3>
+
+                <div className="space-y-4">
+                    {/* Provider */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">AI 供应商</label>
+                        <select
+                            name="ai_provider"
+                            value={settings.ai_provider}
+                            onChange={handleProviderChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                        >
+                            <option value="deepseek">DeepSeek (深度求索)</option>
+                            <option value="zhipu">Zhipu AI (智谱清言)</option>
+                            <option value="openai">OpenAI (GPT)</option>
+                        </select>
+                    </div>
+
+                    {/* API Key */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                        <input
+                            type="password"
+                            name="ai_api_key"
+                            value={settings.ai_api_key}
+                            onChange={handleChange}
+                            placeholder="sk-..."
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 font-mono"
+                        />
+                        <p className="text-xs text-gray-400 mt-1">Key stored securely.</p>
+                    </div>
+
+                    {/* Base URL */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Base URL</label>
+                        <input
+                            type="text"
+                            name="ai_base_url"
+                            value={settings.ai_base_url}
+                            onChange={handleChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                        />
+                    </div>
+
+                    {/* Model */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Model Name</label>
+                        <input
+                            type="text"
+                            name="ai_model"
+                            value={settings.ai_model}
+                            onChange={handleChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                        />
                     </div>
                 </div>
 
-                {/* LLM Section */}
-                <div>
-                    <h3 className="text-lg font-medium leading-6 text-gray-900 border-b pb-2 mb-4">大模型 (LLM) 配置</h3>
-                    <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
-                        <div className="sm:col-span-3">
-                            <label className="block text-sm font-medium text-gray-700">Provider</label>
-                            <select
-                                value={settings['llm_provider'] || 'deepseek'}
-                                onChange={(e) => handleChange('llm_provider', e.target.value)}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                            >
-                                <option value="deepseek">DeepSeek</option>
-                                <option value="openai">OpenAI</option>
-                            </select>
-                        </div>
-                        <div className="sm:col-span-6">
-                            <label className="block text-sm font-medium text-gray-700">API Key</label>
-                            <input
-                                type="password"
-                                value={settings['llm_api_key'] || ''}
-                                onChange={(e) => handleChange('llm_api_key', e.target.value)}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
-                            />
-                        </div>
+                <div className="mt-8 flex items-center justify-between">
+                    <div className="text-sm">
+                        {message && (
+                            <div className={`flex items-center ${message.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                                {message.type === 'success' ? <CheckCircle className="w-4 h-4 mr-1" /> : <AlertCircle className="w-4 h-4 mr-1" />}
+                                {message.text}
+                            </div>
+                        )}
                     </div>
-                </div>
-
-                {/* Save Button */}
-                <div className="flex items-center justify-between pt-4">
-                    <span className={`text-sm ${message.includes('失败') ? 'text-red-500' : 'text-green-500'}`}>
-                        {message}
-                    </span>
                     <button
                         onClick={handleSave}
                         disabled={saving}
-                        className="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
+                        className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition flex items-center disabled:opacity-50"
                     >
-                        <Save className="mr-2 h-4 w-4" />
-                        {saving ? "保存中..." : "保存配置"}
+                        {saving ? '保存中...' : (
+                            <>
+                                <Save className="w-4 h-4 mr-2" />
+                                保存设置
+                            </>
+                        )}
                     </button>
                 </div>
             </div>
