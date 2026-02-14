@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { createBrowserClient } from "@supabase/ssr"
 import { Save, AlertCircle, CheckCircle, Cpu, Edit2, Check, X, Server } from "lucide-react"
 
 // Types
@@ -47,15 +48,31 @@ export default function AdminSettingsPage() {
     const [saving, setSaving] = useState(false)
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
 
+    const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+
     useEffect(() => {
         fetchSettings()
     }, [])
 
+    // Helper: Get auth headers with access token
+    const getAuthHeaders = async () => {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) throw new Error('未登录')
+        return {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+        }
+    }
+
     // Helper: Call server-side API for settings operations
     const apiSaveSettings = async (updates: { key: string, value: string }[]) => {
+        const headers = await getAuthHeaders()
         const res = await fetch('/api/settings', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ updates })
         })
         const data = await res.json()
@@ -66,7 +83,8 @@ export default function AdminSettingsPage() {
     const fetchSettings = async () => {
         setLoading(true)
         try {
-            const res = await fetch('/api/settings')
+            const headers = await getAuthHeaders()
+            const res = await fetch('/api/settings', { headers })
             const data = await res.json()
 
             if (data.settings) {
