@@ -342,53 +342,81 @@ async function extractText(file: File, onProgress?: (msg: string) => void): Prom
         const result = await mammoth.extractRawText({ arrayBuffer });
         return result.value;
     } else if (file.type === "application/pdf") {
-        const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`;
+        try {
+            if (onProgress) onProgress("正在加载 PDF 核心组件...");
+            const pdfjsLib = await import("pdfjs-dist");
+            // Ensure worker points to the correct version. 
+            // Ideally, we should copy the worker from node_modules during build, but for now assuming public/ is correct.
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`;
 
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({
-            data: arrayBuffer,
-            cMapUrl: '/cmaps/',
-            cMapPacked: true,
-        }).promise;
-        let fullText = "";
-        let useOCR = false;
+            if (onProgress) onProgress("正在读取文件数据...");
+            const arrayBuffer = await file.arrayBuffer();
 
-        const totalPages = pdf.numPages;
-        if (onProgress) onProgress(`PDF 加载成功，共 ${totalPages} 页。开始提取文本...`);
+            if (onProgress) onProgress(`文件大小: ${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)} MB. 正在解析 PDF 结构...`);
 
-        for (let i = 1; i <= totalPages; i++) {
-            if (onProgress) onProgress(`正在读取第 ${i}/${totalPages} 页 (文本模式)...`);
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-            const items: any[] = textContent.items as any[];
-            const pageText = items.map((item) => item.str).join(" ");
+            // Add Timeout Race for getDocument
+            const loadTask = pdfjsLib.getDocument({
+                data: arrayBuffer,
+                cMapUrl: '/cmaps/',
+                cMapPacked: true,
+            });
 
-            // Improved OCR Trigger: If text is empty OR very short/garbage (likely scanned with few artifacts)
-            if (/\{#\{.*?\}#\}/.test(pageText) || pageText.trim().length < 50) { // Reduced threshold slightly
-                console.warn(`Page ${i} text length ${pageText.trim().length}, switching to OCR...`);
-                useOCR = true;
-                fullText = "";
-                break;
-            }
-            fullText += pageText + "\n";
-        }
+            const pdf = await Promise.race([
+                loadTask.promise,
+                new Promise<never>((_, reject) => setTimeout(() => reject(new Error("PDF 解析超时 (30s) - 请检查文件是否过大或损坏")), 30000))
+            ]);
 
-        if (useOCR) {
-            if (onProgress) onProgress(`检测到扫描件，切换至 OCR 模式 (较慢)...`);
+            let fullText = "";
+            let useOCR = false;
+
+            const totalPages = pdf.numPages;
+            if (onProgress) onProgress(`PDF 加载成功，共 ${totalPages} 页。开始提取文本...`);
+
             for (let i = 1; i <= totalPages; i++) {
-                if (onProgress) onProgress(`正在 OCR 识别第 ${i}/${totalPages} 页...`);
-                const page = await pdf.getPage(i);
-                try {
-                    const ocrText = await ocrPdfPage(page);
-                    fullText += ocrText + "\n";
-                } catch (e: any) {
-                    console.error(`OCR failed for page ${i}`, e);
-                    fullText += `[Page ${i} OCR Failed: ${e.message}]\n`;
+                if (onProgress) onProgress(`正在读取第 ${i}/${totalPages} 页 (文本模式)...`);
+
+                // Add Timeout for Page Rendering too
+                const page = await Promise.race([
+                    pdf.getPage(i),
+                    new Promise<any>((_, reject) => setTimeout(() => reject(new Error(`第 ${i} 页加载超时`)), 10000))
+                ]);
+
+                const textContent = await page.getTextContent();
+                const items: any[] = textContent.items as any[];
+                const pageText = items.map((item) => item.str).join(" ");
+
+                // Improved OCR Trigger: If text is empty OR very short/garbage (likely scanned with few artifacts)
+                if (/\{#\{.*?\}#\}/.test(pageText) || pageText.trim().length < 50) { // Reduced threshold slightly
+                    console.warn(`Page ${i} text length ${pageText.trim().length}, switching to OCR...`);
+                    useOCR = true;
+                    fullText = "";
+                    break;
+                }
+                fullText += pageText + "\n";
+            }
+
+            if (useOCR) {
+                if (onProgress) onProgress(`检测到扫描件，切换至 OCR 模式 (较慢)...`);
+                for (let i = 1; i <= totalPages; i++) {
+                    if (onProgress) onProgress(`正在 OCR 识别第 ${i}/${totalPages} 页 (此步骤最耗时)...`);
+                    const page = await pdf.getPage(i);
+                    try {
+                        const ocrText = await ocrPdfPage(page);
+                        fullText += ocrText + "\n";
+                    } catch (e: any) {
+                        console.error(`OCR failed for page ${i}`, e);
+                        fullText += `[Page ${i} OCR Failed: ${e.message}]\n`;
+                    }
                 }
             }
+            return fullText;
+
+        } catch (err: any) {
+            console.error("PDF Processing Error:", err);
+            // Re-throw with user friendly message
+            if (onProgress) onProgress(`处理失败: ${err.message}`);
+            throw new Error(`PDF 解析失败: ${err.message}`);
         }
-        return fullText;
     }
     throw new Error("Unsupported file type");
 }
