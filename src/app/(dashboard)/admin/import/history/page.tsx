@@ -54,21 +54,23 @@ export default function ImportHistoryPage() {
                 <ul className="divide-y divide-gray-200">
                     {history.map((item) => (
                         <li key={item.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
-                            <div className="flex items-center space-x-4">
-                                <div className="flex-shrink-0">
-                                    <FileText className="h-8 w-8 text-gray-400" />
-                                </div>
-                                <div>
-                                    <p className="text-sm font-medium text-gray-900">
-                                        {item.filename}
-                                    </p>
-                                    <div className="flex items-center space-x-2 text-xs text-gray-500">
-                                        <Calendar className="h-3 w-3 mr-1" />
-                                        {new Date(item.import_date).toLocaleString()}
-                                        <span className="mx-1">|</span>
-                                        <span>共 {item.question_count} 题</span>
+                            <div className="flex items-center space-x-4 flex-1">
+                                <Link href={`/admin/import/history/${item.id}`} className="flex items-center flex-1 cursor-pointer group">
+                                    <div className="flex-shrink-0">
+                                        <FileText className="h-8 w-8 text-gray-400 group-hover:text-indigo-500 transition" />
                                     </div>
-                                </div>
+                                    <div className="ml-4">
+                                        <p className="text-sm font-medium text-gray-900 group-hover:text-indigo-600 transition">
+                                            {item.filename}
+                                        </p>
+                                        <div className="flex items-center space-x-2 text-xs text-gray-500">
+                                            <Calendar className="h-3 w-3 mr-1" />
+                                            {new Date(item.import_date).toLocaleString()}
+                                            <span className="mx-1">|</span>
+                                            <span>共 {item.question_count} 题</span>
+                                        </div>
+                                    </div>
+                                </Link>
                             </div>
 
                             <div>

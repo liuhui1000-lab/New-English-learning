@@ -25,6 +25,7 @@ export interface Question {
     occurrence_count: number;
     source_material_id?: string;
     created_at: string;
+    is_ai_analyzed?: boolean;
 }
 
 export interface StudyRecord {
