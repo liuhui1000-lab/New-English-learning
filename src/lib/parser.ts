@@ -355,6 +355,7 @@ async function extractText(file: File, onProgress?: (msg: string) => void, skipO
             if (onProgress) onProgress(`文件大小: ${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)} MB. 正在解析 PDF 结构...`);
 
             // Add Timeout Race for getDocument
+            // User requested to not cut off easily. Extending to 5 minutes (300s) to accommodate slow networks/files.
             const loadTask = pdfjsLib.getDocument({
                 data: arrayBuffer,
                 cMapUrl: '/cmaps/',
@@ -363,7 +364,7 @@ async function extractText(file: File, onProgress?: (msg: string) => void, skipO
 
             const pdf = await Promise.race([
                 loadTask.promise,
-                new Promise<never>((_, reject) => setTimeout(() => reject(new Error("PDF 解析超时 (30s) - 请检查文件是否过大或损坏")), 30000))
+                new Promise<never>((_, reject) => setTimeout(() => reject(new Error("PDF 加载超时 (5分钟) - 网络可能过慢或文件损坏")), 300000))
             ]);
 
             let fullText = "";
@@ -375,10 +376,10 @@ async function extractText(file: File, onProgress?: (msg: string) => void, skipO
             for (let i = 1; i <= totalPages; i++) {
                 if (onProgress) onProgress(`正在读取第 ${i}/${totalPages} 页 (文本模式)...`);
 
-                // Add Timeout for Page Rendering too
+                // Add Timeout for Page Rendering too (60s per page)
                 const page = await Promise.race([
                     pdf.getPage(i),
-                    new Promise<any>((_, reject) => setTimeout(() => reject(new Error(`第 ${i} 页加载超时`)), 10000))
+                    new Promise<any>((_, reject) => setTimeout(() => reject(new Error(`第 ${i} 页加载超时 (60s)`)), 60000))
                 ]);
 
                 const textContent = await page.getTextContent();
