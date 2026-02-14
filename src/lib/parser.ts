@@ -385,44 +385,87 @@ async function extractText(file: File): Promise<string> {
 }
 
 function splitQuestions(text: string): string[] {
-    // Improved Regex for OCR:
-    // 1. Matches "\n" + optional whitespace
-    // 2. Format A: (Optional bracket) + Digits + (Optional bracket) + (Dot/Comma/Chinese Dot/Space)
-    // 3. Format B: Digits + Double Space (to avoid matching years like 2024 or scores)
-    const splitRegex = /(\n\s*(?:(?:[\(（\[]?\d+[）\)\]]?[\.\,，、])|(?:\d+\s{2,})))/g;
-    const parts = text.split(splitRegex);
+    // Improved Regex for OCR to handle inline questions:
+    // 1. Matches Start of String (^), Newline (\n), OR Wide Spaces (\s{3,})
+    // 2. Followed by Number + Punctuation (Dot, Comma, Chinese Punc, or Bracket)
+    const splitRegex = /(?:^|\n|\s{4,})(?:[\(（\[]?\d+[）\)\]]?[\.\,，、])/g;
+
+    // We can't just split() because we lose the delimiter (the number). 
+    // We need to match and reconstruct.
+
     const questions: string[] = [];
-    let currentQuestion = "";
-    for (let i = 0; i < parts.length; i++) {
-        if (splitRegex.test(parts[i])) {
-            if (currentQuestion.trim()) questions.push(currentQuestion.trim());
-            currentQuestion = parts[i];
-        } else {
-            currentQuestion += parts[i];
-        }
+    let match;
+    let lastIndex = 0;
+
+    // Reset regex state just in case (though local var doesn't strictly need it if not global)
+    // Actually splitRegex needs 'g' flag for exec loop
+
+    // Alternative strategy: Replace the delimiters with a special marker + delimiter, then split
+    // This preserves the delimiter in the result if we want, or we can just append it.
+
+    const marker = "|||SPLIT|||";
+    const textWithMarkers = text.replace(splitRegex, (match) => {
+        // match is like " 21." or "\n21."
+        // We want to keep the number part but add a newline marker before it
+        return marker + match.trim();
+    });
+
+    const rawParts = textWithMarkers.split(marker);
+    for (const p of rawParts) {
+        if (p.trim()) questions.push(p.trim());
     }
-    if (currentQuestion.trim()) questions.push(currentQuestion.trim());
+
     return questions;
 }
 
 function classifyQuestion(content: string): ParsedQuestion {
     let type: QuestionType = 'grammar';
     const tags: string[] = [];
+    const lowerContent = content.toLowerCase();
 
-    if (/\(.*\)/.test(content) && content.includes('______')) {
-        type = 'word_transformation';
-        const match = content.match(/\(([a-zA-Z]+)\)$/);
-        if (match) tags.push(`Root:${match[1]}`);
+    // 1. Sentence Transformation (Rewrite)
+    // Keywords: "rewrite", "homonymous", "passive voice", "plural", "question", or Chinese prompts
+    if (
+        /对划线部分提问/.test(content) ||
+        /改写句子/.test(content) ||
+        /保持句意/i.test(content) ||
+        /被动语态/i.test(content) ||
+        /连词成句/i.test(content) ||
+        /\(.*\)/.test(content) && content.includes('______') && (content.includes('?') || content.length > 80) // Long sentence with blanks and rewrite prompt?
+    ) {
+        type = 'sentence_transformation';
     }
+    // 2. Word Transformation
+    // Pattern: "_____ ... (word)"
+    else if (/\(.*\)/.test(content) && content.includes('______')) {
+        // Relaxed match: allow spaces inside parens and trailing chars
+        const match = content.match(/\(([a-zA-Z\s]+)\)\s*$/) || content.match(/\(([a-zA-Z\s]+)\)[^\)]*$/);
+
+        if (match) {
+            type = 'word_transformation';
+            tags.push(`Root:${match[1].trim()}`);
+        } else {
+            // Maybe it's a rewrite if no clean word found? 
+            // But existing logic defaults to collocation if '______' exists.
+            if (content.length > 50 && (content.includes('?') || content.includes('.'))) {
+                // Likely a sentence-level thing if very long?
+                // Let's stick to word_trans if it looks like one, otherwise collocation?
+                type = 'word_transformation'; // Default to word trans if bracket exists
+            } else {
+                type = 'collocation';
+            }
+        }
+    }
+    // 3. Collocation / Vocabulary
     else if (content.includes('______') && !/\([a-zA-Z]+\)$/.test(content.trim())) {
         type = 'collocation';
     }
-    // Check for grammar options
+    // 4. Grammar (Multiple Choice)
     else if (/A\..*B\./.test(content)) {
         type = 'grammar';
         const keywords = ['look forward', 'interested in', 'fond of', 'succeed in', 'keen on'];
         for (const kw of keywords) {
-            if (content.toLowerCase().includes(kw)) tags.push(`Collocation:${kw}`);
+            if (lowerContent.includes(kw)) tags.push(`Collocation:${kw}`);
         }
     }
 

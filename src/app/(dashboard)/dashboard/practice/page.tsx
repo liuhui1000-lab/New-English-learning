@@ -21,7 +21,7 @@ function PracticeContent() {
 
     const fetchPracticeBatch = async () => {
         setLoading(true)
-        const limit = type === 'word_transformation' ? 5 : 10
+        const limit = (type === 'word_transformation' || type === 'sentence_transformation') ? 5 : 10
 
         const { data } = await supabase
             .from('questions')
@@ -50,7 +50,9 @@ function PracticeContent() {
     return (
         <div className="max-w-2xl mx-auto space-y-8 pb-12">
             <h2 className="text-2xl font-bold mb-6">
-                {type === 'word_transformation' ? '词汇转换特训 (5题)' : '固定搭配/语法 (10题)'}
+                {type === 'word_transformation' ? '词汇转换特训 (5题)' :
+                    type === 'sentence_transformation' ? '句型转换特训 (5题)' :
+                        '固定搭配/语法 (10题)'}
             </h2>
 
             {questions.map((q, idx) => (

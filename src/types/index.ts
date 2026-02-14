@@ -11,7 +11,7 @@ export interface UserProfile {
     last_login?: string;
 }
 
-export type QuestionType = 'word_transformation' | 'collocation' | 'grammar' | 'vocabulary';
+export type QuestionType = 'word_transformation' | 'sentence_transformation' | 'collocation' | 'grammar' | 'vocabulary';
 
 export interface Question {
     id: string;

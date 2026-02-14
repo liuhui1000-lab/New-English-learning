@@ -376,6 +376,7 @@ export default function ImportPage() {
                             <span className="text-sm text-gray-500">批量设置类型:</span>
                             <button onClick={() => handleBatchType('grammar')} className="px-2 py-1 text-xs bg-white border rounded hover:bg-gray-100">语法选择</button>
                             <button onClick={() => handleBatchType('word_transformation')} className="px-2 py-1 text-xs bg-white border rounded hover:bg-gray-100">词汇转换</button>
+                            <button onClick={() => handleBatchType('sentence_transformation')} className="px-2 py-1 text-xs bg-white border rounded hover:bg-gray-100">句型转换</button>
                             <button onClick={() => handleBatchType('collocation')} className="px-2 py-1 text-xs bg-white border rounded hover:bg-gray-100">固定搭配</button>
                             <button onClick={handleClearEmpty} className="px-2 py-1 text-xs text-red-600 border border-red-200 rounded hover:bg-red-50 ml-2">清理空白项</button>
                             <button
@@ -443,6 +444,7 @@ export default function ImportPage() {
                                             >
                                                 <option value="vocabulary">词汇 (背诵)</option>
                                                 <option value="word_transformation">词汇转换</option>
+                                                <option value="sentence_transformation">句型转换</option>
                                                 <option value="collocation">固定搭配</option>
                                                 <option value="grammar">语法选择</option>
                                             </select>
