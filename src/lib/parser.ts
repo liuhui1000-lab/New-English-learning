@@ -88,7 +88,12 @@ function extractTargetSections(text: string): string {
         /Part\s*3\s*Reading/i,
         /III\.\s*Reading/i,
         /Reading\s*Comprehension/i,
-        /Writing/i
+        /Writing/i,
+        /Read\s*the\s*passage/i,     // Catch "Read the passage"
+        /Cloze/i,                    // Catch Cloze tests
+        /Complete\s*the\s*passage/i, // Catch "Complete the passage"
+        /Short\s*passage/i,           // Catch "Short passage"
+        /首字母/                     // Catch "First letter" indicator in header
     ];
 
     let endIndex = text.length;
@@ -98,6 +103,8 @@ function extractTargetSections(text: string): string {
     for (const p of endPatterns) {
         const match = searchContext.search(p);
         if (match !== -1) {
+            // Safety check: ensure the match isn't right at the start (e.g. "Read the passage" instruction inside the grammar section?)
+            // Usually these headers start a new block.
             endIndex = (startIndex !== -1 ? startIndex : 0) + match;
             console.log(`Found Section End at index ${endIndex}: ${p}`);
             break;
@@ -106,6 +113,33 @@ function extractTargetSections(text: string): string {
 
     if (startIndex !== -1) {
         return text.substring(startIndex, endIndex);
+    }
+
+    // Fallback: If no explicit "Grammar" section found, but we see "Part I Listening",
+    // try to find the END of Listening (Start of Part II/2/II) even if it doesn't say "Grammar".
+    const listeningStart = text.search(/Part\s*I\s*Listening/i);
+    if (listeningStart !== -1) {
+        // Look for Part II, Part 2, II. (generic)
+        const part2Regex = /(?:Part\s*(?:II|2)|II\.|Section\s*(?:B|II))/;
+        const part2Match = text.substring(listeningStart).search(part2Regex);
+        if (part2Match !== -1) {
+            const fallbackStart = listeningStart + part2Match;
+            // Sanity check: is it reasonably far?
+            if (part2Match > 100) {
+                console.log("Fallback: Found generic Part II start after Listening, using as start.");
+                // Re-calculate end index from this new start
+                let fallbackEnd = text.length;
+                const searchContext = text.substring(fallbackStart);
+                for (const p of endPatterns) {
+                    const match = searchContext.search(p);
+                    if (match !== -1) {
+                        fallbackEnd = fallbackStart + match;
+                        break;
+                    }
+                }
+                return text.substring(fallbackStart, fallbackEnd);
+            }
+        }
     }
 
     // If no distinct section found, return full text (and rely on question filtering)
@@ -324,9 +358,27 @@ function isRelated(root: string, target: string): boolean {
 function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
     // Strategy: Strict Filter. Keep only Questions (blanks/options).
     const filteredQuestions = rawItems.filter(q => {
+        // 1. Must have a blank or options
         const hasBlank = /_+|\(\s{3,}\)|\[\s{3,}\]/.test(q);
         const hasOptions = /A\..*B\./.test(q);
-        return hasBlank || hasOptions;
+
+        if (!hasBlank && !hasOptions) return false;
+
+        // 2. Filter out "Listening" style questions (Empty content with just a blank)
+        // e.g. "1. ______" or "1. (     )" with no other text
+        // Clean the question number for checking
+        const cleanQ = q.replace(/^[\(（\[]?\d+[）\)\]]?[\.\,，、]/, '').trim();
+        // If the remaining text is JUST underscores/blanks, it's likely listening
+        if (/^(_+|[\(\[]\s*[\)\]])$/.test(cleanQ)) {
+            return false;
+        }
+
+        // 3. Filter out "First Letter" questions (detected via instructions in the content if header missed)
+        if (q.includes("首字母") || q.includes("beginning with")) {
+            return false;
+        }
+
+        return true;
     });
 
     console.log(`Mock Paper Mode: Filtered ${rawItems.length} items down to ${filteredQuestions.length}`);
@@ -428,11 +480,10 @@ function splitQuestions(text: string): string[] {
     // Matches "Part I", "Section A", "III. Complete...", etc.
     // We replace them with a special marker to ensure they don't merge with previous text,
     // then we can filter them out.
-    const sectionHeaderRegex = /(?:^|\n)\s*(?:Part\s+[A-Z]|Section\s+[A-Z]|[IVX]+\.\s+.*?(?:Complete|Fill|Choose|Read).*?)(?:\n|$)/gi;
-
-    // We don't want to just delete them, because that might merge the previous question with the next one.
-    // Instead, ensure there's a clear break.
-    // actually, if we just want to ignore them, we can try to "split" by them too?
+    // Improved Header Regex:
+    // Catch "V. Complete...", "C. Read...", "Section B", "Listen to..."
+    // Relaxed to allow [A-Z]. Start if followed by instruction keywords or standard section names
+    const sectionHeaderRegex = /(?:^|\n)\s*(?:Part\s+[A-Z]|Section\s+[A-Z]|[IVX]+\.\s+.*|[A-Z]\.\s+(?:Read|Complete|Fill|Choose|Section|Listen).*?)(?:\n|$)/gi;
 
     // Improved Regex for Questions:
     // 1. Matches Start of String (^), Newline (\n), OR Wide Spaces (\s{3,})
