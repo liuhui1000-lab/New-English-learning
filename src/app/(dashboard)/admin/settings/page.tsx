@@ -30,7 +30,7 @@ const AI_PROVIDERS: ProviderMeta[] = [
 
 export default function AdminSettingsPage() {
     // State
-    const [activeProvider, setActiveProvider] = useState<string>('deepseek')
+    const [activeProvider, setActiveProvider] = useState<string | null>(null)
     const [providerConfigs, setProviderConfigs] = useState<Record<string, AIProviderConfig>>({})
 
     // OCR State
@@ -76,7 +76,7 @@ export default function AdminSettingsPage() {
 
             if (data) {
                 const configs: Record<string, AIProviderConfig> = {}
-                let active = 'deepseek'
+                let active = 'deepseek' // Default fallback if DB is empty
                 let ocr = { url: '', token: '' }
 
                 data.forEach((item: any) => {
@@ -180,72 +180,85 @@ export default function AdminSettingsPage() {
             {/* AI Providers Section */}
             <div className="space-y-4">
                 <h3 className="text-lg font-bold text-gray-900 border-b pb-2">AI 模型供应商 (多线路管理)</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {AI_PROVIDERS.map(provider => {
-                        const isConfigured = !!providerConfigs[provider.id]?.apiKey
-                        const isActive = activeProvider === provider.id
 
-                        return (
-                            <div key={provider.id} className={`relative p-5 rounded-xl border-2 transition-all ${isActive
-                                ? 'border-indigo-500 bg-indigo-50/30'
-                                : 'border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm'
-                                }`}>
-                                {/* Header */}
-                                <div className="flex justify-between items-start mb-3">
-                                    <div>
-                                        <h4 className="font-bold text-gray-900">{provider.name}</h4>
-                                        <p className="text-xs text-gray-500 mt-1">{provider.description}</p>
-                                    </div>
-                                    <div className="flex flex-col items-end space-y-2">
-                                        {isActive && (
-                                            <span className="bg-indigo-100 text-indigo-700 text-xs px-2 py-1 rounded-full font-bold flex items-center">
-                                                <Check className="w-3 h-3 mr-1" /> 当前使用
-                                            </span>
-                                        )}
-                                        {!isActive && isConfigured && (
-                                            <span className="bg-green-50 text-green-700 text-xs px-2 py-1 rounded-full font-medium">
-                                                已配置
-                                            </span>
-                                        )}
-                                        {!isConfigured && (
-                                            <span className="bg-gray-100 text-gray-400 text-xs px-2 py-1 rounded-full">
-                                                未配置
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Config Info Preview */}
-                                {isConfigured && (
-                                    <div className="text-xs text-gray-500 font-mono bg-gray-50 p-2 rounded mb-4">
-                                        <div className="truncate">URL: {providerConfigs[provider.id].baseUrl}</div>
-                                        <div>Model: {providerConfigs[provider.id].model}</div>
-                                    </div>
-                                )}
-
-                                {/* Actions */}
-                                <div className="flex space-x-2 mt-auto">
-                                    <button
-                                        onClick={() => openEditModal(provider.id)}
-                                        className="flex-1 bg-white border border-gray-300 text-gray-700 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition flex items-center justify-center"
-                                    >
-                                        <Edit2 className="w-3 h-3 mr-1" /> 配置
-                                    </button>
-
-                                    {isConfigured && !isActive && (
-                                        <button
-                                            onClick={() => handleActivateProvider(provider.id)}
-                                            disabled={saving}
-                                            className="flex-1 bg-indigo-600 text-white py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition disabled:opacity-50"
-                                        >
-                                            启用
-                                        </button>
-                                    )}
-                                </div>
+                {loading ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {[1, 2, 3, 4].map(i => (
+                            <div key={i} className="h-40 bg-gray-50/50 border-2 border-dashed border-gray-200 rounded-xl animate-pulse p-5">
+                                <div className="h-6 w-1/3 bg-gray-200 rounded mb-2"></div>
+                                <div className="h-4 w-1/2 bg-gray-200 rounded mb-8"></div>
+                                <div className="h-10 w-full bg-gray-200 rounded mt-auto"></div>
                             </div>
-                        )
-                    })}
-                </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {AI_PROVIDERS.map(provider => {
+                            const isConfigured = !!providerConfigs[provider.id]?.apiKey
+                            const isActive = activeProvider === provider.id
+
+                            return (
+                                <div key={provider.id} className={`relative p-5 rounded-xl border-2 transition-all ${isActive
+                                    ? 'border-indigo-500 bg-indigo-50/30'
+                                    : 'border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm'
+                                    }`}>
+                                    {/* Header */}
+                                    <div className="flex justify-between items-start mb-3">
+                                        <div>
+                                            <h4 className="font-bold text-gray-900">{provider.name}</h4>
+                                            <p className="text-xs text-gray-500 mt-1">{provider.description}</p>
+                                        </div>
+                                        <div className="flex flex-col items-end space-y-2">
+                                            {isActive && (
+                                                <span className="bg-indigo-100 text-indigo-700 text-xs px-2 py-1 rounded-full font-bold flex items-center">
+                                                    <Check className="w-3 h-3 mr-1" /> 当前使用
+                                                </span>
+                                            )}
+                                            {!isActive && isConfigured && (
+                                                <span className="bg-green-50 text-green-700 text-xs px-2 py-1 rounded-full font-medium">
+                                                    已配置
+                                                </span>
+                                            )}
+                                            {!isConfigured && (
+                                                <span className="bg-gray-100 text-gray-400 text-xs px-2 py-1 rounded-full">
+                                                    未配置
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Config Info Preview */}
+                                    {isConfigured && (
+                                        <div className="text-xs text-gray-500 font-mono bg-gray-50 p-2 rounded mb-4">
+                                            <div className="truncate">URL: {providerConfigs[provider.id].baseUrl}</div>
+                                            <div>Model: {providerConfigs[provider.id].model}</div>
+                                        </div>
+                                    )}
+
+                                    {/* Actions */}
+                                    <div className="flex space-x-2 mt-auto">
+                                        <button
+                                            onClick={() => openEditModal(provider.id)}
+                                            className="flex-1 bg-white border border-gray-300 text-gray-700 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition flex items-center justify-center"
+                                        >
+                                            <Edit2 className="w-3 h-3 mr-1" /> 配置
+                                        </button>
+
+                                        {isConfigured && !isActive && (
+                                            <button
+                                                onClick={() => handleActivateProvider(provider.id)}
+                                                disabled={saving}
+                                                className="flex-1 bg-indigo-600 text-white py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition disabled:opacity-50"
+                                            >
+                                                启用
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )
+                        })}
+                    </div>
+                )}
             </div>
 
             {/* OCR Section */}
