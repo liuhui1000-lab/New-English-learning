@@ -339,6 +339,44 @@ export default function AdminSettingsPage() {
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 font-mono text-sm"
                                 />
                             </div>
+
+                            {/* Test Connection Button */}
+                            <div className="pt-2">
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        const btn = document.getElementById('test-btn');
+                                        if (btn) btn.innerText = '测试中...';
+                                        try {
+                                            const res = await fetch('/api/ai/test', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                    provider: editingProvider,
+                                                    apiKey: editForm.apiKey,
+                                                    baseUrl: editForm.baseUrl,
+                                                    model: editForm.model
+                                                })
+                                            });
+                                            const data = await res.json();
+                                            if (res.ok) {
+                                                alert('✅ 连接成功！\n响应: ' + JSON.stringify(data.data?.choices?.[0]?.message || 'OK'));
+                                            } else {
+                                                alert('❌ 连接失败: ' + (data.error || 'Unknown error'));
+                                            }
+                                        } catch (err: any) {
+                                            alert('❌ 网络错误: ' + err.message);
+                                        } finally {
+                                            if (btn) btn.innerText = '测试连接';
+                                        }
+                                    }}
+                                    id="test-btn"
+                                    className="text-indigo-600 text-sm hover:underline flex items-center"
+                                >
+                                    <Server className="w-4 h-4 mr-1" /> 测试连接 (Test Connection)
+                                </button>
+                            </div>
+
                         </div>
                         <div className="px-6 py-4 bg-gray-50 flex justify-end space-x-3">
                             <button
