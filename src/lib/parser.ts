@@ -481,6 +481,11 @@ function classifyQuestion(content: string): ParsedQuestion {
     const tags: string[] = [];
     const lowerContent = content.toLowerCase();
 
+    // Check for blanks (at least 2 consecutive underscores)
+    const hasBlank = /_{2,}/.test(content);
+    // Check for root word at the end: (word)
+    const rootWordMatch = content.match(/\(([a-zA-Z\s]+)\)\s*$/) || content.match(/\(([a-zA-Z\s]+)\)[^\)]*$/);
+
     // 1. Sentence Transformation (Rewrite)
     // Keywords: "rewrite", "homonymous", "passive voice", "plural", "question", or Chinese prompts
     if (
@@ -489,51 +494,47 @@ function classifyQuestion(content: string): ParsedQuestion {
         /保持句意/i.test(content) ||
         /被动语态/i.test(content) ||
         /连词成句/i.test(content) ||
-        /\(.*\)/.test(content) && content.includes('______') && (content.includes('?') || content.length > 80) // Long sentence with blanks and rewrite prompt?
+        (content.includes('?') && hasBlank && rootWordMatch && content.length > 100) // Long question with blank + root word might be rewrite
     ) {
         type = 'sentence_transformation';
     }
     // 2. Word Transformation
     // Pattern: "_____ ... (word)"
-    else if (/\(.*\)/.test(content) && content.includes('______')) {
-        // Relaxed match: allow spaces inside parens and trailing chars
-        const match = content.match(/\(([a-zA-Z\s]+)\)\s*$/) || content.match(/\(([a-zA-Z\s]+)\)[^\)]*$/);
-
-        if (match) {
-            type = 'word_transformation';
-            tags.push(`Root:${match[1].trim()}`);
-        } else {
-            // Maybe it's a rewrite if no clean word found? 
-            // But existing logic defaults to collocation if '______' exists.
-            if (content.length > 50 && (content.includes('?') || content.includes('.'))) {
-                // Likely a sentence-level thing if very long?
-                // Let's stick to word_trans if it looks like one, otherwise collocation?
-                type = 'word_transformation'; // Default to word trans if bracket exists
-            } else {
-                type = 'collocation';
-            }
+    else if (rootWordMatch && hasBlank) {
+        type = 'word_transformation';
+        if (rootWordMatch[1]) {
+            tags.push(`Root:${rootWordMatch[1].trim()}`);
         }
     }
     // 3. Collocation / Vocabulary
-    else if (content.includes('______') && !/\([a-zA-Z]+\)$/.test(content.trim())) {
+    else if (hasBlank && !rootWordMatch && !content.includes('A)') && !content.includes('A.')) {
+        // If it has a blank but no options (A/B/C/D) and no root word, likely a collocation fill-in
         type = 'collocation';
     }
-    // 4. Grammar (Multiple Choice)
-    else if (/A\..*B\./.test(content)) {
+    // 4. Grammar (Default or explicit options)
+    // If it mentions A) B) C) etc, it's definitely grammar.
+    else if (/[A-D][\)\.]/.test(content)) {
         type = 'grammar';
-        const keywords = ['look forward', 'interested in', 'fond of', 'succeed in', 'keen on'];
-        for (const kw of keywords) {
-            if (lowerContent.includes(kw)) tags.push(`Collocation:${kw}`);
-        }
     }
 
-    return {
-        id: crypto.randomUUID(),
-        content: content,
-        type: type,
-        answer: '',
-        tags: tags
-    };
+    return { type, tags };
+}
+    // 4. Grammar (Multiple Choice)
+    else if (/A\..*B\./.test(content)) {
+    type = 'grammar';
+    const keywords = ['look forward', 'interested in', 'fond of', 'succeed in', 'keen on'];
+    for (const kw of keywords) {
+        if (lowerContent.includes(kw)) tags.push(`Collocation:${kw}`);
+    }
+}
+
+return {
+    id: crypto.randomUUID(),
+    content: content,
+    type: type,
+    answer: '',
+    tags: tags
+};
 }
 
 // ... OCR Helpers ...
