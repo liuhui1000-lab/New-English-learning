@@ -517,24 +517,15 @@ function classifyQuestion(content: string): ParsedQuestion {
         type = 'grammar';
     }
 
-    return { type, tags };
-}
-    // 4. Grammar (Multiple Choice)
-    else if (/A\..*B\./.test(content)) {
-    type = 'grammar';
-    const keywords = ['look forward', 'interested in', 'fond of', 'succeed in', 'keen on'];
-    for (const kw of keywords) {
-        if (lowerContent.includes(kw)) tags.push(`Collocation:${kw}`);
-    }
-}
 
-return {
-    id: crypto.randomUUID(),
-    content: content,
-    type: type,
-    answer: '',
-    tags: tags
-};
+
+    return {
+        id: crypto.randomUUID(),
+        content: content,
+        type: type,
+        answer: '',
+        tags: tags
+    };
 }
 
 // ... OCR Helpers ...
