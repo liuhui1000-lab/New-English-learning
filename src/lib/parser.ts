@@ -424,34 +424,53 @@ async function extractText(file: File, onProgress?: (msg: string) => void, skipO
 }
 
 function splitQuestions(text: string): string[] {
-    // Improved Regex for OCR to handle inline questions:
+    // 0. Pre-clean: Remove common section headers that might be merged
+    // Matches "Part I", "Section A", "III. Complete...", etc.
+    // We replace them with a special marker to ensure they don't merge with previous text,
+    // then we can filter them out.
+    const sectionHeaderRegex = /(?:^|\n)\s*(?:Part\s+[A-Z]|Section\s+[A-Z]|[IVX]+\.\s+.*?(?:Complete|Fill|Choose|Read).*?)(?:\n|$)/gi;
+
+    // We don't want to just delete them, because that might merge the previous question with the next one.
+    // Instead, ensure there's a clear break.
+    // actually, if we just want to ignore them, we can try to "split" by them too?
+
+    // Improved Regex for Questions:
     // 1. Matches Start of String (^), Newline (\n), OR Wide Spaces (\s{3,})
-    // 2. Followed by Number + Punctuation (Dot, Comma, Chinese Punc, or Bracket)
+    // 2. Followed by Number + Punctuation
     const splitRegex = /(?:^|\n|\s{4,})(?:[\(（\[]?\d+[）\)\]]?[\.\,，、])/g;
 
-    // We can't just split() because we lose the delimiter (the number). 
-    // We need to match and reconstruct.
-
-    const questions: string[] = [];
-    let match;
-    let lastIndex = 0;
-
-    // Reset regex state just in case (though local var doesn't strictly need it if not global)
-    // Actually splitRegex needs 'g' flag for exec loop
-
-    // Alternative strategy: Replace the delimiters with a special marker + delimiter, then split
-    // This preserves the delimiter in the result if we want, or we can just append it.
-
     const marker = "|||SPLIT|||";
-    const textWithMarkers = text.replace(splitRegex, (match) => {
-        // match is like " 21." or "\n21."
-        // We want to keep the number part but add a newline marker before it
+    let textToProcess = text;
+
+    // Insert markers before Section Headers so they become separate chunks
+    textToProcess = textToProcess.replace(sectionHeaderRegex, (match) => {
+        return marker + "[[HEADER]]" + match.trim();
+    });
+
+    // Insert markers before Questions
+    const textWithMarkers = textToProcess.replace(splitRegex, (match) => {
         return marker + match.trim();
     });
 
     const rawParts = textWithMarkers.split(marker);
+    const questions: string[] = [];
+
     for (const p of rawParts) {
-        if (p.trim()) questions.push(p.trim());
+        const trimmed = p.trim();
+        if (!trimmed) continue;
+
+        // Filter out the Section Headers we marked
+        if (trimmed.startsWith("[[HEADER]]")) {
+            continue;
+        }
+
+        // Also simple heuristic: If it looks like a Roman Numeral header even if missed by above
+        // e.g. "II. Grammar"
+        if (/^[IVX]+\.\s/.test(trimmed) && trimmed.length < 100) {
+            continue;
+        }
+
+        questions.push(trimmed);
     }
 
     return questions;
