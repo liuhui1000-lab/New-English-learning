@@ -136,7 +136,7 @@ export default function Dictation({ groups, onComplete, onError }: DictationProp
                                         ${status === 'wrong' ? 'border-red-500 text-red-600 bg-red-50' : ''}
                                     `}
                                     placeholder={activeHint === item.id
-                                        ? `${item.content[0]}${item.content.slice(1).replace(/./g, '_')}` // Show 1st char + blanks
+                                        ? item.content // Show FULL content if hint active (after Give Up)
                                         : ""}
                                     autoComplete="off"
                                 />
@@ -166,14 +166,25 @@ export default function Dictation({ groups, onComplete, onError }: DictationProp
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            // Mark as failed and fill correct answer
-                                            handleInputChange(item.id, item.content) // Auto-fill
-                                            setFieldStatus(prev => ({ ...prev, [item.id]: 'idle' })) // Reset status to let them submit 'correctly' (but we already recorded error)
-                                            // Note: onError was already called when they got it wrong
+                                            // 1. Mark as failed (so it goes to Penalty Phase)
+                                            onError(item.id)
+
+                                            // 2. Show the answer (by setting a temporary "giveUp" state? 
+                                            // Actually simpler: Just autofill for now BUT ensure it registers as error.
+                                            // User said: "Should just show correct word, let user copy it".
+
+                                            // Let's use the placeholder for the answer?
+                                            setActiveHint(item.id) // Show full hint
+                                            setFieldStatus(prev => ({ ...prev, [item.id]: 'idle' })) // Unlock input
+                                            setInputs(prev => ({ ...prev, [item.id]: "" })) // Clear input for them to type
+
+                                            // We need a way to know this item is "spoiled".
+                                            // onError already called, so it will go to Penalty.
+                                            // We just need them to type it right to proceed in THIS phase.
                                         }}
                                         className="text-red-300 hover:text-red-500 transition text-xs font-bold"
                                     >
-                                        I Give Up
+                                        Show Answer
                                     </button>
                                 )}
                             </div>

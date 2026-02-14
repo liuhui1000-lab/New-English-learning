@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import FlashcardView from "./FlashcardView"
 import MatchingGame from "./MatchingGame"
 import Dictation from "./Dictation"
+import PenaltyGame from "./PenaltyGame"
 import { Question } from "@/types"
 
 interface RecitationSessionProps {
@@ -19,7 +20,7 @@ export interface SessionResult {
 }
 
 export default function RecitationSession({ batch, onComplete }: RecitationSessionProps) {
-    const [phase, setPhase] = useState<'flashcard' | 'matching' | 'dictation' | 'summary'>('flashcard')
+    const [phase, setPhase] = useState<'flashcard' | 'matching' | 'dictation' | 'penalty' | 'summary'>('flashcard')
     const [failedItems, setFailedItems] = useState<Set<string>>(new Set())
 
     // Helper to get Family/Group ID from tags
@@ -158,6 +159,27 @@ export default function RecitationSession({ batch, onComplete }: RecitationSessi
                             <Dictation
                                 groups={groupedQuestions}
                                 onError={handlePhaseError}
+                                onComplete={() => {
+                                    if (failedItems.size > 0) {
+                                        setPhase('penalty')
+                                    } else {
+                                        finishSession()
+                                    }
+                                }}
+                            />
+                        </motion.div>
+                    )}
+
+                    {phase === 'penalty' && (
+                        <motion.div
+                            key="penalty"
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -20 }}
+                            className="flex-1"
+                        >
+                            <PenaltyGame
+                                failedItems={batch.filter(q => failedItems.has(q.id))}
                                 onComplete={finishSession}
                             />
                         </motion.div>
