@@ -491,6 +491,10 @@ function classifyQuestion(content: string): ParsedQuestion {
     if (
         /对划线部分提问/.test(content) ||
         /改写句子/.test(content) ||
+        /改为/.test(content) || // Covers "改为被动", "改为间接", "改为否定" etc.
+        /间接引语/.test(content) ||
+        /反意疑问句/.test(content) ||
+        /感叹句/.test(content) ||
         /保持句意/i.test(content) ||
         /被动语态/i.test(content) ||
         /连词成句/i.test(content) ||
