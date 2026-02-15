@@ -9,6 +9,24 @@ const PADDLE_API_URL = "https://5ejew8k4i019dek5.aistudio-app.com/layout-parsing
 // Default token provided by user, but prefer Env/DB
 const DEFAULT_TOKEN = "483605608bc2d69ed9979463871dd4bc6095285a";
 
+/**
+ * Clean OCR text from common misrecognitions
+ */
+function cleanOCRText(text: string): string {
+    return text
+        // Remove LaTeX underline artifacts: $ \underline{\text{}} $ → ____
+        .replace(/\$\s*\\underline\{\\text\{\}\}\s*\$/g, '____')
+        // Remove LaTeX text wrappers: $ \text{content} $ → content
+        .replace(/\$\s*\\text\{([^}]*)\}\s*\$/g, '$1')
+        // Remove standalone $ symbols that might be LaTeX artifacts
+        .replace(/\s\$\s/g, ' ')
+        // Clean up multiple spaces
+        .replace(/\s{2,}/g, ' ')
+        // Clean up multiple underscores (normalize to 4)
+        .replace(/_{5,}/g, '____')
+        .trim();
+}
+
 export async function POST(req: NextRequest) {
     try {
         const cookieStore = await cookies()
@@ -109,14 +127,18 @@ export async function POST(req: NextRequest) {
                     fullMarkdown += res.markdown.text + "\n\n";
                 }
             }
-            return NextResponse.json({ text: fullMarkdown });
+
+            // Clean OCR artifacts
+            const cleanedText = cleanOCRText(fullMarkdown);
+            return NextResponse.json({ text: cleanedText });
         }
 
         // Priority 2: Standard PP-OCRv5 (Plain Text) - from Doc Link
         if (result.result && result.result.ocrResults) {
             const ocrResults = result.result.ocrResults;
             const text = ocrResults.map((r: any) => r.words || r.text || "").join("\n");
-            return NextResponse.json({ text });
+            const cleanedText = cleanOCRText(text);
+            return NextResponse.json({ text: cleanedText });
         }
 
         throw new Error("Invalid response structure: No layoutParsingResults or ocrResults found");
