@@ -4,15 +4,17 @@ import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 import { Question, QuestionType } from "@/types"
 import { Search, Filter, Cpu, CheckCircle, AlertCircle, Trash, Edit2, ChevronLeft, ChevronRight, Save } from "lucide-react"
+import MultiSelect from "@/components/MultiSelect"
 
 export default function QuestionBankPage() {
     const [questions, setQuestions] = useState<Question[]>([])
     const [loading, setLoading] = useState(true)
     const [totalCount, setTotalCount] = useState(0)
 
-    // Filters
-    const [filterType, setFilterType] = useState<string>('all')
-    const [filterAIStatus, setFilterAIStatus] = useState<string>('all') // all, analyzed, not_analyzed
+    // Tabs and Filters
+    const [activeTab, setActiveTab] = useState<'questions' | 'vocabulary'>('questions')
+    const [selectedTypes, setSelectedTypes] = useState<string[]>([])
+    const [filterAIStatus, setFilterAIStatus] = useState<string>('all')
     const [searchQuery, setSearchQuery] = useState('')
 
     // Pagination
@@ -27,8 +29,13 @@ export default function QuestionBankPage() {
     const [statusMessage, setStatusMessage] = useState<string | null>(null)
 
     useEffect(() => {
+        setPage(1)
+        setSelectedTypes([]) // Reset filters on tab change
+    }, [activeTab])
+
+    useEffect(() => {
         fetchQuestions()
-    }, [page, filterType, filterAIStatus, searchQuery])
+    }, [page, activeTab, selectedTypes, filterAIStatus, searchQuery])
 
     const fetchQuestions = async () => {
         setLoading(true)
@@ -38,8 +45,16 @@ export default function QuestionBankPage() {
             .order('created_at', { ascending: false })
             .range((page - 1) * pageSize, page * pageSize - 1)
 
-        if (filterType !== 'all') {
-            query = query.eq('type', filterType)
+        // 1. Tab Filter
+        if (activeTab === 'questions') {
+            query = query.neq('type', 'vocabulary')
+        } else {
+            query = query.eq('type', 'vocabulary')
+        }
+
+        // 2. Type Filter (Multi-select)
+        if (selectedTypes.length > 0) {
+            query = query.in('type', selectedTypes)
         }
 
         if (filterAIStatus === 'analyzed') {
@@ -54,6 +69,7 @@ export default function QuestionBankPage() {
 
         const { data, count, error } = await query
 
+        // ... (handle data)
         if (error) {
             console.error(error)
             alert("Error fetching questions")
@@ -73,7 +89,6 @@ export default function QuestionBankPage() {
                 return prev
             })
         } else {
-            // Deselect visible only? Or all? Usually visible.
             const newSet = new Set(selectedIds)
             questions.forEach(q => newSet.delete(q.id))
             setSelectedIds(newSet)
@@ -107,8 +122,6 @@ export default function QuestionBankPage() {
 
     const handleBatchAIAnalyze = async () => {
         const idsToProcess = Array.from(selectedIds)
-        // Filter out those already analyzed? Or allow re-analyze? Allow re-analyze.
-
         if (idsToProcess.length === 0) return
         if (!confirm(`即将对选中的 ${idsToProcess.length} 道题目进行 AI 分析。`)) return
 
@@ -116,13 +129,6 @@ export default function QuestionBankPage() {
         setStatusMessage("正在准备分析...")
 
         try {
-            // Get full question objects for selected IDs (we might only have visible ones, 
-            // but selection state is just IDs. We need the content.)
-            // Actually, we can only analyze visible ones easily if we rely on `questions` state.
-            // If user selected pages that are hidden, we'd need to fetch them. 
-            // For simplicity, let's limit batch analysis to visible items for now 
-            // OR fetch content for ids.
-
             const { data: targets } = await supabase
                 .from('questions')
                 .select('id, content, type, tags, answer')
@@ -133,27 +139,24 @@ export default function QuestionBankPage() {
             const BATCH_SIZE = 5
             for (let i = 0; i < targets.length; i += BATCH_SIZE) {
                 const batch = targets.slice(i, i + BATCH_SIZE)
-                setStatusMessage(`AI 分析中... (${i + 1}/${targets.length})`)
+                setStatusMessage(`AI 分析中... (${Math.min(i + BATCH_SIZE, targets.length)}/${targets.length})`)
 
                 const items = batch.map(q => q.content)
                 const res = await fetch('/api/ai/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ items, mode: 'tagging' }) // reuse existing API
+                    body: JSON.stringify({ items, mode: 'tagging' })
                 })
 
                 if (!res.ok) {
                     console.error("Batch failed", res.statusText)
-                    continue // Try next batch
+                    continue
                 }
 
                 const { results } = await res.json()
 
-                // Update DB for each result
-                // We do this individually or bulk update? Supabase upsert is good.
                 const updates = results.map((r: any, idx: number) => {
                     const q = batch[idx]
-                    // Merge tags
                     const newTags = new Set(q.tags || [])
                     if (r.topic) newTags.add(`Topic:${r.topic}`)
                     if (r.key_point) newTags.add(`Point:${r.key_point}`)
@@ -162,7 +165,7 @@ export default function QuestionBankPage() {
                     return {
                         id: q.id,
                         tags: Array.from(newTags),
-                        answer: (!q.answer && r.answer) ? r.answer : q.answer, // Fill if empty
+                        answer: (!q.answer && r.answer) ? r.answer : q.answer,
                         is_ai_analyzed: true
                     }
                 })
@@ -175,7 +178,6 @@ export default function QuestionBankPage() {
                     console.error("Update failed", updateError)
                 }
 
-                // Delay
                 await new Promise(resolve => setTimeout(resolve, 500))
             }
 
@@ -191,15 +193,24 @@ export default function QuestionBankPage() {
         }
     }
 
+    // Define Options based on Tab
+    const typeOptions = activeTab === 'questions' ? [
+        { label: "语法选择", value: "grammar" },
+        { label: "词汇转换", value: "word_transformation" },
+        { label: "句型转换", value: "sentence_transformation" },
+        { label: "固定搭配", value: "collocation" }
+    ] : [] // No sub-types for vocabulary yet
+
     return (
         <div className="space-y-6">
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h2 className="text-2xl font-bold text-gray-900">全量题库管理</h2>
-                    <p className="text-sm text-gray-500">共 {totalCount} 道题目</p>
+                    <h2 className="text-2xl font-bold text-gray-900">内容题库</h2>
+                    <p className="text-sm text-gray-500">共 {totalCount} 条记录</p>
                 </div>
 
+                {/* ... (Actions) ... */}
                 <div className="flex items-center space-x-2 w-full md:w-auto">
                     {selectedIds.size > 0 && (
                         <div className="flex items-center bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 animate-in fade-in">
@@ -223,6 +234,32 @@ export default function QuestionBankPage() {
                 </div>
             </div>
 
+            {/* Tabs */}
+            <div className="border-b border-gray-200">
+                <nav className="-mb-px flex space-x-8">
+                    <button
+                        onClick={() => setActiveTab('questions')}
+                        className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
+                            ${activeTab === 'questions'
+                                ? 'border-indigo-500 text-indigo-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
+                        `}
+                    >
+                        练习题库 (Questions)
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('vocabulary')}
+                        className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
+                            ${activeTab === 'vocabulary'
+                                ? 'border-indigo-500 text-indigo-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
+                        `}
+                    >
+                        单词背诵 (Vocabulary)
+                    </button>
+                </nav>
+            </div>
+
             {/* Filters */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-wrap gap-4 items-center">
                 <div className="flex items-center space-x-2">
@@ -230,17 +267,15 @@ export default function QuestionBankPage() {
                     <span className="text-sm font-medium text-gray-700">筛选:</span>
                 </div>
 
-                <select
-                    value={filterType}
-                    onChange={e => setFilterType(e.target.value)}
-                    className="text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                >
-                    <option value="all">所有题型</option>
-                    <option value="grammar">语法选择</option>
-                    <option value="word_transformation">词汇转换</option>
-                    <option value="sentence_transformation">句型转换</option>
-                    <option value="collocation">固定搭配</option>
-                </select>
+                {activeTab === 'questions' && (
+                    <MultiSelect
+                        options={typeOptions}
+                        selected={selectedTypes}
+                        onChange={setSelectedTypes}
+                        placeholder="所有题型"
+                        className="w-48"
+                    />
+                )}
 
                 <select
                     value={filterAIStatus}
@@ -256,7 +291,7 @@ export default function QuestionBankPage() {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
                         type="text"
-                        placeholder="搜索题目内容..."
+                        placeholder="搜索内容..."
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
                         className="w-full pl-9 pr-4 py-2 text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"

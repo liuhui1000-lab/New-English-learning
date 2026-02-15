@@ -9,35 +9,28 @@ async function extractText(filePath) {
 
         const loadingTask = pdfjsLib.getDocument({
             data: uint8Array,
-            // Disable worker for simple Node usage if possible, or let it fallback
             isEvalSupported: false,
             useSystemFonts: true,
+            cMapUrl: './node_modules/pdfjs-dist/cmaps/',
+            cMapPacked: true,
         });
 
         const pdfDocument = await loadingTask.promise;
         console.log(`PDF Loaded. Pages: ${pdfDocument.numPages}`);
 
-        for (let i = 1; i <= Math.min(5, pdfDocument.numPages); i++) {
+        // Questions 21-35 are usually on pages 2-4
+        for (let i = 2; i <= Math.min(4, pdfDocument.numPages); i++) {
             const page = await pdfDocument.getPage(i);
             const content = await page.getTextContent();
 
-            // Map items to string, check if they are separated by extensive whitespace
-            // PDF text content often comes as separate items for each position.
-            // We want to see how they are structured.
-
             console.log(`\n\n--- Page ${i} ---`);
-
-            // Simulating how a parser might stitch them:
-            let lastY = -1;
-            let textBuffer = "";
-
-            // Simple join
             const strings = content.items.map(item => item.str);
-            console.log(strings.join(" ||| ")); // Use triple pipe to see item boundaries
+            // Join with newline to simulate lines better
+            console.log(strings.join("\n"));
         }
     } catch (error) {
         console.error("Error extraction:", error);
     }
 }
 
-extractText('./中考考纲词性转换表单.pdf');
+extractText('./1 2024年 上海初三闵行区二模英语试卷.pdf');
