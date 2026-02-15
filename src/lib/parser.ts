@@ -480,7 +480,11 @@ function splitQuestions(text: string): string[] {
 
     // 1. Remove section headers first
     const sectionHeaderRegex = /(?:^|\n)\s*(?:#{2,}\s*)?(?:Part\s+[A-Z]|Section\s+[A-Z]|[IVX]+\.\s+.*|[A-Z]\.\s+(?:Read|Complete|Fill|Choose|Section|Listen).*?|Choose\s+the\s+best\s+answer.*?)(?:\n|$)/gi;
+    console.log(`splitQuestions: Input text length: ${text.length}`);
+    console.log('Input text preview:', text.substring(0, 500));
     let cleanText = text.replace(sectionHeaderRegex, '\n');
+    console.log(`After header removal: ${cleanText.length} chars`);
+    console.log('Clean text preview:', cleanText.substring(0, 500));
 
     // 2. Split on question numbers (e.g., "21.", "22.", etc.)
     // Use capturing group to keep the numbers
