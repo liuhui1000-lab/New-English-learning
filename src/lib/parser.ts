@@ -538,10 +538,9 @@ function splitQuestions(text: string): string[] {
     }
 
     // 3. Clean up each question: remove embedded section headers
-    // Pattern: optional markdown headers (####) + Roman numerals/letters + section instructions
-    // Matches both "V. Rewrite..." and "#### V. Rewrite..."
-    const embeddedHeaderRegex = /\s*#{0,}\s*(?:[IVX]+|[A-Z])\.\s+(?:Choose|Complete|Fill|Read|Write|Rewrite|Transform).*/i;
-
+    // Pattern: optional markdown headers (####) + Roman numerals/letters/Part + section instructions
+    // Matches: "V. Rewrite...", "#### III. Choose...", "## Part 2 Phonetics..."
+    const embeddedHeaderRegex = /\s*#{0,}\s*(?:(?:[IVX]+|[A-Z])\.\s+(?:Choose|Complete|Fill|Read|Write|Rewrite|Transform)|Part\s+\d+)[^\n]*/i;
     const cleanedQuestions = questions.map(q => {
         // Find if there's an embedded header
         const match = q.search(embeddedHeaderRegex);
