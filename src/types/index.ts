@@ -51,6 +51,8 @@ export interface QuizResult {
     user_id: string;
     question_id: string;
     is_correct: boolean;
+    answer?: string;
+    question_type?: string;
     attempt_at: string;
     source_type: 'recitation' | 'quiz'; // For distinguishing error types
 }

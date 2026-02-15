@@ -34,15 +34,44 @@ function PracticeContent() {
         setLoading(false)
     }
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         const newResults: Record<string, boolean> = {}
+        const submissionData: any[] = []
+
+        // Get current user
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+            alert("请先登录")
+            return
+        }
+
         questions.forEach(q => {
             const userAnswer = (answers[q.id] || "").trim().toLowerCase()
             const correctAnswer = (q.answer || "").trim().toLowerCase()
-            newResults[q.id] = userAnswer === correctAnswer
+            const isCorrect = userAnswer === correctAnswer
+            newResults[q.id] = isCorrect
+
+            submissionData.push({
+                user_id: user.id,
+                question_id: q.id,
+                is_correct: isCorrect,
+                answer: userAnswer,
+                question_type: type,
+                source_type: 'quiz'
+            })
         })
+
         setResults(newResults)
         setSubmitted(true)
+
+        // Async save to DB
+        const { error } = await supabase
+            .from('quiz_results')
+            .insert(submissionData)
+
+        if (error) {
+            console.error("Failed to save results:", error)
+        }
     }
 
     if (loading) return <div>Loading...</div>

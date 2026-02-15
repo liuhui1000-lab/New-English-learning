@@ -140,6 +140,10 @@ export default function StudentDashboardPage() {
                             词转
                         </Link>
                         <span className="text-gray-300">|</span>
+                        <Link href="/dashboard/practice?type=sentence_transformation" className="text-gray-600 hover:text-green-600 font-medium">
+                            句转
+                        </Link>
+                        <span className="text-gray-300">|</span>
                         <Link href="/dashboard/practice?type=grammar" className="text-gray-600 hover:text-green-600 font-medium">
                             语法
                         </Link>
