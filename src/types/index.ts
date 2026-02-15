@@ -11,7 +11,7 @@ export interface UserProfile {
     last_login?: string;
 }
 
-export type QuestionType = 'word_transformation' | 'collocation' | 'grammar';
+export type QuestionType = 'word_transformation' | 'sentence_transformation' | 'collocation' | 'grammar' | 'vocabulary';
 
 export interface Question {
     id: string;
@@ -25,6 +25,7 @@ export interface Question {
     occurrence_count: number;
     source_material_id?: string;
     created_at: string;
+    is_ai_analyzed?: boolean;
 }
 
 export interface StudyRecord {
@@ -42,4 +43,27 @@ export interface ImportHistory {
     import_date: string;
     question_count: number;
     status: 'success' | 'failed';
+}
+// ... (Existing types)
+
+export interface QuizResult {
+    id: string;
+    user_id: string;
+    question_id: string;
+    is_correct: boolean;
+    answer?: string;
+    question_type?: string;
+    attempt_at: string;
+    source_type: 'recitation' | 'quiz'; // For distinguishing error types
+}
+
+export interface AISettings {
+    provider: 'deepseek' | 'zhipu' | 'openai';
+    apiKey: string;
+    baseUrl?: string;
+    model: string;
+}
+
+export interface AppSettings {
+    ai: AISettings;
 }

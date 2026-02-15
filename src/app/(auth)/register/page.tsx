@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase"
+import { createBrowserClient } from '@supabase/ssr'
 import Link from "next/link"
 
 export default function RegisterPage() {
@@ -24,7 +24,12 @@ export default function RegisterPage() {
         setLoading(true)
         setError(null)
 
-        const email = `${username}@sh-english.app`
+        const email = `${username.trim()}@sh-english.app`
+
+        const supabase = createBrowserClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
 
         try {
             const { data, error } = await supabase.auth.signUp({
@@ -32,7 +37,7 @@ export default function RegisterPage() {
                 password,
                 options: {
                     data: {
-                        username: username,
+                        username: username.trim(),
                         role: 'student', // Default role
                         status: 'pending' // Default status, waiting for admin approval
                     }
@@ -43,7 +48,13 @@ export default function RegisterPage() {
 
             setSuccess(true)
         } catch (err: any) {
-            setError(err.message || "注册失败，请稍后重试")
+            console.error(err)
+            // Handle "Email not valid" specifically
+            if (err.message && err.message.includes("valid")) {
+                setError("用户名格式错误（请勿包含空格或特殊字符）")
+            } else {
+                setError(err.message || "注册失败")
+            }
         } finally {
             setLoading(false)
         }
@@ -60,9 +71,12 @@ export default function RegisterPage() {
                         请等待管理员审核批准后即可登录。
                     </p>
                     <div className="mt-6">
-                        <Link href="/login" className="text-indigo-600 hover:text-indigo-500 font-semibold">
+                        <button
+                            onClick={() => router.push("/login")}
+                            className="text-indigo-600 hover:text-indigo-500 font-semibold underline"
+                        >
                             返回登录
-                        </Link>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -80,6 +94,7 @@ export default function RegisterPage() {
                 </div>
 
                 <form className="mt-8 space-y-6" onSubmit={handleRegister}>
+                    {/* ... fields ... */}
                     <div className="space-y-4 rounded-md shadow-sm">
                         <div>
                             <label htmlFor="username" className="block text-sm font-medium leading-6 text-gray-900">用户名</label>
@@ -92,6 +107,7 @@ export default function RegisterPage() {
                                     className="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 px-3"
                                     value={username}
                                     onChange={(e) => setUsername(e.target.value)}
+                                    placeholder="e.g. student1"
                                 />
                             </div>
                         </div>
@@ -145,9 +161,13 @@ export default function RegisterPage() {
 
                     <div className="text-center text-sm">
                         <span className="text-gray-500">已有账号？</span>
-                        <Link href="/login" className="font-semibold text-indigo-600 hover:text-indigo-500 ml-1">
+                        <button
+                            type="button"
+                            onClick={() => router.push("/login")}
+                            className="font-semibold text-indigo-600 hover:text-indigo-500 ml-1 underline"
+                        >
                             直接登录
-                        </Link>
+                        </button>
                     </div>
                 </form>
             </div>

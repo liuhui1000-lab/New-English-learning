@@ -1,66 +1,128 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase"; // Use admin client if needed for settings, but here we can use what we have or env vars
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
-// Helper to get Access Token
-async function getAccessToken(apiKey: string, secretKey: string) {
-    const url = `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${apiKey}&client_secret=${secretKey}`;
-    const resp = await fetch(url, { method: 'POST' });
-    const data = await resp.json();
-    return data.access_token;
-}
+export const maxDuration = 60; // Allow up to 60 seconds for OCR processing
+
+// Configuration for Paddle OCR (Layout Parsing)
+const PADDLE_API_URL = "https://5ejew8k4i019dek5.aistudio-app.com/layout-parsing";
+// Default token provided by user, but prefer Env/DB
+const DEFAULT_TOKEN = "483605608bc2d69ed9979463871dd4bc6095285a";
 
 export async function POST(req: NextRequest) {
     try {
-        // 1. Get Settings from DB (or Env)
-        // For MVP, we try Env first, then DB
-        let apiKey = process.env.BAIDU_OCR_API_KEY;
-        let secretKey = process.env.BAIDU_OCR_SECRET_KEY;
+        const cookieStore = await cookies()
+        const supabase = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            {
+                cookies: {
+                    getAll() {
+                        return cookieStore.getAll()
+                    },
+                    setAll(cookiesToSet) {
+                        // Ignoring writes in GET/POST API usually fine
+                    },
+                },
+            }
+        )
 
-        // If not in Env, fetch from system_settings via Supabase
-        if (!apiKey || !secretKey) {
-            // Note: This requires the supabase client to have access (anon key might not read system_settings if RLS is strict)
-            // So ideally we use a Service Role key here, or ensure system_settings is readable.
-            // For now, let's assume Env vars are set or we skip.
-            // In a real app, use Service Role Client.
+        // 1. Get Settings from DB
+        let token = process.env.PADDLE_OCR_TOKEN || process.env.BAIDU_OCR_API_KEY;
+        let apiUrl = PADDLE_API_URL;
+
+        const { data: settings } = await supabase
+            .from('system_settings')
+            .select('*')
+            .in('key', ['ocr_token', 'ocr_url', 'paddle_ocr_token', 'baidu_ocr_api_key']);
+
+        if (settings) {
+            const map: Record<string, string> = {};
+            settings.forEach((s: any) => map[s.key] = s.value);
+
+            // Prioritize new generic keys
+            if (map['ocr_token']) token = map['ocr_token'];
+            else if (map['paddle_ocr_token']) token = map['paddle_ocr_token'];
+            else if (map['baidu_ocr_api_key']) token = map['baidu_ocr_api_key'];
+
+            if (map['ocr_url']) apiUrl = map['ocr_url'];
         }
 
-        if (!apiKey || !secretKey) {
-            return NextResponse.json({ error: "OCR Configuration Missing" }, { status: 500 });
-        }
+        // Fallback
+        if (!token) token = DEFAULT_TOKEN;
 
         const { image } = await req.json(); // Base64 image
         if (!image) return NextResponse.json({ error: "No image provided" }, { status: 400 });
 
-        // 2. Get Token
-        const token = await getAccessToken(apiKey, secretKey);
+        // 2. Prepare Payload
+        const payload = {
+            file: image,
+            fileType: 1,
+            useDocOrientationClassify: false,
+            useDocUnwarping: false,
+            useChartRecognition: false
+        };
 
-        // 3. Call OCR (General Basic or High Accuracy)
-        // Using 'general_basic' for speed, or 'webimage'
-        const ocrUrl = `https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic?access_token=${token}`;
-
-        const params = new URLSearchParams();
-        params.append('image', image);
-
-        // Baidu requires Content-Type: application/x-www-form-urlencoded
-        const ocrResp = await fetch(ocrUrl, {
+        // 3. Call External API
+        console.log("Calling OCR API:", apiUrl);
+        const response = await fetch(apiUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: params
+            headers: {
+                "Authorization": `token ${token}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
         });
 
-        const result = await ocrResp.json();
+        if (!response.ok) {
+            const errText = await response.text();
 
-        if (result.error_code) {
-            throw new Error(result.error_msg);
+            // Handle Quota / Rate Limit explicitly
+            if (response.status === 429) {
+                return NextResponse.json({ error: "OCR Quota Exceeded (429). Please try again tomorrow." }, { status: 429 });
+            }
+            if (response.status === 401 || response.status === 403) {
+                return NextResponse.json({ error: "OCR API Key Invalid or expired." }, { status: 401 });
+            }
+
+            throw new Error(`Paddle API Error: ${response.status} ${errText.substring(0, 100)}`);
         }
 
-        // 4. Extract Text
-        const text = result.words_result.map((w: any) => w.words).join(" ");
+        const result = await response.json();
 
-        return NextResponse.json({ text });
+        // Check for error codes (support both errorCode and error_code standards)
+        if (result.errorCode !== undefined && result.errorCode !== 0) {
+            throw new Error(result.errorMsg || "Unknown Error");
+        }
+        if (result.error_code !== undefined && result.error_code !== 0) {
+            throw new Error(result.error_msg || "Unknown Error");
+        }
+
+        // 4. Parse Response
+        // Priority 1: Layout Parsing (Markdown) - from User's Script
+        if (result.result && result.result.layoutParsingResults) {
+            const parsingResults = result.result.layoutParsingResults;
+            let fullMarkdown = "";
+
+            for (const res of parsingResults) {
+                if (res.markdown && res.markdown.text) {
+                    fullMarkdown += res.markdown.text + "\n\n";
+                }
+            }
+            return NextResponse.json({ text: fullMarkdown });
+        }
+
+        // Priority 2: Standard PP-OCRv5 (Plain Text) - from Doc Link
+        if (result.result && result.result.ocrResults) {
+            const ocrResults = result.result.ocrResults;
+            const text = ocrResults.map((r: any) => r.words || r.text || "").join("\n");
+            return NextResponse.json({ text });
+        }
+
+        throw new Error("Invalid response structure: No layoutParsingResults or ocrResults found");
 
     } catch (error: any) {
-        console.error("OCR Error:", error);
+        console.error("OCR Proxy Error:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

@@ -73,7 +73,7 @@ create table public.import_history (
 -- Questions Table
 create table public.questions (
   id uuid default gen_random_uuid() primary key,
-  type text check (type in ('word_transformation', 'collocation', 'grammar', 'mistake')),
+  type text check (type in ('word_transformation', 'collocation', 'grammar', 'mistake', 'vocabulary')),
   content text, -- The question body or OCR text
   answer text,
   hint text,
@@ -97,6 +97,12 @@ create table public.user_progress (
   attempts int default 0,
   last_practiced_at timestamptz,
   next_review_at timestamptz,
+  
+  -- Recitation Module Fields
+  consecutive_correct int default 0, -- Track 2x consecutive pass rule
+  review_stage int default 0, -- Ebbinghaus stage (0-7)
+  ease_factor float default 2.5, -- SM-2 Ease Factor
+  
   unique(user_id, question_id)
 );
 
