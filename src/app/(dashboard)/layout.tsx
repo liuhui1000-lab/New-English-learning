@@ -16,17 +16,35 @@ export default function DashboardLayout({
 
     useEffect(() => {
         const fetchRole = async () => {
-            const { data: { user } } = await supabase.auth.getUser()
-            if (user) {
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('role')
-                    .eq('id', user.id)
-                    .single()
+            try {
+                const { data: { user } } = await supabase.auth.getUser()
+                console.log('Current user:', user?.id)
 
-                setIsAdmin(profile?.role === 'admin')
+                if (user) {
+                    const { data: profile, error } = await supabase
+                        .from('profiles')
+                        .select('role')
+                        .eq('id', user.id)
+                        .single()
+
+                    console.log('Profile data:', profile)
+                    console.log('Profile error:', error)
+
+                    if (error) {
+                        console.error('Failed to fetch profile:', error)
+                        // If RLS blocks the query, assume not admin
+                        setIsAdmin(false)
+                    } else {
+                        setIsAdmin(profile?.role === 'admin')
+                        console.log('Is admin:', profile?.role === 'admin')
+                    }
+                }
+            } catch (e) {
+                console.error('Error in fetchRole:', e)
+                setIsAdmin(false)
+            } finally {
+                setLoading(false)
             }
-            setLoading(false)
         }
         fetchRole()
     }, [])
