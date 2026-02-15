@@ -518,8 +518,22 @@ function splitQuestions(text: string): string[] {
         questions.push(currentQuestion.trim());
     }
 
-    // 3. Filter out non-questions (too short, or looks like a header)
-    return questions.filter(q => {
+    // 3. Clean up each question: remove embedded section headers
+    // Pattern: markdown headers (####) + Roman numerals/letters + section instructions
+    const embeddedHeaderRegex = /\s*#{2,}\s*(?:[IVX]+|[A-Z])\.\s+(?:Choose|Complete|Fill|Read|Write|Rewrite|Transform).*/i;
+
+    const cleanedQuestions = questions.map(q => {
+        // Find if there's an embedded header
+        const match = q.search(embeddedHeaderRegex);
+        if (match !== -1) {
+            // Truncate at the header
+            return q.substring(0, match).trim();
+        }
+        return q;
+    });
+
+    // 4. Filter out non-questions (too short, or looks like a header)
+    return cleanedQuestions.filter(q => {
         // Must have reasonable length
         if (q.length < 10) return false;
         // Must start with a number
