@@ -112,7 +112,7 @@ export default function StudentDashboardPage() {
 
             {/* Action Cards */}
             <h3 className="text-xl font-bold text-gray-900 mt-8">开始学习</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {/* Study Mode */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition cursor-pointer group">
                     <div className="flex items-center justify-between mb-4">
@@ -158,6 +158,22 @@ export default function StudentDashboardPage() {
                     </div>
                 </div>
 
+                {/* Upload Mistakes */}
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition cursor-pointer group">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="bg-purple-50 p-3 rounded-lg group-hover:bg-purple-100 transition">
+                            <Upload className="text-purple-600 h-6 w-6" />
+                        </div>
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900 mb-1">拍摄错题</h3>
+                    <p className="text-gray-500 text-sm mb-4">
+                        上传错题照片，OCR识别，自动归档。
+                    </p>
+                    <Link href="/dashboard/upload" className="text-purple-600 font-semibold hover:underline text-sm flex items-center">
+                        立即上传 <Upload className="w-4 h-4 ml-1" />
+                    </Link>
+                </div>
+
                 {/* Error Notebook */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition cursor-pointer group">
                     <div className="flex items-center justify-between mb-4">
@@ -175,7 +191,7 @@ export default function StudentDashboardPage() {
                         查看错题分析，导出打印，消灭薄弱点。
                     </p>
                     <Link href="/dashboard/mistakes" className="text-orange-600 font-semibold hover:underline text-sm flex items-center">
-                        查看错题 <Upload className="w-4 h-4 ml-1" />
+                        查看错题 <AlertCircle className="w-4 h-4 ml-1" />
                     </Link>
                 </div>
             </div>

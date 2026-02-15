@@ -201,6 +201,53 @@ export default function UserDetailPage() {
         }
     }
 
+    const handleDeleteUser = async () => {
+        if (!profile) return
+
+        // First confirmation
+        const confirmUsername = prompt(
+            `⚠️ 危险操作：删除用户将永久删除所有数据！\n\n` +
+            `包括：练习记录、学习进度、错题本、用户资料等。\n\n` +
+            `请输入用户名 "${profile.username}" 以确认删除：`
+        )
+
+        if (confirmUsername !== profile.username) {
+            if (confirmUsername !== null) {
+                alert("用户名不匹配，已取消删除")
+            }
+            return
+        }
+
+        // Second confirmation
+        const finalConfirm = confirm(
+            `最后确认：确定要删除用户 "${profile.username}" 及其所有数据吗？\n\n此操作不可撤销！`
+        )
+
+        if (!finalConfirm) return
+
+        try {
+            const { data: { session } } = await supabase.auth.getSession()
+            const res = await fetch('/api/admin/delete-user', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session?.access_token}`
+                },
+                body: JSON.stringify({ userId })
+            })
+
+            if (!res.ok) {
+                const data = await res.json()
+                throw new Error(data.error || '删除失败')
+            }
+
+            alert("用户已成功删除！")
+            window.location.href = '/admin/users'
+        } catch (e: any) {
+            alert("删除失败: " + e.message)
+        }
+    }
+
     if (!profile) return <div className="p-8">加载中...</div>
 
     return (
@@ -216,12 +263,20 @@ export default function UserDetailPage() {
                         </span>
                     </p>
                 </div>
-                <button
-                    onClick={handleResetPassword}
-                    className="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 shadow-sm"
-                >
-                    重置密码
-                </button>
+                <div className="flex space-x-3">
+                    <button
+                        onClick={handleResetPassword}
+                        className="bg-orange-600 text-white px-4 py-2 rounded text-sm hover:bg-orange-700 shadow-sm"
+                    >
+                        重置密码
+                    </button>
+                    <button
+                        onClick={handleDeleteUser}
+                        className="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 shadow-sm border-2 border-red-700"
+                    >
+                        删除用户
+                    </button>
+                </div>
             </div>
 
             {/* Stats Grid */}
