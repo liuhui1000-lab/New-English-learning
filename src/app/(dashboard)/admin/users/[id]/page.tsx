@@ -172,16 +172,33 @@ export default function UserDetailPage() {
     }
 
     const handleResetPassword = async () => {
-        const newPassword = prompt("请输入新密码:")
+        const newPassword = prompt("请输入新密码 (至少6个字符):")
         if (!newPassword) return
+        if (newPassword.length < 6) {
+            alert("密码至少需要6个字符")
+            return
+        }
 
-        const { error } = await supabase.auth.admin.updateUserById(
-            userId as string,
-            { password: newPassword }
-        )
+        try {
+            const { data: { session } } = await supabase.auth.getSession()
+            const res = await fetch('/api/admin/reset-password', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session?.access_token}`
+                },
+                body: JSON.stringify({ userId, newPassword })
+            })
 
-        if (error) alert("重置失败: " + error.message)
-        else alert("密码已重置")
+            if (!res.ok) {
+                const data = await res.json()
+                throw new Error(data.error || '重置失败')
+            }
+
+            alert("密码已成功重置！")
+        } catch (e: any) {
+            alert("重置失败: " + e.message)
+        }
     }
 
     if (!profile) return <div className="p-8">加载中...</div>
