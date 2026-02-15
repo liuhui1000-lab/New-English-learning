@@ -76,3 +76,5 @@ console.log("\n--- TEST 3: Word Trans Classification ---");
 const wtResult = classifyQuestion(testCases.wordTrans);
 console.log(`Classified: ${wtResult.type} (Expected: word_transformation)`);
 if (wtResult.tags.length > 0) console.log(`Tags: ${wtResult.tags}`);
+
+export { }
