@@ -349,64 +349,49 @@ function isRelated(root: string, target: string): boolean {
     // If the user put them next to each other, they imply relation.
     // We only want to break if they are *clearly* different.
     // "accept" vs "banana" -> 0 prefix.
-
     if (prefix >= 3) return true;
     return false;
 }
 
 function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
-    // Strategy: Parse each raw question string into structured format
-    // Filter out non-questions (e.g., section headers, instructions)
+    // Strategy: Strict Filter. Keep only Questions (blanks/options).
     console.log(`processMockPaperMode: Input ${rawItems.length} items`);
     console.log('Question numbers:', rawItems.map(q => q.match(/^\d+\./)?.[0] || 'NO_NUM').slice(0, 20));
 
-    const parsedQuestions = rawItems
+    const parsedAndFilteredQuestions = rawItems
         .map((item) => classifyQuestion(item))
-        .filter((q) => {
-            // Filter out items that don't look like real questions
-            // e.g., if content is too short or doesn't have answer options
-            const hasOptions = /[A-D]\)/.test(q.content);
-            const hasBlank = /_+/.test(q.content) || /\(\s*\)/.test(q.content);
-            const isValid = hasOptions || hasBlank || q.type === 'word_transformation' || q.type === 'sentence_transformation';
+        .filter(q => {
+            // 1. Must have a blank or options
+            const hasBlank = /_+|\(\s{3,}\)|\[\s{3,}\]/.test(q.content);
+            const hasOptions = /[A-D][\)\.].*[A-D][\)\.]/.test(q.content);
 
-            if (!isValid) {
+            if (!hasBlank && !hasOptions) {
                 const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
-                console.log(`Filtered out ${qNum}: no options/blanks`);
+                console.log(`Filtered out ${qNum}: no blank or options`);
+                return false;
             }
 
-            return isValid;
+            // 2. Filter out "Listening" style questions (Empty content with just a blank)
+            // e.g. "1. ______" or "1. (     )" with no no other text
+            // Clean the question number for checking
+            const cleanQ = q.content.replace(/^[\(（\[]?\d+[）\)\]]?[\.\,，、]/, '').trim();
+            // If the remaining text is JUST underscores/blanks, it's likely listening
+            if (/^(_+|[\(\[]\s*[\)\]])$/.test(cleanQ)) {
+                const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
+                console.log(`Filtered out ${qNum}: looks like a listening question (just blank)`);
+                return false;
+            }
+
+            // 3. Filter out "First Letter" questions (detected via instructions in the content if header missed)
+            if (q.content.includes("首字母") || q.content.includes("beginning with")) {
+                const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
+                console.log(`Filtered out ${qNum}: first letter question`);
+                return false;
+            }
+
+            return true;
         });
 
-    // Strategy: Strict Filter. Keep only Questions (blanks/options).
-    const filteredQuestions = parsedQuestions.filter(q => {
-        // 1. Must have a blank or options
-        const hasBlank = /_+|\(\s{3,}\)|\[\s{3,}\]/.test(q.content);
-        const hasOptions = /[A-D][\)\.].*[A-D][\)\.]/.test(q.content);
-
-        if (!hasBlank && !hasOptions) {
-            const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
-            console.log(`Filtered out ${qNum}: no blank or options (after classify)`);
-            return false;
-        }
-
-        // 2. Filter out "Listening" style questions (Empty content with just a blank)
-        // e.g. "1. ______" or "1. (     )" with no other text
-        // Clean the question number for checking
-        const cleanQ = q.content.replace(/^[\(（\[]?\d+[）\)\]]?[\.\,，、]/, '').trim();
-        // If the remaining text is JUST underscores/blanks, it's likely listening
-        if (/^(_+|[\(\[]\s*[\)\]])$/.test(cleanQ)) {
-            const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
-            console.log(`Filtered out ${qNum}: looks like a listening question (just blank)`);
-            return false;
-        }
-
-        // 3. Filter out "First Letter" questions (detected via instructions in the content if header missed)
-        if (q.includes("首字母") || q.includes("beginning with")) {
-            return false;
-        }
-
-        return true;
-    });
 
     console.log(`Mock Paper Mode: Filtered ${rawItems.length} items down to ${filteredQuestions.length}`);
     return filteredQuestions.map(classifyQuestion);
