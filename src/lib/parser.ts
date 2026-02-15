@@ -101,6 +101,8 @@ function extractTargetSections(text: string): string {
     let endIndex = text.length;
     // Search for end pattern AFTER start index
     const searchContext = startIndex !== -1 ? text.substring(startIndex) : text;
+    console.log(`Searching for section end in ${searchContext.length} chars`);
+    console.log('Search context preview (last 500 chars):', searchContext.substring(Math.max(0, searchContext.length - 500)));
 
     for (const p of endPatterns) {
         const match = searchContext.search(p);
@@ -111,6 +113,8 @@ function extractTargetSections(text: string): string {
             console.log(`Found Section End at index ${endIndex}: ${p}`);
             console.log('End pattern matched text:', searchContext.substring(match, match + 100));
             break;
+        } else {
+            console.log(`Pattern ${p} did NOT match`);
         }
     }
 
