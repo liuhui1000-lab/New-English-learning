@@ -29,12 +29,19 @@ export default function StudentDashboardPage() {
     useEffect(() => {
         const fetchStats = async () => {
             setLoading(true)
+            const { data: { user } } = await supabase.auth.getUser()
+
+            if (!user) {
+                setLoading(false)
+                return
+            }
 
             // 1. Fetch Study Progress (Vocabulary)
             // Aggregating from user_progress table
             const { data: progressData } = await supabase
                 .from('user_progress')
                 .select('status')
+                .eq('user_id', user.id)
 
             // TODO: Also fetch total 'questions' count to calculate 'new'
             // For now, we simulate 'new' or just show tracked ones
@@ -70,6 +77,7 @@ export default function StudentDashboardPage() {
             const { data: quizData, error } = await supabase
                 .from('quiz_results')
                 .select('is_correct')
+                .eq('user_id', user.id)
 
             if (quizData && !error) {
                 const total = quizData.length
