@@ -15,6 +15,7 @@ export default function UserDetailPage() {
         totalQuestions: 0,
         correctRate: 0,
         masteredCount: 0,
+        learningCount: 0,
         lastActive: '从未活跃'
     })
     const [loading, setLoading] = useState(true)
@@ -49,6 +50,41 @@ export default function UserDetailPage() {
             fetchAnalysis()
         }
     }, [userId])
+
+    const [recentActivity, setRecentActivity] = useState<any[]>([])
+    const [weakWords, setWeakWords] = useState<any[]>([])
+
+    useEffect(() => {
+        if (userId) {
+            fetchProfile()
+            fetchStats()
+            fetchAnalysis()
+            fetchActivityAndWeakness()
+        }
+    }, [userId])
+
+    const fetchActivityAndWeakness = async () => {
+        // 1. Recent Quiz Activity
+        const { data: activity } = await supabase
+            .from('quiz_results')
+            .select('*, questions(content)')
+            .eq('user_id', userId)
+            .order('attempt_at', { ascending: false })
+            .limit(10)
+
+        if (activity) setRecentActivity(activity)
+
+        // 2. Weakest Words (High attempts, Learning status)
+        const { data: weak } = await supabase
+            .from('user_progress')
+            .select('attempts, status, questions(content, answer)')
+            .eq('user_id', userId)
+            .eq('status', 'learning')
+            .order('attempts', { ascending: false })
+            .limit(10)
+
+        if (weak) setWeakWords(weak)
+    }
 
     const fetchAnalysis = async () => {
         try {
@@ -118,10 +154,18 @@ export default function UserDetailPage() {
             .eq('user_id', userId)
             .eq('status', 'mastered')
 
+        // 3. Learning Count
+        const { count: learningCount } = await supabase
+            .from('user_progress')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', userId)
+            .eq('status', 'learning')
+
         setStats({
             totalQuestions: total,
             correctRate: total > 0 ? Math.round((correct / total) * 100) : 0,
             masteredCount: masteredCount || 0,
+            learningCount: learningCount || 0,
             lastActive
         })
         setLoading(false)
@@ -174,12 +218,64 @@ export default function UserDetailPage() {
                     <p className="text-3xl font-bold text-green-600 mt-2">{stats.correctRate}%</p>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <h3 className="text-gray-500 text-sm font-medium">已掌握 (Mastered)</h3>
-                    <p className="text-3xl font-bold text-blue-600 mt-2">{stats.masteredCount}</p>
+                    <h3 className="text-gray-500 text-sm font-medium">已掌握 / 学习中</h3>
+                    <p className="text-3xl font-bold text-blue-600 mt-2">
+                        {stats.masteredCount} <span className="text-sm text-gray-400">/ {stats.learningCount}</span>
+                    </p>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                     <h3 className="text-gray-500 text-sm font-medium">最近活跃</h3>
                     <p className="text-md font-medium text-gray-700 mt-3">{stats.lastActive}</p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Weak Words */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h3 className="text-lg font-bold text-gray-900 mb-4">高频错词 (Top 10)</h3>
+                    <div className="space-y-3">
+                        {weakWords.length === 0 ? (
+                            <p className="text-gray-500 text-sm">暂无高频错词数据</p>
+                        ) : (
+                            weakWords.map((w, idx) => (
+                                <div key={idx} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
+                                    <div>
+                                        <p className="font-medium text-gray-800">{w.questions?.content}</p>
+                                        <p className="text-xs text-gray-500">{w.questions?.answer}</p>
+                                    </div>
+                                    <span className="text-xs font-bold bg-red-100 text-red-600 px-2 py-1 rounded-full">
+                                        练习 {w.attempts} 次
+                                    </span>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+
+                {/* Recent Activity */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h3 className="text-lg font-bold text-gray-900 mb-4">最近练习记录</h3>
+                    <div className="space-y-3">
+                        {recentActivity.length === 0 ? (
+                            <p className="text-gray-500 text-sm">暂无练习记录</p>
+                        ) : (
+                            recentActivity.map((a, idx) => (
+                                <div key={idx} className="flex justify-between items-center text-sm border-b border-gray-100 pb-2 last:border-0">
+                                    <div className="truncate max-w-[70%]">
+                                        <span className={`mr-2 ${a.is_correct ? 'text-green-500' : 'text-red-500'}`}>
+                                            {a.is_correct ? '●' : '●'}
+                                        </span>
+                                        <span className="text-gray-700 truncate" title={a.questions?.content}>
+                                            {a.questions?.content?.substring(0, 30)}...
+                                        </span>
+                                    </div>
+                                    <span className="text-gray-400 text-xs">
+                                        {new Date(a.attempt_at).toLocaleDateString()}
+                                    </span>
+                                </div>
+                            ))
+                        )}
+                    </div>
                 </div>
             </div>
 
