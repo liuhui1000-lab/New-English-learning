@@ -71,6 +71,7 @@ function PracticeContent() {
 
         if (error) {
             console.error("Failed to save results:", error)
+            alert("提交失败，成绩未能保存！错误信息：" + error.message)
         }
     }
 
