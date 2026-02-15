@@ -161,9 +161,25 @@ Input Questions:
         const content = aiData.choices[0].message.content
 
         // 6. Parse JSON from AI content
-        // Handle potential markdown code blocks
-        const jsonStr = content.replace(/```json\n?|\n?```/g, '')
-        const parsedResults = JSON.parse(jsonStr)
+        console.log("AI Raw Output:", content)
+
+        // Find the first '[' and the last ']' to extract the JSON array
+        const jsonMatch = content.match(/\[[\s\S]*\]/)
+        if (!jsonMatch) {
+            throw new Error("No JSON array found in AI response")
+        }
+
+        const jsonStr = jsonMatch[0]
+
+        let parsedResults
+        try {
+            parsedResults = JSON.parse(jsonStr)
+        } catch (e: any) {
+            console.error("JSON Parse Fail:", e)
+            // Try to cleanup common issues like trailing commas if needed, 
+            // but for now just fail with better error
+            throw new Error(`JSON Syntax Error: ${e.message}`)
+        }
 
         return NextResponse.json({ results: parsedResults })
 
