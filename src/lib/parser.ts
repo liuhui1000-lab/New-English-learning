@@ -485,6 +485,8 @@ function splitQuestions(text: string): string[] {
     // 2. Split on question numbers (e.g., "21.", "22.", etc.)
     // Use capturing group to keep the numbers
     const parts = cleanText.split(/(\d+\.)/);
+    console.log(`splitQuestions: Split into ${parts.length} parts`);
+    console.log('First 5 parts:', parts.slice(0, 10).map(p => p.substring(0, 50)));
 
     const questions: string[] = [];
     let currentQuestion = '';
@@ -534,15 +536,27 @@ function splitQuestions(text: string): string[] {
     });
 
     // 4. Filter out non-questions (too short, or looks like a header)
-    return cleanedQuestions.filter(q => {
+    console.log(`Before filtering: ${cleanedQuestions.length} questions`);
+    const filtered = cleanedQuestions.filter(q => {
         // Must have reasonable length
-        if (q.length < 10) return false;
+        if (q.length < 10) {
+            console.log('Filtered (too short):', q);
+            return false;
+        }
         // Must start with a number
-        if (!/^\d+\./.test(q)) return false;
+        if (!/^\d+\./.test(q)) {
+            console.log('Filtered (no number):', q.substring(0, 50));
+            return false;
+        }
         // Filter out Roman numeral headers that might have slipped through
-        if (/^[IVX]+\.\s/.test(q) && q.length < 100) return false;
+        if (/^[IVX]+\.\s/.test(q) && q.length < 100) {
+            console.log('Filtered (Roman numeral):', q);
+            return false;
+        }
         return true;
     });
+    console.log(`After filtering: ${filtered.length} questions`);
+    return filtered;
 }
 
 function classifyQuestion(content: string): ParsedQuestion {
