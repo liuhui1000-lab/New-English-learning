@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase"
+import { createBrowserClient } from '@supabase/ssr'
 import Link from "next/link"
 
 export default function RegisterPage() {
@@ -25,6 +25,11 @@ export default function RegisterPage() {
         setError(null)
 
         const email = `${username.trim()}@sh-english.app`
+
+        const supabase = createBrowserClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
 
         try {
             const { data, error } = await supabase.auth.signUp({
