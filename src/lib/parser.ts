@@ -98,8 +98,6 @@ function extractTargetSections(text: string): string {
     let endIndex = text.length;
     // Search for end pattern AFTER start index
     const searchContext = startIndex !== -1 ? text.substring(startIndex) : text;
-    console.log(`Searching for section end in ${searchContext.length} chars`);
-    console.log('Search context preview (last 500 chars):', searchContext.substring(Math.max(0, searchContext.length - 500)));
 
     for (const p of endPatterns) {
         const match = searchContext.search(p);
@@ -110,8 +108,6 @@ function extractTargetSections(text: string): string {
             console.log(`Found Section End at index ${endIndex}: ${p}`);
             console.log('End pattern matched text:', searchContext.substring(match, match + 100));
             break;
-        } else {
-            console.log(`Pattern ${p} did NOT match`);
         }
     }
 
@@ -499,7 +495,8 @@ function splitQuestions(text: string): string[] {
     // This handles cases where questions are separated by minimal spacing (e.g., "D) / 22.")
 
     // 1. Remove section headers first
-    const sectionHeaderRegex = /(?:^|\n)\s*(?:#{2,}\s*)?(?:Part\s+[A-Z]|Section\s+[A-Z]|[IVX]+\.\s+.*|[A-Z]\.\s+(?:Read|Complete|Fill|Choose|Section|Listen).*?|Choose\s+the\s+best\s+answer.*?)(?:\n|$)/gi;
+    // CRITICAL: Use [^\n]* instead of .* to match only until end of line
+    const sectionHeaderRegex = /(?:^|\n)\s*(?:#{2,}\s*)?(?:Part\s+[A-Z]|Section\s+[A-Z]|[IVX]+\.\s+[^\n]*|[A-Z]\.\s+(?:Read|Complete|Fill|Choose|Section|Listen)[^\n]*|Choose\s+the\s+best\s+answer[^\n]*|Listen\s+to\s+the\s+passage[^\n]*)(?:\n|$)/gi;
     console.log(`splitQuestions: Input text length: ${text.length}`);
     console.log('Input text preview:', text.substring(0, 500));
     let cleanText = text.replace(sectionHeaderRegex, '\n');
