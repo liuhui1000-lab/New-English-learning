@@ -76,7 +76,7 @@ export async function POST(request: Request) {
         .eq('user_id', targetUserId)
         .eq('is_correct', false)
         .order('attempt_at', { ascending: false })
-        .limit(50)
+        .limit(100)
 
     if (quizData) {
         quizData.forEach((record: any) => {
@@ -128,8 +128,8 @@ Structure:
 3. **Study Plan**: 3 actionable steps.
 Keep it encouraging.`
 
-    const userPrompt = `Here are the questions I answered incorrectly or struggled with recently:
-${allMistakes.slice(0, 20).map((m: any, i: number) => `${i + 1}. [${m.type}] ${m.content} (Note: ${m.note})`).join('\n')}
+    const userPrompt = `Here are the questions I answered incorrectly or struggled with recently (up to 100 items):
+${allMistakes.slice(0, 100).map((m: any, i: number) => `${i + 1}. [${m.type}] ${m.content} (Note: ${m.note})`).join('\n')}
 
 Please generate a personalized study report.`
 
