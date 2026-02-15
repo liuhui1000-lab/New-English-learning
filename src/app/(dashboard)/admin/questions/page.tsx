@@ -137,7 +137,7 @@ export default function QuestionBankPage() {
 
             if (!targets) throw new Error("无法获取题目内容")
 
-            const BATCH_SIZE = 5
+            const BATCH_SIZE = 20
             for (let i = 0; i < targets.length; i += BATCH_SIZE) {
                 const batch = targets.slice(i, i + BATCH_SIZE)
                 setStatusMessage(`AI 分析中... (${Math.min(i + BATCH_SIZE, targets.length)}/${targets.length})`)
@@ -408,6 +408,8 @@ export default function QuestionBankPage() {
                         <option value={20}>20</option>
                         <option value={50}>50</option>
                         <option value={100}>100</option>
+                        <option value={150}>150</option>
+                        <option value={200}>200</option>
                     </select>
                 </div>
 
