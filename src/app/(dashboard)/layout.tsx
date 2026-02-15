@@ -26,6 +26,10 @@ export default function DashboardLayout({
                         <UploadCloud className="mr-3 h-5 w-5" />
                         快速导入
                     </Link>
+                    <Link href="/admin/questions" className="flex items-center px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md">
+                        <BookOpen className="mr-3 h-5 w-5" />
+                        全量题库
+                    </Link>
                     <Link href="/admin/users" className="flex items-center px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md">
                         <Users className="mr-3 h-5 w-5" />
                         用户管理
