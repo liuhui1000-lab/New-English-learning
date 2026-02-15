@@ -9,6 +9,7 @@ import { UserProfile } from "@/types"
 export default function UserDetailPage() {
     const params = useParams()
     const userId = params?.id
+    const [profile, setProfile] = useState<UserProfile | null>(null)
 
     const [stats, setStats] = useState({
         totalQuestions: 0,
