@@ -14,9 +14,10 @@ const DEFAULT_TOKEN = "483605608bc2d69ed9979463871dd4bc6095285a";
  */
 function cleanOCRText(text: string): string {
     return text
-        // Remove LaTeX underline (with or without content): $ \underline{\text{...}} $ → ____
-        // The underlined text is the answer/blank, should be replaced with ____
-        .replace(/\$\s*\\underline\{\\text\{[^}]*\}\}\s*\$/g, '____')
+        // Convert LaTeX underline to HTML: $ \underline{\text{in two months}} $ → <u>in two months</u>
+        .replace(/\$\s*\\underline\{\\text\{([^}]+)\}\}\s*\$/g, '<u>$1</u>')
+        // Empty underline becomes blank: $ \underline{\text{}} $ → ____
+        .replace(/\$\s*\\underline\{\\text\{\}\}\s*\$/g, '____')
         // Remove LaTeX text wrappers: $ \text{content} $ → content
         .replace(/\$\s*\\text\{([^}]*)\}\s*\$/g, '$1')
         // Remove standalone $ symbols that might be LaTeX artifacts

@@ -34,9 +34,13 @@ SET content = regexp_replace(
   regexp_replace(
     regexp_replace(
       regexp_replace(
-        content,
-        -- 清理 LaTeX 下划线（带或不带内容）: $ \underline{\text{...}} $ → ____
-        '\$\s*\\underline\{\\text\{[^}]*\}\}\s*\$', '____', 'g'
+        regexp_replace(
+          content,
+          -- 转换 LaTeX 下划线为 HTML: $ \underline{\text{in two months}} $ → <u>in two months</u>
+          '\$\s*\\underline\{\\text\{([^}]+)\}\}\s*\$', '<u>\1</u>', 'g'
+        ),
+        -- 空下划线转为空白: $ \underline{\text{}} $ → ____
+        '\$\s*\\underline\{\\text\{\}\}\s*\$', '____', 'g'
       ),
       -- 清理 LaTeX 文本包装: $ \text{content} $ → content
       '\$\s*\\text\{([^}]*)\}\s*\$', '\1', 'g'
