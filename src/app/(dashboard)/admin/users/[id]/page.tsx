@@ -7,6 +7,9 @@ import { useParams } from "next/navigation"
 import { UserProfile } from "@/types"
 
 export default function UserDetailPage() {
+    const params = useParams()
+    const userId = params?.id
+
     const [stats, setStats] = useState({
         totalQuestions: 0,
         correctRate: 0,
