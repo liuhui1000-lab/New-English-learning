@@ -33,9 +33,14 @@ export default function UserManagementPage() {
             .update({ status: newStatus })
             .eq('id', userId)
 
-        if (!error) {
-            setUsers(users.map(u => u.id === userId ? { ...u, status: newStatus } : u))
+        if (error) {
+            console.error('Status update failed:', error)
+            alert(`操作失败: ${error.message}\n\n可能是数据库权限问题，请联系管理员检查 RLS 策略。`)
+            return
         }
+
+        setUsers(users.map(u => u.id === userId ? { ...u, status: newStatus } : u))
+        alert('状态更新成功')
     }
 
     const getStatusBadge = (status: string) => {
