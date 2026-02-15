@@ -1,15 +1,31 @@
 -- ============================================================
--- 综合权限设计：profiles 表 RLS 策略
+-- 修复：Admin 无法查看用户列表 (无限递归问题)
 -- ============================================================
--- 设计原则：
---   1. Admin 可以查看、修改所有用户的 profile
---   2. 普通用户只能查看自己的 profile，只能修改自己的 profile
---   3. 密码重置：
---      - 普通用户通过 Supabase Auth 的 updateUser() 修改自己的密码
---      - Admin 通过服务端 API (/api/admin/reset-password) 使用 service_role 密钥重置任意用户密码
--- ============================================================
+-- 问题根源：
+-- 之前定义的 "Admins can read all profiles" 策略中包含了一个子查询：
+-- (SELECT role FROM profiles WHERE id = auth.uid()) = 'admin'
+-- 当 Admin 尝试访问 profiles 表时，这个子查询会再次触发 profiles 表的 SELECT 策略，导致无限递归。
+-- PostgreSQL 检测到无限递归后，会自动中断查询或返回空结果，导致 Admin 看不到任何数据。
 
--- Step 1: 清理旧策略（避免冲突）
+-- 解决方案：
+-- 使用一个 "SECURITY DEFINER" 函数来检查 Admin 权限。
+-- SECURITY DEFINER 函数会以定义者（通常是超级用户或表所有者）的权限运行，从而绕过 RLS 检查，避免递归。
+
+-- Step 1: 创建绕过 RLS 的权限检查函数
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER -- 关键：以定义者权限运行，绕过 RLS
+SET search_path = public -- 安全最佳实践
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM profiles
+    WHERE id = auth.uid()
+    AND role = 'admin'
+  );
+$$;
+
+-- Step 2: 清理旧策略
 DROP POLICY IF EXISTS "Public profiles are viewable by everyone." ON profiles;
 DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON profiles;
 DROP POLICY IF EXISTS "Authenticated can read all profiles" ON profiles;
@@ -23,84 +39,57 @@ DROP POLICY IF EXISTS "Admins can delete profiles" ON profiles;
 DROP POLICY IF EXISTS "Admins can read all profiles" ON profiles;
 DROP POLICY IF EXISTS "Users can read own profile" ON profiles;
 DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
+DROP POLICY IF EXISTS "Users can view own profile or admins view all" ON profiles;
 
--- Step 2: 确保 RLS 已启用
+-- Step 3: 确保 RLS 已启用
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
--- SELECT
+-- 重新定义策略 (使用 is_admin() 函数避免递归)
 -- ============================================================
 
--- 普通用户：只能看到自己的 profile
-CREATE POLICY "Users can read own profile"
-ON profiles FOR SELECT
-TO authenticated
-USING (auth.uid() = id);
-
--- Admin：可以看到所有用户的 profile（用户管理页面需要）
-CREATE POLICY "Admins can read all profiles"
+-- 1. SELECT: 普通用户看自己，Admin 看所有
+CREATE POLICY "Users can view own profile or admins view all"
 ON profiles FOR SELECT
 TO authenticated
 USING (
-    (SELECT role FROM profiles WHERE id = auth.uid()) = 'admin'
+    auth.uid() = id  -- 普通用户看自己
+    OR
+    public.is_admin() -- Admin 看所有 (使用函数避免递归)
 );
 
--- ============================================================
--- INSERT：用户只能插入自己的 profile（由 trigger 自动调用）
--- ============================================================
+-- 2. INSERT: 用户只能插入自己的 profile
 CREATE POLICY "Users can insert own profile"
 ON profiles FOR INSERT
 TO authenticated
 WITH CHECK (auth.uid() = id);
 
--- ============================================================
--- UPDATE
--- ============================================================
-
--- 普通用户：只能修改自己的 profile
-CREATE POLICY "Users can update own profile"
-ON profiles FOR UPDATE
-TO authenticated
-USING (auth.uid() = id)
-WITH CHECK (auth.uid() = id);
-
--- Admin：可以修改任何人的 profile（批准/冻结/解冻）
-CREATE POLICY "Admins can update any profile"
+-- 3. UPDATE: 用户改自己，Admin 改所有
+CREATE POLICY "Users can update own profile or admins update all"
 ON profiles FOR UPDATE
 TO authenticated
 USING (
-    (SELECT role FROM profiles WHERE id = auth.uid()) = 'admin'
+    auth.uid() = id
+    OR
+    public.is_admin()
 )
 WITH CHECK (
-    (SELECT role FROM profiles WHERE id = auth.uid()) = 'admin'
+    auth.uid() = id
+    OR
+    public.is_admin()
 );
 
--- ============================================================
--- DELETE：仅 Admin 可以删除用户
--- ============================================================
+-- 4. DELETE: 仅 Admin 可删除
 CREATE POLICY "Admins can delete profiles"
 ON profiles FOR DELETE
 TO authenticated
-USING (
-    (SELECT role FROM profiles WHERE id = auth.uid()) = 'admin'
-);
+USING (public.is_admin());
 
 -- ============================================================
--- Step 3: 授予必要的表级权限
+-- Step 4: 授予权限
 -- ============================================================
 GRANT USAGE ON SCHEMA public TO authenticated;
-GRANT SELECT, INSERT, UPDATE ON profiles TO authenticated;
-GRANT DELETE ON profiles TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON profiles TO authenticated;
 
--- Step 4: 刷新 PostgREST 缓存
+-- Step 5: 刷新配置
 NOTIFY pgrst, 'reload config';
-
--- ============================================================
--- 权限矩阵总结：
---   操作          | Admin      | 普通用户
---   -------------|------------|----------
---   查看 Profile  | 所有用户    | 仅自己
---   修改 Profile  | 任意用户    | 仅自己
---   重置密码      | 任意用户    | 仅自己
---   删除用户      | 可以        | 不可以
--- ============================================================
