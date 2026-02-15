@@ -28,8 +28,8 @@ export async function POST(request: Request) {
     )
 
     // 1. Check Auth
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (!user || authError) return NextResponse.json({ error: 'Unauthorized', details: authError?.message }, { status: 401 })
 
     // 2. Get AI Settings
     const { data: settingsData } = await supabase
