@@ -1,15 +1,8 @@
 -- ============================================================
 -- 修复：Admin 无法查看用户列表 (无限递归问题)
 -- ============================================================
--- 问题根源：
--- 之前定义的 "Admins can read all profiles" 策略中包含了一个子查询：
--- (SELECT role FROM profiles WHERE id = auth.uid()) = 'admin'
--- 当 Admin 尝试访问 profiles 表时，这个子查询会再次触发 profiles 表的 SELECT 策略，导致无限递归。
--- PostgreSQL 检测到无限递归后，会自动中断查询或返回空结果，导致 Admin 看不到任何数据。
-
--- 解决方案：
--- 使用一个 "SECURITY DEFINER" 函数来检查 Admin 权限。
--- SECURITY DEFINER 函数会以定义者（通常是超级用户或表所有者）的权限运行，从而绕过 RLS 检查，避免递归。
+-- 本脚本会先删除所有现有策略，然后重新创建
+-- 可以安全地重复执行
 
 -- Step 1: 创建绕过 RLS 的权限检查函数
 CREATE OR REPLACE FUNCTION public.is_admin()
@@ -25,21 +18,16 @@ AS $$
   );
 $$;
 
--- Step 2: 清理旧策略
-DROP POLICY IF EXISTS "Public profiles are viewable by everyone." ON profiles;
-DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON profiles;
-DROP POLICY IF EXISTS "Authenticated can read all profiles" ON profiles;
-DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can insert their own profile." ON profiles;
-DROP POLICY IF EXISTS "Users can insert their own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can update own profile." ON profiles;
-DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
-DROP POLICY IF EXISTS "Admins can update any profile" ON profiles;
-DROP POLICY IF EXISTS "Admins can delete profiles" ON profiles;
-DROP POLICY IF EXISTS "Admins can read all profiles" ON profiles;
-DROP POLICY IF EXISTS "Users can read own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can view own profile or admins view all" ON profiles;
+-- Step 2: 删除所有现有策略（避免冲突）
+DO $$ 
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN (SELECT policyname FROM pg_policies WHERE tablename = 'profiles') 
+    LOOP
+        EXECUTE 'DROP POLICY IF EXISTS "' || r.policyname || '" ON profiles';
+    END LOOP;
+END $$;
 
 -- Step 3: 确保 RLS 已启用
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
@@ -93,3 +81,11 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON profiles TO authenticated;
 
 -- Step 5: 刷新配置
 NOTIFY pgrst, 'reload config';
+
+-- ============================================================
+-- 验证：查看当前策略
+-- ============================================================
+SELECT schemaname, tablename, policyname, permissive, roles, cmd
+FROM pg_policies 
+WHERE tablename = 'profiles'
+ORDER BY policyname;
