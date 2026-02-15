@@ -19,7 +19,7 @@ export default function QuestionBankPage() {
 
     // Pagination
     const [page, setPage] = useState(1)
-    const pageSize = 20
+    const [pageSize, setPageSize] = useState(20)
 
     // Selection
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -30,12 +30,13 @@ export default function QuestionBankPage() {
 
     useEffect(() => {
         setPage(1)
+        setSelectedIds(new Set()) // Fix: Clear selection on tab change
         setSelectedTypes([]) // Reset filters on tab change
     }, [activeTab])
 
     useEffect(() => {
         fetchQuestions()
-    }, [page, activeTab, selectedTypes, filterAIStatus, searchQuery])
+    }, [page, pageSize, activeTab, selectedTypes, filterAIStatus, searchQuery])
 
     const fetchQuestions = async () => {
         setLoading(true)
@@ -394,23 +395,43 @@ export default function QuestionBankPage() {
 
             {/* Pagination */}
             <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-200">
-                <button
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    className="p-2 rounded hover:bg-white disabled:opacity-50"
-                >
-                    <ChevronLeft className="w-4 h-4" />
-                </button>
-                <span className="text-sm text-gray-600">
-                    第 {page} 页 / 共 {Math.ceil(totalCount / pageSize)} 页
-                </span>
-                <button
-                    onClick={() => setPage(p => p + 1)}
-                    disabled={page * pageSize >= totalCount}
-                    className="p-2 rounded hover:bg-white disabled:opacity-50"
-                >
-                    <ChevronRight className="w-4 h-4" />
-                </button>
+                <div className="flex items-center space-x-2">
+                    <span className="text-sm text-gray-600">每页显示:</span>
+                    <select
+                        value={pageSize}
+                        onChange={e => {
+                            setPageSize(Number(e.target.value))
+                            setPage(1)
+                        }}
+                        className="text-sm border-gray-300 rounded focus:ring-indigo-500 focus:border-indigo-500 py-1"
+                    >
+                        <option value={20}>20</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                    </select>
+                </div>
+
+                <div className="flex items-center space-x-4">
+                    <span className="text-sm text-gray-600">
+                        第 {page} 页 / 共 {Math.ceil(totalCount / pageSize)} 页
+                    </span>
+                    <div className="flex space-x-1">
+                        <button
+                            onClick={() => setPage(p => Math.max(1, p - 1))}
+                            disabled={page === 1}
+                            className="p-2 rounded hover:bg-white disabled:opacity-50 border border-gray-200"
+                        >
+                            <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <button
+                            onClick={() => setPage(p => p + 1)}
+                            disabled={page * pageSize >= totalCount}
+                            className="p-2 rounded hover:bg-white disabled:opacity-50 border border-gray-200"
+                        >
+                            <ChevronRight className="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     )
