@@ -285,24 +285,11 @@ export default function StudyPage() {
                     返回
                 </button>
 
-                {/* Debug Overlay kept visible */}
-                <div className="fixed bottom-0 left-0 right-0 bg-black/90 text-green-400 p-2 text-xs font-mono z-50 max-h-48 overflow-y-auto">
-                    <div className="border-b border-gray-700 pb-1 mb-1">
-                        DEBUG LOGS
-                    </div>
-                    {debugLogs.map((log, i) => (
-                        <div key={i} className="opacity-80">&gt; {log}</div>
-                    ))}
-                    <button
-                        onClick={() => {
-                            sessionStorage.removeItem('current_study_session_v4')
-                            window.location.reload()
-                        }}
-                        className="bg-red-600 text-white px-2 py-1 rounded mt-2"
-                    >
-                        Reset
-                    </button>
+                {/* Debug Overlay kept visible -> Hidden per request 
+                <div className="fixed bottom-0 left-0 right-0 bg-black/90 text-green-400 p-2 text-xs font-mono z-50 max-h-48 overflow-y-auto hidden">
+                    ...
                 </div>
+                */}
             </div>
         )
     }
@@ -310,31 +297,16 @@ export default function StudyPage() {
     // MAIN RENDER: The Session Container
     return (
         <div className="relative">
-            {/* DEBUG OVERLAY - Remove after fixing */}
-            <div className="fixed bottom-0 left-0 right-0 bg-black/90 text-green-400 p-2 text-xs font-mono z-50 max-h-48 overflow-y-auto">
+            {/* DEBUG OVERLAY - Hidden for production requested by user
+            <div className="fixed bottom-0 left-0 right-0 bg-black/90 text-green-400 p-2 text-xs font-mono z-50 max-h-48 overflow-y-auto hidden">
                 <div className="border-b border-gray-700 pb-1 mb-1">
                     v4 Cache | Batch: {batch.length} | logs: {debugLogs.length}
                 </div>
                 {debugLogs.map((log, i) => (
                     <div key={i} className="opacity-80">&gt; {log}</div>
                 ))}
-                <div className="mt-2 pt-2 border-t border-gray-700">
-                    {batch.map(q => (
-                        <span key={q.id} className="mr-2 inline-block">
-                            [{q.content}: {q.tags?.find(t => t.startsWith('Family:'))?.split(':')[1] || '-'}]
-                        </span>
-                    ))}
-                </div>
-                <button
-                    onClick={() => {
-                        sessionStorage.removeItem('current_study_session_v4')
-                        window.location.reload()
-                    }}
-                    className="bg-red-600 text-white px-2 py-1 rounded mt-2 hover:bg-red-500"
-                >
-                    Reset Cache & Retry
-                </button>
             </div>
+            */}
 
             <RecitationSession
                 batch={batch}
