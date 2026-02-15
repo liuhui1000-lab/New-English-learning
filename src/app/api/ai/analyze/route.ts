@@ -95,7 +95,19 @@ export async function POST(request: Request) {
     // 4. Construct Prompt
     const systemPrompt = `You are an expert English teacher for middle school students in Shanghai.
 Your task is to analyze the given English questions (Grammar / Vocabulary) and provide metadata.
-Return ONLY valid JSON array. Each object should have:
+Return ONLY valid JSON object with a key "results".
+Example format:
+{
+  "results": [
+    {
+      "index": 0,
+      "topic": "...",
+      ...
+    }
+  ]
+}
+
+Each object in "results" should have:
 - "index": (int) matching input order
 - "topic": (string) e.g., "定语从句", "现在完成时", "固定搭配", "词义辨析"
 - "difficulty": (int) 1-5
@@ -128,7 +140,8 @@ Input Questions:
                 { role: "system", content: systemPrompt },
                 { role: "user", content: userPrompt }
             ],
-            temperature: 0.1
+            temperature: 0.1,
+            response_format: { type: "json_object" }
         }
 
         const response = await fetch(targetUrl, {
