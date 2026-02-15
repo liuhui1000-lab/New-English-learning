@@ -393,8 +393,8 @@ function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
         });
 
 
-    console.log(`Mock Paper Mode: Filtered ${rawItems.length} items down to ${filteredQuestions.length}`);
-    return filteredQuestions.map(classifyQuestion);
+    console.log(`Mock Paper Mode: Filtered ${rawItems.length} items down to ${parsedAndFilteredQuestions.length}`);
+    return parsedAndFilteredQuestions;
 }
 
 // ... Shared Helpers ...
