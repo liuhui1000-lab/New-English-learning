@@ -89,9 +89,10 @@ function extractTargetSections(text: string): string {
     // This ensures we don't truncate Word Transformation or Sentence Transformation sections
     const endPatterns = [
         // Match "Part 3/III Reading and Writing" (must have both Reading AND Writing together)
-        /(?:^|\n|\s{3,}|[\.!\?]\s+)(?:Part\s*(?:[IVX]+|\d+|[A-Z])\.?|[IVX]+\.|[A-Z]\.)\s*Reading\s*(?:and|&)\s*Writing/i,
+        // Allow optional markdown headers (# ## ###) before "Part"
+        /(?:^|\n)\s*#{0,6}\s*(?:Part\s*(?:[IVX]+|\d+|[A-Z])\.?|[IVX]+\.|[A-Z]\.)\s*Reading\s*(?:and|&)\s*Writing/i,
         // Fallback: Match generic "Reading and Writing" header
-        /(?:^|\n)\s*Reading\s*(?:and|&)\s*Writing/i,
+        /(?:^|\n)\s*#{0,6}\s*Reading\s*(?:and|&)\s*Writing/i,
     ];
 
     let endIndex = text.length;
