@@ -88,7 +88,10 @@ export default function ImportHistoryDetailPage() {
                     body: JSON.stringify({ items, mode: 'tagging' })
                 })
 
-                if (!res.ok) continue
+                if (!res.ok) {
+                    const errorText = await res.text()
+                    throw new Error(`API Error (${res.status}): ${errorText}`)
+                }
 
                 const { results } = await res.json()
 

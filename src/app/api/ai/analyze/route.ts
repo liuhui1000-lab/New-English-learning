@@ -96,6 +96,20 @@ Input Questions:
 
     // 5. Call AI Provider
     try {
+        let targetUrl = baseUrl || '';
+        // Default URLs if missing
+        if (!targetUrl) {
+            if (activeProvider === 'deepseek') targetUrl = 'https://api.deepseek.com';
+            else if (activeProvider === 'zhipu') targetUrl = 'https://open.bigmodel.cn/api/paas/v4';
+            else if (activeProvider === 'openai') targetUrl = 'https://api.openai.com/v1';
+        }
+
+        // Ensure URL ends with /v1 or /chat/completions (DeepSeek/OpenAI standard)
+        if (!targetUrl.endsWith('/chat/completions')) {
+            if (targetUrl.endsWith('/')) targetUrl += 'chat/completions';
+            else targetUrl += '/chat/completions';
+        }
+
         const payload = {
             model: model || 'deepseek-chat',
             messages: [
@@ -105,7 +119,7 @@ Input Questions:
             temperature: 0.1
         }
 
-        const response = await fetch(`${baseUrl}/chat/completions`, {
+        const response = await fetch(targetUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
