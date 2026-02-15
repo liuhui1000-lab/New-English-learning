@@ -121,6 +121,9 @@ Please generate a personalized study report.`
 
         if (!response.ok) {
             const err = await response.text()
+            if (response.status === 401) {
+                return NextResponse.json({ error: `Invalid AI API Key (401) for provider: ${activeProvider}` }, { status: 401 })
+            }
             throw new Error(`Provider API Error: ${response.status} ${err}`)
         }
 

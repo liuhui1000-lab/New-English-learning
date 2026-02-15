@@ -136,7 +136,7 @@ Input Questions:
                 return NextResponse.json({ error: "AI Rate Limit / Quota Exceeded (429). Please slow down." }, { status: 429 })
             }
             if (response.status === 401) {
-                return NextResponse.json({ error: "Invalid AI API Key (401). Check Settings." }, { status: 401 })
+                return NextResponse.json({ error: `Invalid AI API Key (401) for provider: ${activeProvider}. Check Settings.` }, { status: 401 })
             }
             if (response.status >= 500) {
                 return NextResponse.json({ error: "AI Provider Server Error (5xx). Try changing model." }, { status: 502 })
