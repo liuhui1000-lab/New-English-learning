@@ -69,25 +69,33 @@ export async function POST(request: Request) {
         })
     }
 
-    // Fetch Quiz Mistakes
+    // Fetch Quiz Mistakes (Increase limit for stats)
     const { data: quizData } = await supabase
         .from('quiz_results')
         .select(`*, questions (id, content, answer, type, explanation)`)
         .eq('user_id', targetUserId)
         .eq('is_correct', false)
         .order('attempt_at', { ascending: false })
-        .limit(100)
+        .limit(500) // Fetch more to get better stats
 
     if (quizData) {
         quizData.forEach((record: any) => {
-            if (record.questions && !allMistakes.find(m => m.id === record.questions.id)) {
-                allMistakes.push({
-                    id: record.questions.id,
-                    content: record.questions.content,
-                    type: 'quiz',
-                    note: record.questions.type === 'grammar' ? 'Grammar' : 'Collocation',
-                    count: 1
-                })
+            if (record.questions) {
+                // Check if already exists (from recitation or previous quiz item)
+                const existing = allMistakes.find(m => m.id === record.questions.id)
+                if (existing) {
+                    existing.count += 1
+                } else {
+                    allMistakes.push({
+                        id: record.questions.id,
+                        content: record.questions.content,
+                        type: 'quiz',
+                        subType: record.questions.type, // grammar, collocation, etc.
+                        note: record.questions.type === 'grammar' ? 'Grammar' : 'Collocation',
+                        count: 1,
+                        lastAttempt: record.attempt_at
+                    })
+                }
             }
         })
     }
@@ -95,6 +103,30 @@ export async function POST(request: Request) {
     if (allMistakes.length === 0) {
         return NextResponse.json({ report: "没有足够的错题数据进行分析。" })
     }
+
+    // --- Smart Aggregation Strategy ---
+    const totalErrors = allMistakes.length
+
+    // 1. Stats by Type
+    const typeStats: Record<string, number> = {}
+    allMistakes.forEach(m => {
+        const t = m.subType || m.type
+        typeStats[t] = (typeStats[t] || 0) + 1
+    })
+    const statsText = Object.entries(typeStats)
+        .map(([k, v]) => `- ${k}: ${v} (${Math.round(v / totalErrors * 100)}%)`)
+        .join('\n')
+
+    // 2. Top Weaknesses (By Frequency)
+    const topWeaknesses = [...allMistakes]
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 20)
+
+    // 3. Recent Samples (By Date, excluding duplicates in top)
+    const recentSamples = [...allMistakes]
+        .filter(m => !topWeaknesses.includes(m))
+        .sort((a, b) => new Date(b.lastAttempt || 0).getTime() - new Date(a.lastAttempt || 0).getTime())
+        .slice(0, 50)
 
     // 3. Get AI Settings
     const { data: settingsData } = await supabase.from('system_settings').select('key, value')
@@ -121,17 +153,29 @@ export async function POST(request: Request) {
     if (!apiKey) return NextResponse.json({ error: 'AI API Key not configured' }, { status: 400 })
 
     // 4. Call AI
-    const systemPrompt = `You are an expert English teacher. Analyze the student's mistakes and provide a diagnostic report in Simplified Chinese (Markdown).
+    const systemPrompt = `You are an expert English teacher. Analyze the student's mistakes based on the provided statistics and samples.
+Output a diagnostic report in Simplified Chinese (Markdown).
+
 Structure:
-1. **Weak Point Analysis**: Common errors.
-2. **Key Concepts**: Critical concepts missed.
-3. **Study Plan**: 3 actionable steps.
-Keep it encouraging.`
+1. **Overview**: Summarize the student's error distribution based on the stats.
+2. **Deep Dive**: Analyze specific patterns from the "Top Repeated Mistakes".
+3. **Key Concepts**: Explain 2-3 critical concepts the student missed.
+4. **Study Plan**: 3 actionable steps.
 
-    const userPrompt = `Here are the questions I answered incorrectly or struggled with recently (up to 100 items):
-${allMistakes.slice(0, 100).map((m: any, i: number) => `${i + 1}. [${m.type}] ${m.content} (Note: ${m.note})`).join('\n')}
+Keep it encouraging and data-driven.`
 
-Please generate a personalized study report.`
+    const userPrompt = `Student Error Data (Total analyzed: ${totalErrors}):
+
+[Section A: Statistics]
+${statsText}
+
+[Section B: Top Repeated Mistakes (Critical)]
+${topWeaknesses.map((m: any, i: number) => `${i + 1}. [${m.subType || m.type}] (Failed ${m.count} times) ${m.content}`).join('\n')}
+
+[Section C: Recent Mistakes Stream (Sample)]
+${recentSamples.map((m: any, i: number) => `- [${m.subType || m.type}] ${m.content}`).join('\n')}
+
+Please generate the report.`
 
     try {
         let targetUrl = baseUrl || '';
