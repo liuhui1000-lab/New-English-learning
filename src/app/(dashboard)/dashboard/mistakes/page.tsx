@@ -87,8 +87,36 @@ export default function ErrorNotebookPage() {
 
     const filteredMistakes = mistakes.filter(m => filter === 'all' || m.type === filter)
 
-    const handlePrint = () => {
-        window.print()
+    const [analyzing, setAnalyzing] = useState(false)
+    const [report, setReport] = useState<string | null>(null)
+
+    const handleAnalyze = async () => {
+        if (filteredMistakes.length === 0) {
+            alert("请先筛选出需要分析的错题")
+            return
+        }
+        if (!confirm(`即将分析当前列表中的 ${filteredMistakes.length} 道错题。可能需要几十秒钟，请耐心等待。`)) return
+
+        setAnalyzing(true)
+        setReport(null)
+        try {
+            // Limit to top 20 to avoid token limits
+            const subset = filteredMistakes.slice(0, 20)
+            const res = await fetch('/api/ai/analyze-errors', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mistakes: subset })
+            })
+
+            if (!res.ok) throw new Error(await res.text())
+
+            const data = await res.json()
+            setReport(data.report)
+        } catch (e: any) {
+            alert("分析失败: " + e.message)
+        } finally {
+            setAnalyzing(false)
+        }
     }
 
     return (
@@ -97,6 +125,21 @@ export default function ErrorNotebookPage() {
                 <h2 className="text-2xl font-bold text-gray-900">我的错题本</h2>
                 <div className="flex space-x-3">
                     <button
+                        onClick={handleAnalyze}
+                        disabled={analyzing}
+                        className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 px-4 py-2 rounded-lg flex items-center shadow-sm transition disabled:opacity-50"
+                    >
+                        {analyzing ? (
+                            <>
+                                <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> 分析中...
+                            </>
+                        ) : (
+                            <>
+                                <CheckCircle className="w-4 h-4 mr-2" /> 智能分析
+                            </>
+                        )}
+                    </button>
+                    <button
                         onClick={fetchMistakes}
                         className="p-2 text-gray-500 hover:text-gray-900 transition"
                     >
@@ -104,13 +147,29 @@ export default function ErrorNotebookPage() {
                     </button>
                     <button
                         onClick={handlePrint}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center shadow-sm transition"
+                        className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-lg flex items-center shadow-sm transition"
                     >
                         <FileDown className="w-4 h-4 mr-2" />
                         导出/打印
                     </button>
                 </div>
             </div>
+
+            {/* AI Report Section */}
+            {report && (
+                <div className="bg-gradient-to-br from-indigo-50 to-white p-6 rounded-xl border border-indigo-100 shadow-sm animate-in fade-in slide-in-from-top-4 mb-6">
+                    <div className="flex justify-between items-start mb-4 border-b border-indigo-100 pb-2">
+                        <h3 className="text-lg font-bold text-indigo-900 flex items-center">
+                            <CheckCircle className="w-5 h-5 mr-2 text-indigo-600" />
+                            AI 学习诊断报告
+                        </h3>
+                        <button onClick={() => setReport(null)} className="text-sm text-indigo-400 hover:text-indigo-600">关闭</button>
+                    </div>
+                    <div className="prose prose-indigo prose-sm max-w-none text-gray-700 leading-relaxed font-sans">
+                        <pre className="whitespace-pre-wrap font-sans bg-transparent border-0 p-0 text-gray-800">{report}</pre>
+                    </div>
+                </div>
+            )}
 
             {/* Filter Tabs */}
             <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg w-fit print:hidden">
