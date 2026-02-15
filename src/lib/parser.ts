@@ -36,7 +36,10 @@ export async function parseDocument(file: File, mode: ImportMode = 'mock_paper',
             }
         }
         let step1 = cleanOCRText(cleanText);
+        // Step 2: Extract ONLY the target sections (Grammar/Vocabulary, Word/Sentence Transformation)
+        console.log('Calling extractTargetSections...');
         let step2 = extractTargetSections(step1);
+        console.log(`extractTargetSections returned ${step2.length} chars (was ${step1.length})`);
         const rawQuestions = splitQuestions(step2);
         return processMockPaperMode(rawQuestions);
     }
