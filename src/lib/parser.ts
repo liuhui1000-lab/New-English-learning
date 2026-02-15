@@ -106,6 +106,7 @@ function extractTargetSections(text: string): string {
             // Usually these headers start a new block.
             endIndex = (startIndex !== -1 ? startIndex : 0) + match;
             console.log(`Found Section End at index ${endIndex}: ${p}`);
+            console.log('End pattern matched text:', searchContext.substring(match, match + 100));
             break;
         }
     }
@@ -350,25 +351,52 @@ function isRelated(root: string, target: string): boolean {
     // "accept" vs "banana" -> 0 prefix.
 
     if (prefix >= 3) return true;
-
     return false;
 }
 
 function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
-    // Strategy: Strict Filter. Keep only Questions (blanks/options).
-    const filteredQuestions = rawItems.filter(q => {
-        // 1. Must have a blank or options
-        const hasBlank = /_+|\(\s{3,}\)|\[\s{3,}\]/.test(q);
-        const hasOptions = /[A-D][\)\.].*[A-D][\)\.]/.test(q);
+    // Strategy: Parse each raw question string into structured format
+    // Filter out non-questions (e.g., section headers, instructions)
+    console.log(`processMockPaperMode: Input ${rawItems.length} items`);
+    console.log('Question numbers:', rawItems.map(q => q.match(/^\d+\./)?.[0] || 'NO_NUM').slice(0, 20));
 
-        if (!hasBlank && !hasOptions) return false;
+    const parsedQuestions = rawItems
+        .map((item) => classifyQuestion(item))
+        .filter((q) => {
+            // Filter out items that don't look like real questions
+            // e.g., if content is too short or doesn't have answer options
+            const hasOptions = /[A-D]\)/.test(q.content);
+            const hasBlank = /_+/.test(q.content) || /\(\s*\)/.test(q.content);
+            const isValid = hasOptions || hasBlank || q.type === 'word_transformation' || q.type === 'sentence_transformation';
+
+            if (!isValid) {
+                const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
+                console.log(`Filtered out ${qNum}: no options/blanks`);
+            }
+
+            return isValid;
+        });
+
+    // Strategy: Strict Filter. Keep only Questions (blanks/options).
+    const filteredQuestions = parsedQuestions.filter(q => {
+        // 1. Must have a blank or options
+        const hasBlank = /_+|\(\s{3,}\)|\[\s{3,}\]/.test(q.content);
+        const hasOptions = /[A-D][\)\.].*[A-D][\)\.]/.test(q.content);
+
+        if (!hasBlank && !hasOptions) {
+            const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
+            console.log(`Filtered out ${qNum}: no blank or options (after classify)`);
+            return false;
+        }
 
         // 2. Filter out "Listening" style questions (Empty content with just a blank)
         // e.g. "1. ______" or "1. (     )" with no other text
         // Clean the question number for checking
-        const cleanQ = q.replace(/^[\(（\[]?\d+[）\)\]]?[\.\,，、]/, '').trim();
+        const cleanQ = q.content.replace(/^[\(（\[]?\d+[）\)\]]?[\.\,，、]/, '').trim();
         // If the remaining text is JUST underscores/blanks, it's likely listening
         if (/^(_+|[\(\[]\s*[\)\]])$/.test(cleanQ)) {
+            const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
+            console.log(`Filtered out ${qNum}: looks like a listening question (just blank)`);
             return false;
         }
 
