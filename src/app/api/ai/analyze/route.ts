@@ -2,6 +2,8 @@ import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 
+export const maxDuration = 60; // Allow up to 60s for AI processing
+
 export async function POST(request: Request) {
     const cookieStore = await cookies()
 
@@ -112,7 +114,7 @@ Each object in "results" should have:
 - "topic": (string) e.g., "定语从句", "现在完成时", "固定搭配", "词义辨析"
 - "difficulty": (int) 1-5
 - "key_point": (string) short explanation of the tested point.
-- "explanation": (string) DETAILED explanation of why the answer is correct and why others are wrong. (IN CHINESE)
+- "explanation": (string) Concise explanation (max 50 words) of why the answer is correct. (IN CHINESE)
 - "answer": (string) The correct answer or completion. For multiple choice, return the letter (e.g. "A"). For fill-in-the-blank, return the word(s).
 
 Input Questions:
