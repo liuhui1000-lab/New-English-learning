@@ -39,7 +39,8 @@ export async function POST(request: Request) {
         return NextResponse.json({
             error: 'Unauthorized',
             details: authError?.message || 'No user found',
-            cookieCount: allCookies.length
+            cookieCount: allCookies.length,
+            cookieNames: allCookies.map(c => c.name)
         }, { status: 401 })
     }
 
