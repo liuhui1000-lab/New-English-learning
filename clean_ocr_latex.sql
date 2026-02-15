@@ -34,8 +34,12 @@ SET content = regexp_replace(
   regexp_replace(
     regexp_replace(
       regexp_replace(
-        content,
-        -- 清理 LaTeX 下划线: $ \underline{\text{}} $ → ____
+        regexp_replace(
+          content,
+          -- 清理 LaTeX 下划线（带内容）: $ \underline{\text{once a year}} $ → once a year ____
+          '\$\s*\\underline\{\\text\{([^}]+)\}\}\s*\$', '\1 ____', 'g'
+        ),
+        -- 清理 LaTeX 下划线（空）: $ \underline{\text{}} $ → ____
         '\$\s*\\underline\{\\text\{\}\}\s*\$', '____', 'g'
       ),
       -- 清理 LaTeX 文本包装: $ \text{content} $ → content
