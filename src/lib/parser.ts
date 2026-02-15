@@ -477,59 +477,59 @@ async function extractText(file: File, onProgress?: (msg: string) => void, skipO
 }
 
 function splitQuestions(text: string): string[] {
-    // 0. Pre-clean: Remove common section headers that might be merged
-    // Matches "Part I", "Section A", "III. Complete...", etc.
-    // We replace them with a special marker to ensure they don't merge with previous text,
-    // then we can filter them out.
-    // Improved Header Regex:
-    // Catch "V. Complete...", "C. Read...", "Section B", "Listen to..."
-    // Relaxed to allow [A-Z]. Start if followed by instruction keywords or standard section names
-    // Improved Header Regex:
-    // Catch "V. Complete...", "C. Read...", "Section B", "Listen to..."
-    // Added support for markdown style headers (###, ##) which might appear from mammoth conversion
-    // Added support for "Choose the best answer" without prefix
+    // Strategy: Split on question numbers, then recombine number with content
+    // This handles cases where questions are separated by minimal spacing (e.g., "D) / 22.")
+
+    // 1. Remove section headers first
     const sectionHeaderRegex = /(?:^|\n)\s*(?:#{2,}\s*)?(?:Part\s+[A-Z]|Section\s+[A-Z]|[IVX]+\.\s+.*|[A-Z]\.\s+(?:Read|Complete|Fill|Choose|Section|Listen).*?|Choose\s+the\s+best\s+answer.*?)(?:\n|$)/gi;
+    let cleanText = text.replace(sectionHeaderRegex, '\n');
 
-    // Improved Regex for Questions:
-    // 1. Matches Start of String (^), Newline (\n), OR Wide Spaces (\s{3,})
-    // 2. Followed by Number + Punctuation
-    const splitRegex = /(?:^|\n|\s{4,})(?:[\(（\[]?\d+[）\)\]]?[\.\,，、])/g;
+    // 2. Split on question numbers (e.g., "21.", "22.", etc.)
+    // Use capturing group to keep the numbers
+    const parts = cleanText.split(/(\d+\.)/);
 
-    const marker = "|||SPLIT|||";
-    let textToProcess = text;
-
-    // Insert markers before Section Headers so they become separate chunks
-    textToProcess = textToProcess.replace(sectionHeaderRegex, (match) => {
-        return marker + "[[HEADER]]" + match.trim() + "\n";
-    });
-
-    // Insert markers before Questions
-    const textWithMarkers = textToProcess.replace(splitRegex, (match) => {
-        return marker + match.trim();
-    });
-
-    const rawParts = textWithMarkers.split(marker);
     const questions: string[] = [];
+    let currentQuestion = '';
 
-    for (const p of rawParts) {
-        const trimmed = p.trim();
-        if (!trimmed) continue;
+    for (let i = 0; i < parts.length; i++) {
+        const part = parts[i].trim();
+        if (!part) continue;
 
-        // Filter out the Section Headers we marked
-        if (trimmed.startsWith("[[HEADER]]")) {
-            continue;
+        // Check if this part is a question number
+        if (/^\d+\.$/.test(part)) {
+            // Save previous question if exists
+            if (currentQuestion) {
+                questions.push(currentQuestion.trim());
+            }
+            // Start new question with this number
+            currentQuestion = part;
+        } else {
+            // Append content to current question
+            if (currentQuestion) {
+                currentQuestion += ' ' + part;
+            } else {
+                // Content before first question number (likely preamble)
+                // Skip it or handle specially
+                continue;
+            }
         }
-
-        // Also simple heuristic: If it looks like a Roman Numeral header even if missed by above
-        // e.g. "II. Grammar"
-        if (/^[IVX]+\.\s/.test(trimmed) && trimmed.length < 100) {
-            continue;
-        }
-
-        questions.push(trimmed);
     }
 
-    return questions;
+    // Don't forget the last question
+    if (currentQuestion) {
+        questions.push(currentQuestion.trim());
+    }
+
+    // 3. Filter out non-questions (too short, or looks like a header)
+    return questions.filter(q => {
+        // Must have reasonable length
+        if (q.length < 10) return false;
+        // Must start with a number
+        if (!/^\d+\./.test(q)) return false;
+        // Filter out Roman numeral headers that might have slipped through
+        if (/^[IVX]+\.\s/.test(q) && q.length < 100) return false;
+        return true;
+    });
 }
 
 function classifyQuestion(content: string): ParsedQuestion {
