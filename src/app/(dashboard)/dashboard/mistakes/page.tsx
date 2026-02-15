@@ -50,9 +50,23 @@ export default function ErrorNotebookPage() {
             })
         }
 
-        // 2. Fetch Quiz Mistakes
-        // Group by question_id to count errors?
-        // For V1, let's just show latest distinct errors
+        // 2. Fetch Quiz Mistakes with True Frequency
+        // First, get ALL error question_ids to calculate frequency
+        const { data: allErrors } = await supabase
+            .from('quiz_results')
+            .select('question_id')
+            .eq('is_correct', false)
+
+        const errorCounts = new Map<string, number>()
+        if (allErrors) {
+            allErrors.forEach((r: any) => {
+                const count = errorCounts.get(r.question_id) || 0
+                errorCounts.set(r.question_id, count + 1)
+            })
+        }
+
+        // Then get details for the specific mistakes (deduplicated by query or logic)
+        // We'll fetch the latest error for each unique question to show details
         const { data: quizData } = await supabase
             .from('quiz_results')
             .select(`
@@ -63,20 +77,20 @@ export default function ErrorNotebookPage() {
             `)
             .eq('is_correct', false)
             .order('attempt_at', { ascending: false })
-            .limit(50)
+            .limit(100) // Fetch more to ensure we cover recent variance
 
         if (quizData) {
             quizData.forEach((record: any) => {
-                // Deduplicate if already added?
+                // Deduplicate
                 if (!allMistakes.find(m => m.id === record.questions.id)) {
                     allMistakes.push({
                         id: record.questions.id,
-                        row_id: record.id, // Primary key for deletion
+                        row_id: record.id,
                         content: record.questions.content,
                         answer: record.questions.answer,
                         type: 'quiz',
                         note: record.questions.type === 'grammar' ? 'Grammar' : 'Collocation',
-                        count: 1,
+                        count: errorCounts.get(record.questions.id) || 1, // Use calculated count
                         explanation: record.questions.explanation,
                         lastAttempt: record.attempt_at
                     })
