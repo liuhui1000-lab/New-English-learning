@@ -361,13 +361,16 @@ function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
     const parsedAndFilteredQuestions = rawItems
         .map((item) => classifyQuestion(item))
         .filter(q => {
-            // 1. Must have a blank or options
+            // 1. Must have a blank, options, OR be a sentence reordering question
             const hasBlank = /_+|\(\s{3,}\)|\[\s{3,}\]/.test(q.content);
             const hasOptions = /[A-D][\)\.].*[A-D][\)\.]/.test(q.content);
+            // Sentence reordering: multiple comma-separated words + keywords
+            const isSentenceReordering = /连词成句|reorder|rearrange/i.test(q.content) ||
+                (/,\s*\w+,\s*\w+,\s*\w+/.test(q.content) && /\(.*\)/.test(q.content));
 
-            if (!hasBlank && !hasOptions) {
+            if (!hasBlank && !hasOptions && !isSentenceReordering) {
                 const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
-                console.log(`Filtered out ${qNum}: no blank or options`);
+                console.log(`Filtered out ${qNum}: no blank, options, or sentence reordering pattern`);
                 return false;
             }
 
