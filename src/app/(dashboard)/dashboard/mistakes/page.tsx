@@ -8,6 +8,7 @@ export default function ErrorNotebookPage() {
     const [mistakes, setMistakes] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [filter, setFilter] = useState<'all' | 'recitation' | 'quiz'>('all')
+    const [sort, setSort] = useState<'date_desc' | 'date_asc' | 'count_desc' | 'az_asc'>('date_desc')
 
     const supabase = createBrowserClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -87,7 +88,22 @@ export default function ErrorNotebookPage() {
         setLoading(false)
     }
 
-    const filteredMistakes = mistakes.filter(m => filter === 'all' || m.type === filter)
+    const filteredMistakes = mistakes
+        .filter(m => filter === 'all' || m.type === filter)
+        .sort((a, b) => {
+            switch (sort) {
+                case 'date_desc':
+                    return new Date(b.lastAttempt || 0).getTime() - new Date(a.lastAttempt || 0).getTime()
+                case 'date_asc':
+                    return new Date(a.lastAttempt || 0).getTime() - new Date(b.lastAttempt || 0).getTime()
+                case 'count_desc':
+                    return b.count - a.count
+                case 'az_asc':
+                    return a.content.localeCompare(b.content)
+                default:
+                    return 0
+            }
+        })
 
     const [analyzing, setAnalyzing] = useState(false)
     const [report, setReport] = useState<string | null>(null)
