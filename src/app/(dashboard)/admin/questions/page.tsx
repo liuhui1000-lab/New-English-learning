@@ -137,7 +137,7 @@ export default function QuestionBankPage() {
 
             if (!targets) throw new Error("无法获取题目内容")
 
-            const BATCH_SIZE = 20
+            const BATCH_SIZE = 5 // Reduced from 20 to avoid timeouts (Vercel/Network)
             for (let i = 0; i < targets.length; i += BATCH_SIZE) {
                 const batch = targets.slice(i, i + BATCH_SIZE)
                 setStatusMessage(`AI 分析中... (${Math.min(i + BATCH_SIZE, targets.length)}/${targets.length})`)
