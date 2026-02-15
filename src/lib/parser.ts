@@ -85,16 +85,13 @@ function extractTargetSections(text: string): string {
     }
 
     // 2. Find End (Start of Next Section)
+    // IMPORTANT: Only match "Reading and Writing" TOGETHER, not separately
+    // This ensures we don't truncate Word Transformation or Sentence Transformation sections
     const endPatterns = [
-        // Match both "Part 3" and "Part III" Reading sections (both should be excluded)
+        // Match "Part 3/III Reading and Writing" (must have both Reading AND Writing together)
         /(?:^|\n|\s{3,}|[\.!\?]\s+)(?:Part\s*(?:[IVX]+|\d+|[A-Z])\.?|[IVX]+\.|[A-Z]\.)\s*Reading\s*(?:and|&)\s*Writing/i,
-        /(?:^|\n)\s*(?:Part\s*(?:[IVX]+|\d+|[A-Z])\.?|[IVX]+\.|[A-Z]\.)\s*Reading/i,
-        /(?:^|\n)\s*(?:Part\s*(?:[IVX]+|\d+|[A-Z])\.?|[IVX]+\.|[A-Z]\.)\s*Writing/i,
-        /(?:^|\n)\s*(?:[A-Z]\.\s+)?Read\s*the\s*passage/i,     // Catch "Read the passage"
-        /(?:^|\n)\s*(?:[A-Z]\.\s+)?Cloze/i,                    // Catch Cloze tests
-        /(?:^|\n)\s*Complete\s*the\s*passage/i, // Catch "Complete the passage"
-        /(?:^|\n)\s*Short\s*passage/i,           // Catch "Short passage"
-        /(?:^|\n)\s*首字母/                     // Catch "First letter" indicator in header
+        // Fallback: Match generic "Reading and Writing" header
+        /(?:^|\n)\s*Reading\s*(?:and|&)\s*Writing/i,
     ];
 
     let endIndex = text.length;
