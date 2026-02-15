@@ -167,6 +167,7 @@ export default function QuestionBankPage() {
                         id: q.id,
                         tags: Array.from(newTags),
                         answer: (!q.answer && r.answer) ? r.answer : q.answer,
+                        explanation: r.explanation || "",
                         is_ai_analyzed: true
                     }
                 })

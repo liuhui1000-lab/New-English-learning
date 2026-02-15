@@ -83,6 +83,13 @@ function PracticeContent() {
                                 正确答案: <strong>{q.answer}</strong>
                             </div>
                         )}
+
+                        {submitted && q.explanation && (
+                            <div className="mt-3 p-3 bg-blue-50 text-blue-800 text-sm rounded-lg border border-blue-100">
+                                <span className="font-bold block mb-1">解析：</span>
+                                {q.explanation}
+                            </div>
+                        )}
                     </div>
                 </div>
             ))}
