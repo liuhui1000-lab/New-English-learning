@@ -179,9 +179,18 @@ export default function ErrorNotebookPage() {
         const targets = mode === 'selected' ? filteredMistakes.filter(m => selectedIds.has(m.id)) : filteredMistakes
         if (targets.length === 0) return
 
-        const confirmMsg = mode === 'all'
-            ? `确定要清空当前的 ${targets.length} 条错题记录吗？`
-            : `确定要删除选中的 ${targets.length} 条错题记录吗？`
+        let confirmMsg = ''
+        if (mode === 'all') {
+            if (filter === 'all') {
+                confirmMsg = `⚠️ 高风险操作\n\n确定要清空【所有类型】的错题吗？\n这将同时删除：\n1. 所有单词拼写错题\n2. 所有练习错题\n\n共 ${targets.length} 条记录，删除后无法恢复！`
+            } else if (filter === 'recitation') {
+                confirmMsg = `确定要清空当前显示的【单词拼写】错题吗？\n（不用担心，【练习题】错题不会被删除）`
+            } else if (filter === 'quiz') {
+                confirmMsg = `确定要清空当前显示的【练习题】错题吗？\n（不用担心，【单词拼写】错题不会被删除）`
+            }
+        } else {
+            confirmMsg = `确定要删除选中的 ${targets.length} 条错题记录吗？`
+        }
 
         if (!confirm(confirmMsg)) return
 
@@ -270,9 +279,9 @@ export default function ErrorNotebookPage() {
                     <button
                         onClick={() => handleDelete('all')}
                         className="bg-white border border-gray-300 text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg flex items-center shadow-sm transition text-sm"
-                        title="清空当前列表"
+                        title={filter === 'all' ? "清空所有错题" : "清空当前分类"}
                     >
-                        <Trash className="w-4 h-4 mr-1" /> 清空
+                        <Trash className="w-4 h-4 mr-1" /> {filter === 'all' ? '清空全部' : filter === 'recitation' ? '清空单词' : '清空题目'}
                     </button>
 
                     <button
