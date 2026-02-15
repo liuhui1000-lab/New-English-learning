@@ -61,11 +61,11 @@ SELECT
 FROM questions 
 WHERE content LIKE '%\underline%';
 
--- 5. 查看清理后的题目示例
+-- 5. 查看清理后的题目示例（最近创建的）
 SELECT 
   id,
   type,
   LEFT(content, 150) as cleaned_content
 FROM questions 
-WHERE updated_at > NOW() - INTERVAL '5 minutes'
+ORDER BY created_at DESC
 LIMIT 10;
