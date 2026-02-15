@@ -29,13 +29,24 @@ export async function POST(request: Request) {
     )
 
     // 1. Check Admin Role
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (!user || authError) {
+        console.error("Auth Failed:", authError)
+        // Check if cookies exist
+        const allCookies = cookieStore.getAll()
+        console.error("Cookies present:", allCookies.map(c => c.name).join(', '))
+        return NextResponse.json({
+            error: 'Unauthorized',
+            details: authError?.message || 'No user found',
+            cookieCount: allCookies.length
+        }, { status: 401 })
+    }
 
     const { data: profile } = await supabase
         .from('profiles')
         .select('role')
-        .eq('id', session.user.id)
+        .eq('id', user.id)
         .single()
 
     if (profile?.role !== 'admin') {
