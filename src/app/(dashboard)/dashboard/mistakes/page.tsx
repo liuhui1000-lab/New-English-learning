@@ -299,7 +299,8 @@ export default function ErrorNotebookPage() {
             )}
 
             {/* Filter Tabs */}
-            <div className="flex justify-between items-center print:hidden border-b border-gray-200 pb-4">
+            {/* Filter & Sort Bar */}
+            <div className="flex flex-col sm:flex-row justify-between items-center print:hidden border-b border-gray-200 pb-4 gap-4">
                 <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
                     {['all', 'recitation', 'quiz'].map((t) => (
                         <button
@@ -313,15 +314,32 @@ export default function ErrorNotebookPage() {
                     ))}
                 </div>
 
-                <div className="flex items-center">
-                    <input
-                        type="checkbox"
-                        id="selectAll"
-                        checked={filteredMistakes.length > 0 && selectedIds.size >= filteredMistakes.length}
-                        onChange={handleSelectAll}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mr-2"
-                    />
-                    <label htmlFor="selectAll" className="text-sm text-gray-600 cursor-pointer select-none">全选当前页</label>
+                <div className="flex items-center gap-4">
+                    {/* Sort Dropdown */}
+                    <div className="relative flex items-center">
+                        <span className="text-sm text-gray-500 mr-2">排序:</span>
+                        <select
+                            value={sort}
+                            onChange={(e) => setSort(e.target.value as any)}
+                            className="text-sm border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-1.5 pl-3 pr-8"
+                        >
+                            <option value="date_desc">📅 最近出错</option>
+                            <option value="date_asc">⏳ 最早出错</option>
+                            <option value="count_desc">🔥 写错次数 (高→低)</option>
+                            <option value="az_asc">🔤 字母顺序 (A-Z)</option>
+                        </select>
+                    </div>
+
+                    <div className="flex items-center">
+                        <input
+                            type="checkbox"
+                            id="selectAll"
+                            checked={filteredMistakes.length > 0 && selectedIds.size >= filteredMistakes.length}
+                            onChange={handleSelectAll}
+                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mr-2"
+                        />
+                        <label htmlFor="selectAll" className="text-sm text-gray-600 cursor-pointer select-none">全选</label>
+                    </div>
                 </div>
             </div>
 
