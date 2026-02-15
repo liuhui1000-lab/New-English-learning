@@ -27,6 +27,66 @@ export default function UserDetailPage() {
         if (data) setProfile(data)
     }
 
+    const [analysisData, setAnalysisData] = useState<{
+        latestReport: any | null,
+        newMistakesCount: number,
+        lastAnalyzedAt: string | null
+    }>({
+        latestReport: null,
+        newMistakesCount: 0,
+        lastAnalyzedAt: null
+    })
+    const [analyzing, setAnalyzing] = useState(false)
+
+    useEffect(() => {
+        if (userId) {
+            fetchProfile()
+            fetchStats()
+            fetchAnalysis()
+        }
+    }, [userId])
+
+    const fetchAnalysis = async () => {
+        try {
+            const res = await fetch(`/api/ai/analyze-errors?userId=${userId}`)
+            if (res.ok) {
+                const data = await res.json()
+                setAnalysisData({
+                    latestReport: data.latestReport,
+                    newMistakesCount: data.newMistakesCount,
+                    lastAnalyzedAt: data.latestReport?.created_at || null
+                })
+            }
+        } catch (e) {
+            console.error("Fetch analysis failed", e)
+        }
+    }
+
+    const handleAnalyzeErrors = async () => {
+        if (!confirm("确定要对该学员进行 AI 错题分析吗？这将消耗 API Token。")) return
+        setAnalyzing(true)
+        try {
+            const res = await fetch('/api/ai/analyze-errors', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId })
+            })
+
+            if (!res.ok) {
+                const err = await res.text()
+                throw new Error(err)
+            }
+
+            const data = await res.json()
+            alert("分析完成！")
+            fetchAnalysis() // Refresh
+        } catch (e: any) {
+            alert("分析失败: " + e.message)
+        } finally {
+            setAnalyzing(false)
+        }
+    }
+
     const fetchStats = async () => {
         setLoading(true)
 
@@ -121,11 +181,42 @@ export default function UserDetailPage() {
 
             {/* Detailed Activity Placeholder */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">学习数据详情</h3>
-                <div className="text-gray-500 text-sm text-center py-8">
-                    (TODO: 在此处添加该用户的错题列表或详细刷题记录图表)
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-lg font-bold text-gray-900">AI 错题诊断分析</h3>
+                    <div className="flex items-center space-x-3">
+                        <span className="text-sm text-gray-500">
+                            {analysisData.lastAnalyzedAt ?
+                                `上次分析: ${new Date(analysisData.lastAnalyzedAt).toLocaleString('zh-CN')}` :
+                                '从未进行过 AI 分析'}
+                        </span>
+                        {analysisData.newMistakesCount > 0 && (
+                            <span className="bg-red-100 text-red-700 text-xs px-2 py-1 rounded-full font-medium">
+                                +{analysisData.newMistakesCount} 新错题
+                            </span>
+                        )}
+                        <button
+                            onClick={handleAnalyzeErrors}
+                            disabled={analyzing}
+                            className="bg-indigo-600 text-white px-4 py-2 rounded text-sm hover:bg-indigo-700 disabled:opacity-50 flex items-center"
+                        >
+                            {analyzing ? '分析中...' : '立即分析'}
+                        </button>
+                    </div>
                 </div>
+
+                {analysisData.latestReport ? (
+                    <div className="bg-gray-50 p-6 rounded-lg border border-gray-100 prose prose-sm max-w-none">
+                        <pre className="whitespace-pre-wrap font-sans bg-transparent text-gray-800 p-0 m-0">
+                            {analysisData.latestReport.report_content}
+                        </pre>
+                    </div>
+                ) : (
+                    <div className="text-center py-10 bg-gray-50 rounded-lg border border-dashed border-gray-300 text-gray-500">
+                        暂无分析报告，请点击右上角按钮生成。
+                    </div>
+                )}
             </div>
         </div>
     )
 }
+```
