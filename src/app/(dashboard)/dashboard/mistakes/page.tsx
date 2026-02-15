@@ -90,6 +90,10 @@ export default function ErrorNotebookPage() {
     const [analyzing, setAnalyzing] = useState(false)
     const [report, setReport] = useState<string | null>(null)
 
+    const handlePrint = () => {
+        window.print()
+    }
+
     const handleAnalyze = async () => {
         if (filteredMistakes.length === 0) {
             alert("请先筛选出需要分析的错题")

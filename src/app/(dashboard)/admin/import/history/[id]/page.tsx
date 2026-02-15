@@ -107,11 +107,14 @@ export default function ImportHistoryDetailPage() {
                     }
                 })
 
-                await supabase.from('questions').upsert(updates)
+                const { error: updateError } = await supabase.from('questions').upsert(updates)
+
+                if (updateError) {
+                    console.error("Upsert failed:", updateError)
+                    throw new Error("更新数据库失败: " + updateError.message)
+                }
 
                 // Update local state to reflect progress
-                // (Optional, or just refetch at end)
-
                 await new Promise(resolve => setTimeout(resolve, 500))
             }
 
