@@ -56,10 +56,13 @@ export default function HandwritingRecognizer({ onRecognized, height = 150, plac
 
             // 2. Fallback to Server-side PaddleOCR (via /api/ocr)
             try {
+                // Remove data:image/png;base64, prefix as api/ocr expects raw base64
+                const base64Image = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+
                 const res = await fetch('/api/ocr', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: dataUrl }) // api/ocr expects { image: base64 }
+                    body: JSON.stringify({ image: base64Image })
                 })
 
                 if (!res.ok) {
