@@ -99,13 +99,13 @@ function extractTargetSections(text: string): string {
         // Fallback: Match generic "Reading and Writing" header
         /(?:^|\n)\s*#{0,6}\s*Reading\s*(?:and|&)\s*Writing/i,
         // Match "Part 3" or "Part III" or "III." (Reading/Writing section start)
-        // CRITICAL: Must be start of line, followed by number, and then EITHER newline OR "Reading"/"Writing"
-        // Matches: "Part 3", "Part III", "Part Three", "III.", "Part 3 Reading", "Part III Writing"
-        /(?:^|\n)\s*#{0,6}\s*(?:Part\s*(?:[IVX]+|\d+|[A-Z])(?:\.|:)?|[IVX]+\.|[A-Z]\.)\s*(?:\n|Reading|Writing)/i,
+        // CRITICAL: Must be start of line OR preceded by multiple spaces/punctuation, followed by number, and then EITHER newline OR "Reading"/"Writing"
+        /(?:^|\n|\s{3,}|[\.!\?]\s+)(?:Part\s*(?:[IVX]+|\d+|[A-Z])(?:\.|:)?|[IVX]+\.|[A-Z]\.)\s*(?:\n|Reading|Writing)/i,
         // Match "VII. Writing" or similar (Writing section)
-        /(?:^|\n)\s*#{0,6}\s*(?:VII|Part\s*(?:VII|7|Seven))\.?\s*Writing/i,
-        // Match writing prompts
-        /(?:^|\n)\s*Write\s+at\s+least/i,
+        // Note: Handle OCR misreading VII as VIL
+        /(?:^|\n|\s{3,}|[\.!\?]\s+)(?:VII|VIL|Part\s*(?:VII|7|Seven))\.?\s*Writing/i,
+        // Match writing prompts (e.g., "94. Write at least...")
+        /(?:^|\n|\s{3,}|[\.!\?]\s+)(?:\d+\.\s*)?Write\s+at\s+least/i,
     ];
 
     let endIndex = text.length;
