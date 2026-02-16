@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { createBrowserClient } from "@supabase/ssr"
 import { FileDown, AlertTriangle, CheckCircle, RefreshCw, Trash } from "lucide-react"
+import SmartTooltip from "@/components/SmartTooltip"
 
 export default function ErrorNotebookPage() {
     const [mistakes, setMistakes] = useState<any[]>([])
@@ -315,7 +316,17 @@ export default function ErrorNotebookPage() {
 
                     <div className="h-6 w-px bg-gray-200 hidden md:block"></div>
 
-                    <div className="relative group">
+                    <SmartTooltip
+                        content={
+                            <div>
+                                <div className="font-bold mb-1 border-b border-gray-700 pb-1">AI 分析逻辑 (Smart Sampling)</div>
+                                <ul className="space-y-1 text-gray-300 list-disc list-inside">
+                                    <li><span className="text-yellow-400 font-medium">最近错题 (Top 10)</span>: 分析当前学习状态</li>
+                                    <li><span className="text-red-400 font-medium">高频顽疾 (Top 10)</span>: 挖掘长期薄弱环节</li>
+                                </ul>
+                            </div>
+                        }
+                    >
                         <button
                             onClick={handleAnalyze}
                             disabled={analyzing}
@@ -331,17 +342,7 @@ export default function ErrorNotebookPage() {
                                 </>
                             )}
                         </button>
-
-                        {/* Tooltip */}
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-gray-900 text-white text-xs rounded-lg py-2 px-3 opacity-0 group-hover:opacity-100 transition pointer-events-none z-10 shadow-lg">
-                            <div className="font-bold mb-1 border-b border-gray-700 pb-1">AI 分析逻辑 (Smart Sampling)</div>
-                            <ul className="space-y-1 text-gray-300 list-disc list-inside">
-                                <li><span className="text-yellow-400 font-medium">最近错题 (Top 10)</span>: 分析当前学习状态</li>
-                                <li><span className="text-red-400 font-medium">高频顽疾 (Top 10)</span>: 挖掘长期薄弱环节</li>
-                            </ul>
-                            <div className="absolute bottom-[-4px] left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45"></div>
-                        </div>
-                    </div>
+                    </SmartTooltip>
 
                     <button
                         onClick={() => handleDelete('all')}
