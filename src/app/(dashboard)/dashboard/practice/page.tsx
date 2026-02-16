@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Question } from "@/types"
+import HandwritingCanvas from "@/components/handwriting/HandwritingCanvas"
 
 function PracticeContent() {
     const searchParams = useSearchParams()
@@ -14,6 +15,7 @@ function PracticeContent() {
     const [results, setResults] = useState<Record<string, boolean | null>>({})
     const [submitted, setSubmitted] = useState(false)
     const [loading, setLoading] = useState(true)
+    const [showHandwriting, setShowHandwriting] = useState(false)
 
     useEffect(() => {
         fetchPracticeBatch()
@@ -79,11 +81,29 @@ function PracticeContent() {
 
     return (
         <div className="max-w-2xl mx-auto space-y-8 pb-12">
-            <h2 className="text-2xl font-bold mb-6">
-                {type === 'word_transformation' ? '词汇转换特训 (5题)' :
-                    type === 'sentence_transformation' ? '句型转换特训 (5题)' :
-                        '固定搭配/语法 (10题)'}
-            </h2>
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold">
+                    {type === 'word_transformation' ? '词汇转换特训 (5题)' :
+                        type === 'sentence_transformation' ? '句型转换特训 (5题)' :
+                            '固定搭配/语法 (10题)'}
+                </h2>
+
+                {(type === 'word_transformation' || type === 'sentence_transformation') && (
+                    <label className="flex items-center cursor-pointer">
+                        <div className="mr-3 text-sm font-medium text-gray-700">启用手写板</div>
+                        <div className="relative">
+                            <input
+                                type="checkbox"
+                                className="sr-only"
+                                checked={showHandwriting}
+                                onChange={() => setShowHandwriting(!showHandwriting)}
+                            />
+                            <div className={`block w-10 h-6 rounded-full transition-colors ${showHandwriting ? 'bg-indigo-600' : 'bg-gray-300'}`}></div>
+                            <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${showHandwriting ? 'transform translate-x-4' : ''}`}></div>
+                        </div>
+                    </label>
+                )}
+            </div>
 
             {questions.map((q, idx) => (
                 <div key={q.id} className="bg-white p-6 rounded-lg shadow space-y-4">
@@ -108,16 +128,19 @@ function PracticeContent() {
                             placeholder="在此输入答案..."
                         />
 
-                        {submitted && !results[q.id] && (
-                            <div className="mt-2 text-sm text-red-600 animate-pulse">
-                                正确答案: <strong>{q.answer}</strong>
-                            </div>
-                        )}
-
                         {submitted && q.explanation && (
                             <div className="mt-3 p-3 bg-blue-50 text-blue-800 text-sm rounded-lg border border-blue-100">
                                 <span className="font-bold block mb-1">解析：</span>
                                 {q.explanation}
+                            </div>
+                        )}
+
+                        {!submitted && showHandwriting && (
+                            <div className="mt-4 pt-4 border-t border-gray-100">
+                                <HandwritingCanvas
+                                    height={150}
+                                    placeholder="在 iPad 上用笔在此处草拟答案..."
+                                />
                             </div>
                         )}
                     </div>

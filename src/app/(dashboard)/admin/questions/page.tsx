@@ -28,6 +28,11 @@ export default function QuestionBankPage() {
     const [isAnalyzing, setIsAnalyzing] = useState(false)
     const [statusMessage, setStatusMessage] = useState<string | null>(null)
 
+    // Edit Modal
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+    const [editingQuestion, setEditingQuestion] = useState<Question | null>(null)
+    const [isSaving, setIsSaving] = useState(false)
+
     useEffect(() => {
         setPage(1)
         setSelectedIds(new Set()) // Fix: Clear selection on tab change
@@ -192,6 +197,40 @@ export default function QuestionBankPage() {
         } finally {
             setIsAnalyzing(false)
             setTimeout(() => setStatusMessage(null), 3000)
+        }
+    }
+
+    const handleEditQuestion = (q: Question) => {
+        setEditingQuestion({ ...q })
+        setIsEditModalOpen(true)
+    }
+
+    const handleUpdateQuestion = async () => {
+        if (!editingQuestion) return
+        setIsSaving(true)
+
+        try {
+            const { error } = await supabase
+                .from('questions')
+                .update({
+                    content: editingQuestion.content,
+                    answer: editingQuestion.answer,
+                    type: editingQuestion.type,
+                    tags: editingQuestion.tags,
+                    explanation: editingQuestion.explanation
+                })
+                .eq('id', editingQuestion.id)
+
+            if (error) throw error
+
+            setIsEditModalOpen(false)
+            setEditingQuestion(null)
+            fetchQuestions()
+            alert("更新成功")
+        } catch (err: any) {
+            alert("更新失败: " + err.message)
+        } finally {
+            setIsSaving(false)
         }
     }
 
@@ -384,8 +423,12 @@ export default function QuestionBankPage() {
                                         )}
                                     </td>
                                     <td className="px-6 py-4 text-right text-sm">
-                                        {/* Placeholder for Edit */}
-                                        <button className="text-indigo-600 hover:text-indigo-900 mr-3">编辑</button>
+                                        <button
+                                            onClick={() => handleEditQuestion(q)}
+                                            className="text-indigo-600 hover:text-indigo-900 mr-3 flex items-center ml-auto"
+                                        >
+                                            <Edit2 className="w-3 h-4 mr-1" /> 编辑
+                                        </button>
                                     </td>
                                 </tr>
                             ))
@@ -436,6 +479,106 @@ export default function QuestionBankPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Edit Modal */}
+            {isEditModalOpen && editingQuestion && (
+                <div className="fixed inset-0 z-50 overflow-y-auto">
+                    <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+                        <div className="fixed inset-0 transition-opacity" aria-hidden="true" onClick={() => setIsEditModalOpen(false)}>
+                            <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
+                        </div>
+
+                        <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+
+                        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+                            <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                                <div className="sm:flex sm:items-start">
+                                    <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                                        <h3 className="text-lg leading-6 font-medium text-gray-900 flex items-center">
+                                            <Edit2 className="w-5 h-5 mr-2 text-indigo-600" /> 修改题目信息
+                                        </h3>
+                                        <div className="mt-6 space-y-4">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">题目内容</label>
+                                                <textarea
+                                                    rows={4}
+                                                    value={editingQuestion.content}
+                                                    onChange={e => setEditingQuestion({ ...editingQuestion, content: e.target.value })}
+                                                    className="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm font-mono"
+                                                />
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">标准答案</label>
+                                                    <input
+                                                        type="text"
+                                                        value={editingQuestion.answer}
+                                                        onChange={e => setEditingQuestion({ ...editingQuestion, answer: e.target.value })}
+                                                        className="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">题目类型</label>
+                                                    <select
+                                                        value={editingQuestion.type}
+                                                        onChange={e => setEditingQuestion({ ...editingQuestion, type: e.target.value as QuestionType })}
+                                                        className="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                                    >
+                                                        <option value="grammar">语法选择</option>
+                                                        <option value="word_transformation">词汇转换</option>
+                                                        <option value="sentence_transformation">句型转换</option>
+                                                        <option value="collocation">固定搭配</option>
+                                                        <option value="vocabulary">单词背诵</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">标签 (以逗号分隔)</label>
+                                                <input
+                                                    type="text"
+                                                    value={editingQuestion.tags?.join(', ') || ''}
+                                                    onChange={e => setEditingQuestion({ ...editingQuestion, tags: e.target.value.split(',').map(t => t.trim()).filter(t => t !== '') })}
+                                                    className="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                                    placeholder="例如: Topic:School, Point:Verb"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700 mb-1">解析说明</label>
+                                                <textarea
+                                                    rows={3}
+                                                    value={editingQuestion.explanation || ''}
+                                                    onChange={e => setEditingQuestion({ ...editingQuestion, explanation: e.target.value })}
+                                                    className="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm font-serif"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                                <button
+                                    type="button"
+                                    onClick={handleUpdateQuestion}
+                                    disabled={isSaving}
+                                    className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:ml-3 sm:w-auto sm:text-sm"
+                                >
+                                    {isSaving ? '正在保存...' : '保存更改'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEditModalOpen(false)}
+                                    className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                                >
+                                    取消
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
