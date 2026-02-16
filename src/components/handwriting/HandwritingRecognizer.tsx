@@ -54,23 +54,31 @@ export default function HandwritingRecognizer({ onRecognized, height = 150, plac
         } catch (clientError) {
             console.warn("Client-side OCR failed or empty, falling back to AI:", clientError)
 
-            // 2. Fallback to Server-side AI
+            // 2. Fallback to Server-side PaddleOCR (via /api/ocr)
             try {
-                const res = await fetch('/api/ai/recognize-handwriting', {
+                const res = await fetch('/api/ocr', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: dataUrl })
+                    body: JSON.stringify({ image: dataUrl }) // api/ocr expects { image: base64 }
                 })
 
-                if (!res.ok) throw new Error(await res.text())
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    try {
+                        const errorJson = JSON.parse(errorText);
+                        throw new Error(errorJson.error || errorText);
+                    } catch {
+                        throw new Error(errorText);
+                    }
+                }
 
                 const data = await res.json()
                 if (data.text) {
                     resultText = data.text
                 }
             } catch (serverError: any) {
-                console.error("Server-side OCR also failed:", serverError)
-                alert(`识别失败 (OCR & AI): ${serverError.message}`)
+                console.error("Server-side OCR (Paddle) also failed:", serverError)
+                alert(`识别失败 (OCR): ${serverError.message}`)
                 return // Stop here
             }
         } finally {
