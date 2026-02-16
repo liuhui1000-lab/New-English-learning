@@ -33,7 +33,10 @@ export async function POST(request: Request) {
 
     // Check if admin is impersonating or user is acting for self
     let targetUserId = user.id
-    const { userId: requestedUserId } = await request.json().catch(() => ({}))
+
+    // 2. Parse Body Payload
+    const body = await request.json().catch(() => ({}))
+    const { userId: requestedUserId, recent, frequent, stats } = body
 
     if (requestedUserId && requestedUserId !== user.id) {
         // Only admins can analyze others
@@ -44,89 +47,116 @@ export async function POST(request: Request) {
         targetUserId = requestedUserId
     }
 
-    // 2. Aggregate Mistakes (Server-Side)
-    const allMistakes: any[] = []
+    // Variables for analysis data
+    let statsText = ""
+    let recentSamples: any[] = []
+    let frequentSamples: any[] = []
+    let totalErrors = 0
+    let allMistakes: any[] = []
 
-    // Fetch Recitation Mistakes
-    const { data: recitationData } = await supabase
-        .from('user_progress')
-        .select(`*, questions (id, content, answer, type)`)
-        .eq('user_id', targetUserId)
-        .eq('status', 'learning')
-        .gt('attempts', 0)
+    // Strategy Selection
+    const useSmartSampling = !!(recent && frequent);
 
-    if (recitationData) {
-        recitationData.forEach((record: any) => {
-            if (record.questions) {
-                allMistakes.push({
-                    id: record.questions.id,
-                    content: record.questions.content,
-                    type: 'recitation',
-                    note: 'Spelling / Memory',
-                    count: record.attempts
-                })
-            }
-        })
-    }
+    if (useSmartSampling) {
+        // --- Plan A: Use Frontend Smart Sampling (Preferred) ---
+        recentSamples = recent
+        frequentSamples = frequent
+        totalErrors = stats?.total || (recent.length + frequent.length)
 
-    // Fetch Quiz Mistakes (Increase limit for stats)
-    const { data: quizData } = await supabase
-        .from('quiz_results')
-        .select(`*, questions (id, content, answer, type, explanation)`)
-        .eq('user_id', targetUserId)
-        .eq('is_correct', false)
-        .order('attempt_at', { ascending: false })
-        .limit(500) // Fetch more to get better stats
+        if (stats?.type_distribution) {
+            statsText = Object.entries(stats.type_distribution)
+                .map(([k, v]: [string, any]) => `- ${k}: ${v} (${Math.round(v / (stats.total || 1) * 100)}%)`)
+                .join('\n')
+        }
+    } else {
+        // --- Plan B: Server-Side Fallback (Legacy) ---
+        console.log("Using Legacy Server-Side Aggregation")
 
-    if (quizData) {
-        quizData.forEach((record: any) => {
-            if (record.questions) {
-                // Check if already exists (from recitation or previous quiz item)
-                const existing = allMistakes.find(m => m.id === record.questions.id)
-                if (existing) {
-                    existing.count += 1
-                } else {
+        // Fetch Recitation Mistakes
+        const { data: recitationData } = await supabase
+            .from('user_progress')
+            .select(`*, questions (id, content, answer, type)`)
+            .eq('user_id', targetUserId)
+            .eq('status', 'learning')
+            .gt('attempts', 0)
+
+        if (recitationData) {
+            recitationData.forEach((record: any) => {
+                if (record.questions) {
                     allMistakes.push({
                         id: record.questions.id,
                         content: record.questions.content,
-                        type: 'quiz',
-                        subType: record.questions.type, // grammar, collocation, etc.
-                        note: record.questions.type === 'grammar' ? 'Grammar' : 'Collocation',
-                        count: 1,
-                        lastAttempt: record.attempt_at
+                        type: 'recitation',
+                        note: 'Spelling / Memory',
+                        count: record.attempts
                     })
                 }
-            }
+            })
+        }
+
+        // Fetch Quiz Mistakes (Increase limit for stats)
+        const { data: quizData } = await supabase
+            .from('quiz_results')
+            .select(`*, questions (id, content, answer, type, explanation)`)
+            .eq('user_id', targetUserId)
+            .eq('is_correct', false)
+            .order('attempt_at', { ascending: false })
+            .limit(500) // Fetch more to get better stats
+
+        if (quizData) {
+            quizData.forEach((record: any) => {
+                if (record.questions) {
+                    // Check if already exists (from recitation or previous quiz item)
+                    const existing = allMistakes.find(m => m.id === record.questions.id)
+                    if (existing) {
+                        existing.count += 1
+                    } else {
+                        allMistakes.push({
+                            id: record.questions.id,
+                            content: record.questions.content,
+                            type: 'quiz',
+                            subType: record.questions.type, // grammar, collocation, etc.
+                            note: record.questions.type === 'grammar' ? 'Grammar' : 'Collocation',
+                            count: 1,
+                            lastAttempt: record.attempt_at
+                        })
+                    }
+                }
+            })
+        }
+
+        if (allMistakes.length === 0) {
+            return NextResponse.json({ report: "没有足够的错题数据进行分析。" })
+        }
+
+        // --- Smart Aggregation Strategy ---
+        totalErrors = allMistakes.length
+
+        // 1. Stats by Type
+        const typeStats: Record<string, number> = {}
+        allMistakes.forEach(m => {
+            const t = m.subType || m.type
+            typeStats[t] = (typeStats[t] || 0) + 1
         })
+        statsText = Object.entries(typeStats)
+            .map(([k, v]) => `- ${k}: ${v} (${Math.round(v / totalErrors * 100)}%)`)
+            .join('\n')
+
+        // 2. Top Weaknesses (By Frequency)
+        const topWeaknesses = [...allMistakes]
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 20)
+
+        // 3. Recent Samples (By Date, excluding duplicates in top)
+        const recentSamplesLegacy = [...allMistakes]
+            .filter(m => !topWeaknesses.includes(m))
+            .sort((a, b) => new Date(b.lastAttempt || 0).getTime() - new Date(a.lastAttempt || 0).getTime())
+            .slice(0, 50)
+
+        // Assign to main variables (Simulate usage)
+        recentSamples = recentSamplesLegacy.slice(0, 10)
+        frequentSamples = topWeaknesses.slice(0, 10)
     }
-
-    if (allMistakes.length === 0) {
-        return NextResponse.json({ report: "没有足够的错题数据进行分析。" })
-    }
-
-    // --- Smart Aggregation Strategy ---
-    const totalErrors = allMistakes.length
-
-    // 1. Stats by Type
-    const typeStats: Record<string, number> = {}
-    allMistakes.forEach(m => {
-        const t = m.subType || m.type
-        typeStats[t] = (typeStats[t] || 0) + 1
-    })
-    const statsText = Object.entries(typeStats)
-        .map(([k, v]) => `- ${k}: ${v} (${Math.round(v / totalErrors * 100)}%)`)
-        .join('\n')
-
-    // 2. Top Weaknesses (By Frequency)
-    const topWeaknesses = [...allMistakes]
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 20)
-
-    // 3. Recent Samples (By Date, excluding duplicates in top)
-    const recentSamples = [...allMistakes]
-        .filter(m => !topWeaknesses.includes(m))
-        .sort((a, b) => new Date(b.lastAttempt || 0).getTime() - new Date(a.lastAttempt || 0).getTime())
-        .slice(0, 50)
 
     // 3. Get AI Settings
     const { data: settingsData } = await supabase.from('system_settings').select('key, value')
@@ -153,29 +183,38 @@ export async function POST(request: Request) {
     if (!apiKey) return NextResponse.json({ error: 'AI API Key not configured' }, { status: 400 })
 
     // 4. Call AI
-    const systemPrompt = `You are an expert English teacher. Analyze the student's mistakes based on the provided statistics and samples.
+    const systemPrompt = `You are an expert English teacher. Analyze the student's mistakes based on the provided data.
 Output a diagnostic report in Simplified Chinese (Markdown).
 
 Structure:
-1. **Overview**: Summarize the student's error distribution based on the stats.
-2. **Deep Dive**: Analyze specific patterns from the "Top Repeated Mistakes".
-3. **Key Concepts**: Explain 2-3 critical concepts the student missed.
-4. **Study Plan**: 3 actionable steps.
+1. **Overview**: Summarize the student's error distribution.
+2. **Current Status (Recent Mistakes)**: Analyze the 'Recent' list to diagnose immediate issues (e.g., careless errors, specific new topics).
+3. **Root Causes (High Frequency)**: Analyze the 'High Frequency' list to identify deep-rooted, recurring weaknesses.
+4. **Action Plan**: Provide specific steps to address the identified long-term weaknesses.
 
-Keep it encouraging and data-driven.`
+Keep the tone encouraging, professional, and data-driven.`
 
-    const userPrompt = `Student Error Data (Total analyzed: ${totalErrors}):
+    // Helper to format sample
+    const formatSample = (m: any, idx: number) => {
+        const tagInfo = (m.tags && m.tags.length > 0) ? m.tags.join(',') : (m.subType || m.type || 'General')
+        const countInfo = m.user_error_count || m.count || 1
+        return `${idx + 1}. [${tagInfo}] ${m.content} (Error Count: ${countInfo})`
+    }
+
+    const userPrompt = `Student Error Data:
 
 [Section A: Statistics]
+Total Errors Analyzed: ${totalErrors}
+Distribution:
 ${statsText}
 
-[Section B: Top Repeated Mistakes (Critical)]
-${topWeaknesses.map((m: any, i: number) => `${i + 1}. [${m.subType || m.type}] (Failed ${m.count} times) ${m.content}`).join('\n')}
+[Section B: Recent Mistakes (Last 10)]
+${recentSamples.map((m, i) => formatSample(m, i)).join('\n')}
 
-[Section C: Recent Mistakes Stream (Sample)]
-${recentSamples.map((m: any, i: number) => `- [${m.subType || m.type}] ${m.content}`).join('\n')}
+[Section C: High Frequency / Persistent Mistakes (Top 10)]
+${frequentSamples.map((m, i) => formatSample(m, i)).join('\n')}
 
-Please generate the report.`
+Please generate the diagnostic report.`
 
     try {
         let targetUrl = baseUrl || '';
@@ -222,13 +261,11 @@ Please generate the report.`
             .insert({
                 user_id: targetUserId,
                 report_content: report,
-                mistake_count: allMistakes.length
+                mistake_count: totalErrors
             })
 
         if (saveError) {
             console.error("Failed to save report:", saveError)
-            // Check if it's table missing error, maybe fallback?
-            // But we want to fail loudly on dev or just return report on prod
         }
 
         return NextResponse.json({ report, success: true })

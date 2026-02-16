@@ -31,7 +31,7 @@ export default function ErrorNotebookPage() {
             .select(`
                 *,
                 questions (
-                    id, content, answer, type
+                    id, content, answer, type, tags
                 )
             `)
             .eq('status', 'learning')
@@ -72,7 +72,7 @@ export default function ErrorNotebookPage() {
             .select(`
                 *,
                 questions (
-                    id, content, answer, type, explanation
+                    id, content, answer, type, explanation, tags
                 )
             `)
             .eq('is_correct', false)
@@ -136,12 +136,67 @@ export default function ErrorNotebookPage() {
         setAnalyzing(true)
         setReport(null)
         try {
-            // Limit to top 20 to avoid token limits
-            const subset = filteredMistakes.slice(0, 20)
+            // --- Smart Sampling Strategy ---
+
+            // 1. Sort by Date Descending to get "Recent" candidates
+            const sortedByDate = [...filteredMistakes].sort((a, b) =>
+                new Date(b.lastAttempt || 0).getTime() - new Date(a.lastAttempt || 0).getTime()
+            )
+            const recentCandidates = sortedByDate.slice(0, 10)
+            const recentIds = new Set(recentCandidates.map(m => m.id))
+
+            // 2. Count Tag Frequencies (Topic & Point)
+            const tagCounts = new Map<string, number>()
+            filteredMistakes.forEach(m => {
+                if (m.tags && Array.isArray(m.tags)) {
+                    m.tags.forEach((t: string) => {
+                        // Only count meaningful tags (Topic/Point), ignore Difficulty
+                        if (t.startsWith('Topic:') || t.startsWith('Point:')) {
+                            tagCounts.set(t, (tagCounts.get(t) || 0) + 1)
+                        }
+                    })
+                }
+            })
+
+            // 3. Select High-Frequency Mistakes
+            // Filter out mistakes that are already in "recentResults"
+            const remainingMistakes = filteredMistakes.filter(m => !recentIds.has(m.id))
+
+            // Sort remaining mistakes by their "Tag Score" (sum of weights of their tags)
+            const frequentCandidates = remainingMistakes.map(m => {
+                let score = 0
+                if (m.tags && Array.isArray(m.tags)) {
+                    m.tags.forEach((t: string) => {
+                        score += (tagCounts.get(t) || 0)
+                    })
+                }
+                // Fallback: if no tags, use Note/Type as a proxy
+                if (score === 0 && m.note) score = 1
+                return { ...m, score }
+            })
+                .sort((a, b) => b.score - a.score) // High score first
+                .slice(0, 10) // Take top 10
+
+            // 4. Construct Payload
+            const payload = {
+                recent: recentCandidates.map(m => ({
+                    content: m.content,
+                    answer: m.answer,
+                    user_error_count: m.count,
+                    tags: m.tags || []
+                })),
+                frequent: frequentCandidates.map(m => ({
+                    content: m.content,
+                    answer: m.answer,
+                    user_error_count: m.count,
+                    tags: m.tags || []
+                }))
+            }
+
             const res = await fetch('/api/ai/analyze-errors', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mistakes: subset })
+                body: JSON.stringify(payload)
             })
 
             if (!res.ok) throw new Error(await res.text())

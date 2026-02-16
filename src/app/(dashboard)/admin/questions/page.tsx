@@ -126,10 +126,12 @@ export default function QuestionBankPage() {
         }
     }
 
+    const [batchSize, setBatchSize] = useState(15) // Default batch size
+
     const handleBatchAIAnalyze = async () => {
         const idsToProcess = Array.from(selectedIds)
         if (idsToProcess.length === 0) return
-        if (!confirm(`即将对选中的 ${idsToProcess.length} 道题目进行 AI 分析。`)) return
+        if (!confirm(`即将对选中的 ${idsToProcess.length} 道题目进行 AI 分析。\n批次大小: ${batchSize}`)) return
 
         setIsAnalyzing(true)
         setStatusMessage("正在准备分析...")
@@ -142,10 +144,9 @@ export default function QuestionBankPage() {
 
             if (!targets) throw new Error("无法获取题目内容")
 
-            const BATCH_SIZE = 15 // Reduced from 25 to avoid timeouts
-            for (let i = 0; i < targets.length; i += BATCH_SIZE) {
-                const batch = targets.slice(i, i + BATCH_SIZE)
-                setStatusMessage(`AI 分析中... (${Math.min(i + BATCH_SIZE, targets.length)}/${targets.length})`)
+            for (let i = 0; i < targets.length; i += batchSize) {
+                const batch = targets.slice(i, i + batchSize)
+                setStatusMessage(`AI 分析中... (${Math.min(i + batchSize, targets.length)}/${targets.length})`)
 
                 const items = batch.map(q => q.content)
 
@@ -158,7 +159,7 @@ export default function QuestionBankPage() {
 
                     if (!res.ok) {
                         const errText = await res.text().catch(() => res.statusText)
-                        console.error(`Batch ${i / BATCH_SIZE + 1} failed:`, errText)
+                        console.error(`Batch ${Math.floor(i / batchSize) + 1} failed:`, errText)
                         continue // Skip this batch but continue with others
                     }
 
@@ -190,7 +191,7 @@ export default function QuestionBankPage() {
                     }
 
                 } catch (batchErr) {
-                    console.error(`Batch ${i / BATCH_SIZE + 1} exception:`, batchErr)
+                    console.error(`Batch ${Math.floor(i / batchSize) + 1} exception:`, batchErr)
                 }
 
                 // Add delay to avoid rate limiting
@@ -265,17 +266,31 @@ export default function QuestionBankPage() {
                     {selectedIds.size > 0 && (
                         <div className="flex items-center bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 animate-in fade-in">
                             <span className="text-sm text-indigo-700 mr-3 font-medium">已选 {selectedIds.size} 项</span>
+
+                            <select
+                                value={batchSize}
+                                onChange={(e) => setBatchSize(Number(e.target.value))}
+                                className="text-xs border-indigo-200 rounded mr-2 h-7 py-0 pl-2 pr-6 bg-white text-indigo-700 focus:ring-indigo-500"
+                                title="AI处理批次大小"
+                            >
+                                <option value={5}>5 /批</option>
+                                <option value={10}>10 /批</option>
+                                <option value={15}>15 /批</option>
+                                <option value={20}>20 /批</option>
+                                <option value={25}>25 /批</option>
+                            </select>
+
                             <button
                                 onClick={handleBatchAIAnalyze}
                                 disabled={isAnalyzing}
-                                className="text-xs bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-700 mr-2 flex items-center"
+                                className="text-xs bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-700 mr-2 flex items-center h-7"
                             >
                                 <Cpu className="w-3 h-3 mr-1" />
                                 {isAnalyzing ? '处理中...' : 'AI 分析'}
                             </button>
                             <button
                                 onClick={handleDelete}
-                                className="text-xs bg-white text-red-600 border border-red-200 px-3 py-1 rounded hover:bg-red-50 flex items-center"
+                                className="text-xs bg-white text-red-600 border border-red-200 px-3 py-1 rounded hover:bg-red-50 flex items-center h-7"
                             >
                                 <Trash className="w-3 h-3 mr-1" /> 删除
                             </button>
