@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Question } from "@/types"
 import HandwritingRecognizer from "@/components/handwriting/HandwritingRecognizer"
-import { Loader2 } from "lucide-react"
+import { Loader2, AlertCircle } from "lucide-react"
 
 function PracticeContent() {
     const searchParams = useSearchParams()
@@ -110,17 +110,23 @@ function PracticeContent() {
         questions.forEach(q => {
             const userAnswer = (currentAnswers[q.id] || "").trim().toLowerCase()
             const correctAnswer = (q.answer || "").trim().toLowerCase()
-            const isCorrect = userAnswer === correctAnswer
-            newResults[q.id] = isCorrect
 
-            submissionData.push({
-                user_id: user.id,
-                question_id: q.id,
-                is_correct: isCorrect,
-                answer: userAnswer,
-                question_type: type,
-                source_type: 'quiz'
-            })
+            if (!correctAnswer) {
+                newResults[q.id] = null // Mark as not graded
+            } else {
+                // Explicitly mark empty answers as incorrect
+                const isCorrect = userAnswer !== "" && userAnswer === correctAnswer
+                newResults[q.id] = isCorrect
+
+                submissionData.push({
+                    user_id: user.id,
+                    question_id: q.id,
+                    is_correct: isCorrect,
+                    answer: userAnswer,
+                    question_type: type,
+                    source_type: 'quiz'
+                })
+            }
         })
 
         setResults(newResults)
@@ -200,7 +206,14 @@ function PracticeContent() {
                             placeholder="在此输入答案..."
                         />
 
-                        {submitted && q.explanation && (
+                        {submitted && results[q.id] === null && (
+                            <div className="mt-3 p-3 bg-yellow-50 text-yellow-800 text-sm rounded-lg border border-yellow-100 flex items-center">
+                                <AlertCircle className="w-4 h-4 mr-2" />
+                                系统尚无标准答案，无法自动批改。
+                            </div>
+                        )}
+
+                        {submitted && results[q.id] !== null && q.explanation && (
                             <div className="mt-3 p-3 bg-blue-50 text-blue-800 text-sm rounded-lg border border-blue-100">
                                 <span className="font-bold block mb-1">解析：</span>
                                 {q.explanation}
