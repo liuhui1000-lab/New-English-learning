@@ -311,8 +311,31 @@ function PracticeContent() {
                     <div className="flex items-start">
                         <span className="font-bold text-gray-400 mr-2">{idx + 1}.</span>
                         <p className="text-lg text-gray-800 leading-relaxed font-serif">
-                            {/* Simple template replacement logic if needed */}
-                            {q.content}
+                            {/* Parse and format content: html tags & line breaks */}
+                            {(() => {
+                                // Only apply line splitting for Sentence Transformation questions
+                                const shouldSplit = type === 'sentence_transformation'
+                                let lines: string[] = [q.content]
+
+                                if (shouldSplit) {
+                                    // Split by brackets containing Chinese/Instruction
+                                    // Match (xyz) or （xyz） followed by space
+                                    const formattedText = q.content.replace(/(\([^)]+\)|（[^）]+）)\s*/g, "$1\n")
+                                    lines = formattedText.split('\n')
+                                }
+
+                                return lines.map((line, i) => (
+                                    <span key={i} className={`block ${shouldSplit ? 'mb-2 last:mb-0' : ''}`}>
+                                        {/* HTML Tag Parsing (<u>) */}
+                                        {line.split(/(<u>.*?<\/u>)/g).map((part, j) => {
+                                            if (part.startsWith('<u>') && part.endsWith('</u>')) {
+                                                return <u key={j} className="decoration-2 underline-offset-4 decoration-indigo-500 font-semibold">{part.slice(3, -4)}</u>
+                                            }
+                                            return <span key={j}>{part}</span>
+                                        })}
+                                    </span>
+                                ))
+                            })()}
                         </p>
                     </div>
 
