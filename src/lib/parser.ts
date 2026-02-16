@@ -36,7 +36,10 @@ export async function parseDocument(file: File, mode: ImportMode = 'mock_paper',
             }
         }
         let step1 = cleanOCRText(cleanText);
+        // Step 2: Extract ONLY the target sections (Grammar/Vocabulary, Word/Sentence Transformation)
+        console.log('Calling extractTargetSections...');
         let step2 = extractTargetSections(step1);
+        console.log(`extractTargetSections returned ${step2.length} chars (was ${step1.length})`);
         const rawQuestions = splitQuestions(step2);
         return processMockPaperMode(rawQuestions);
     }
@@ -56,6 +59,9 @@ function cleanOCRText(text: string): string {
         .replace(/第\s*\d+\s*页/g, '') // Remove Chinese page num
         .replace(/_{5,}/g, '______') // Normalize long underlines
         .replace(/…{3,}/g, '______') // Normalize ellipses to blanks
+        .replace(/\\underline\{([^{}]+)\}/g, '<u>$1</u>') // Convert LaTeX underline to HTML
+        .replace(/\^\{([^{}]+)\}/g, '<sup>$1</sup>') // Convert LaTeX superscript to HTML
+        .replace(/(?<=[a-zA-Z\s])\$\s*(?=[a-zA-Z])/g, '') // Remove stray $ artifacts inside words
         .replace(/\n\s*\n/g, '\n'); // Remove excessive blank lines
 }
 
@@ -68,10 +74,12 @@ function extractTargetSections(text: string): string {
     // 1. Find Start
     const startPatterns = [
         /Part\s*2\s*Grammar\s*and\s*Vocabulary/i,
-        /II\.\s*Grammar\s*and\s*Vocabulary/i,
+        /Part\s*(?:II|2)\s*(?:Phonetics\s*,?\s*|Phonetics\s*and\s*)?Vocabulary\s*and\s*Grammar/i, // Matches "Part 2 Phonetics, Vocabulary and Grammar" (User case)
+        /II\.\s*(?:Phonetics\s*,?\s*)?Vocabulary\s*and\s*Grammar/i,
         /Section\s*B\s*Vocabulary/i,
         /Grammar\s*and\s*Vocabulary/i,
-        /Choose\s*the\s*best\s*answer/i // Fallback for when "Part II" is missing
+        /Phonetics\s*,?\s*Vocabulary\s*and\s*Grammar/i
+        // Removed generic "/Choose\s*the\s*best\s*answer/i" fallback as it captures Listening sections
     ];
 
     let startIndex = -1;
@@ -85,20 +93,34 @@ function extractTargetSections(text: string): string {
     }
 
     // 2. Find End (Start of Next Section)
+    // IMPORTANT: Only match "Reading and Writing" TOGETHER, not separately
+    // This ensures we don't truncate Word Transformation or Sentence Transformation sections
     const endPatterns = [
-        /(?:^|\n|\s{3,}|[\.\!\?]\s+)(?:Part\s*(?:[IVX]+|\d+|[A-Z])\.?|[IVX]+\.|[A-Z]\.)?\s*Reading\s*(?:and|&)\s*Writing/i, // Explicitly discard "Reading and Writing" even if merged
-        /(?:^|\n)\s*(?:Part\s*(?:[IVX]+|\d+|[A-Z])\.?|[IVX]+\.|[A-Z]\.)?\s*Reading/i,
-        /(?:^|\n)\s*(?:Part\s*(?:[IVX]+|\d+|[A-Z])\.?|[IVX]+\.|[A-Z]\.)?\s*Writing/i, // Anchored Writing
-        /(?:^|\n)\s*(?:[A-Z]\.\s+)?Read\s*the\s*passage/i,     // Catch "Read the passage"
-        /(?:^|\n)\s*(?:[A-Z]\.\s+)?Cloze/i,                    // Catch Cloze tests
-        /(?:^|\n)\s*Complete\s*the\s*passage/i, // Catch "Complete the passage"
-        /(?:^|\n)\s*Short\s*passage/i,           // Catch "Short passage"
-        /(?:^|\n)\s*首字母/                     // Catch "First letter" indicator in header
+        // Match "Part 3/III Reading and Writing" (must have both Reading AND Writing together)
+        // Allow optional markdown headers (# ## ###) before "Part"
+        /(?:^|\n)\s*#{0,6}\s*(?:Part\s*(?:[IVX]+|\d+|[A-Z])\.?|[IVX]+\.|[A-Z]\.)\s*Reading\s*(?:and|&)\s*Writing/i,
+        // Fallback: Match generic "Reading and Writing" header
+        /(?:^|\n)\s*#{0,6}\s*Reading\s*(?:and|&)\s*Writing/i,
+        // Match "Part 3" or "Part III" or "III." (Reading/Writing section start)
+        // CRITICAL: Handle OCR misreadings of III (111, TII, IlI) and Reading (Reacling, Reeding)
+        // Boundaries: Line start, 3+ spaces, or punctuation/parentheses.
+        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:Part\s*(?:III|I{3}|1{3}|TII|Three|3)|III|I{3}|1{3}|TII)\.?\s*(?:Rea[dl]ing|Writing)/i,
+        // Fallback for "Part 3" without the word Reading
+        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:Part\s*(?:III|I{3}|1{3}|TII|Three|3)|III|I{3}|1{3}|TII)\s*(?:\n|(?:\(|（))/i,
+        // Match "VII. Writing" or similar (Writing section)
+        // Handle OCR: VII -> VIL, VIII -> VILI/VIIII
+        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:VII|VIL|VIII|VILI|Part\s*(?:VII|7|Seven))\.?\s*Writing/i,
+        // Match generic Reading and Writing with very loose spelling
+        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:Rea[dl]ing|Writ[il]ng)\s*(?:and|&)\s*(?:Writ[il]ng|Rea[dl]ing)/i,
+        // Match writing prompts (e.g., "94. Write at least...")
+        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:\d+\.\s*)?Write\s+at\s+least/i,
     ];
 
     let endIndex = text.length;
     // Search for end pattern AFTER start index
     const searchContext = startIndex !== -1 ? text.substring(startIndex) : text;
+    console.log(`Searching for section end in ${searchContext.length} chars`);
+    console.log('Search context preview (last 500 chars):', searchContext.substring(Math.max(0, searchContext.length - 500)));
 
     for (const p of endPatterns) {
         const match = searchContext.search(p);
@@ -107,7 +129,10 @@ function extractTargetSections(text: string): string {
             // Usually these headers start a new block.
             endIndex = (startIndex !== -1 ? startIndex : 0) + match;
             console.log(`Found Section End at index ${endIndex}: ${p}`);
+            console.log('End pattern matched text:', searchContext.substring(match, match + 100));
             break;
+        } else {
+            console.log(`Pattern ${p} did NOT match`);
         }
     }
 
@@ -349,40 +374,55 @@ function isRelated(root: string, target: string): boolean {
     // If the user put them next to each other, they imply relation.
     // We only want to break if they are *clearly* different.
     // "accept" vs "banana" -> 0 prefix.
-
     if (prefix >= 3) return true;
-
     return false;
 }
 
 function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
     // Strategy: Strict Filter. Keep only Questions (blanks/options).
-    const filteredQuestions = rawItems.filter(q => {
-        // 1. Must have a blank or options
-        const hasBlank = /_+|\(\s{3,}\)|\[\s{3,}\]/.test(q);
-        const hasOptions = /[A-D][\)\.].*[A-D][\)\.]/.test(q);
+    console.log(`processMockPaperMode: Input ${rawItems.length} items`);
+    console.log('Question numbers:', rawItems.map(q => q.match(/^\d+\./)?.[0] || 'NO_NUM').slice(0, 20));
 
-        if (!hasBlank && !hasOptions) return false;
+    const parsedAndFilteredQuestions = rawItems
+        .map((item) => classifyQuestion(item))
+        .filter(q => {
+            // 1. Must have a blank, options, OR be a sentence reordering question
+            const hasBlank = /_+|\(\s{3,}\)|\[\s{3,}\]/.test(q.content);
+            const hasOptions = /[A-D][\)\.].*[A-D][\)\.]/.test(q.content);
+            // Sentence reordering: multiple comma-separated words + keywords
+            const isSentenceReordering = /连词成句|reorder|rearrange/i.test(q.content) ||
+                (/,\s*\w+,\s*\w+,\s*\w+/.test(q.content) && /\(.*\)/.test(q.content));
 
-        // 2. Filter out "Listening" style questions (Empty content with just a blank)
-        // e.g. "1. ______" or "1. (     )" with no other text
-        // Clean the question number for checking
-        const cleanQ = q.replace(/^[\(（\[]?\d+[）\)\]]?[\.\,，、]/, '').trim();
-        // If the remaining text is JUST underscores/blanks, it's likely listening
-        if (/^(_+|[\(\[]\s*[\)\]])$/.test(cleanQ)) {
-            return false;
-        }
+            if (!hasBlank && !hasOptions && !isSentenceReordering) {
+                const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
+                console.log(`Filtered out ${qNum}: no blank, options, or sentence reordering pattern`);
+                return false;
+            }
 
-        // 3. Filter out "First Letter" questions (detected via instructions in the content if header missed)
-        if (q.includes("首字母") || q.includes("beginning with")) {
-            return false;
-        }
+            // 2. Filter out "Listening" style questions (Empty content with just a blank)
+            // e.g. "1. ______" or "1. (     )" with no no other text
+            // Clean the question number for checking
+            const cleanQ = q.content.replace(/^[\(（\[]?\d+[）\)\]]?[\.\,，、]/, '').trim();
+            // If the remaining text is JUST underscores/blanks, it's likely listening
+            if (/^(_+|[\(\[]\s*[\)\]])$/.test(cleanQ)) {
+                const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
+                console.log(`Filtered out ${qNum}: looks like a listening question (just blank)`);
+                return false;
+            }
 
-        return true;
-    });
+            // 3. Filter out "First Letter" questions (detected via instructions in the content if header missed)
+            if (q.content.includes("首字母") || q.content.includes("beginning with")) {
+                const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
+                console.log(`Filtered out ${qNum}: first letter question`);
+                return false;
+            }
 
-    console.log(`Mock Paper Mode: Filtered ${rawItems.length} items down to ${filteredQuestions.length}`);
-    return filteredQuestions.map(classifyQuestion);
+            return true;
+        });
+
+
+    console.log(`Mock Paper Mode: Filtered ${rawItems.length} items down to ${parsedAndFilteredQuestions.length}`);
+    return parsedAndFilteredQuestions;
 }
 
 // ... Shared Helpers ...
@@ -476,59 +516,92 @@ async function extractText(file: File, onProgress?: (msg: string) => void, skipO
 }
 
 function splitQuestions(text: string): string[] {
-    // 0. Pre-clean: Remove common section headers that might be merged
-    // Matches "Part I", "Section A", "III. Complete...", etc.
-    // We replace them with a special marker to ensure they don't merge with previous text,
-    // then we can filter them out.
-    // Improved Header Regex:
-    // Catch "V. Complete...", "C. Read...", "Section B", "Listen to..."
-    // Relaxed to allow [A-Z]. Start if followed by instruction keywords or standard section names
-    // Improved Header Regex:
-    // Catch "V. Complete...", "C. Read...", "Section B", "Listen to..."
-    // Added support for markdown style headers (###, ##) which might appear from mammoth conversion
-    // Added support for "Choose the best answer" without prefix
-    const sectionHeaderRegex = /(?:^|\n)\s*(?:#{2,}\s*)?(?:Part\s+[A-Z]|Section\s+[A-Z]|[IVX]+\.\s+.*|[A-Z]\.\s+(?:Read|Complete|Fill|Choose|Section|Listen).*?|Choose\s+the\s+best\s+answer.*?)(?:\n|$)/gi;
+    // Strategy: Split on question numbers, then recombine number with content
+    // This handles cases where questions are separated by minimal spacing (e.g., "D) / 22.")
 
-    // Improved Regex for Questions:
-    // 1. Matches Start of String (^), Newline (\n), OR Wide Spaces (\s{3,})
-    // 2. Followed by Number + Punctuation
-    const splitRegex = /(?:^|\n|\s{4,})(?:[\(（\[]?\d+[）\)\]]?[\.\,，、])/g;
+    // 1. Remove section headers first
+    // CRITICAL: Use [^\n]* instead of .* to match only until end of line
+    const sectionHeaderRegex = /(?:^|\n)\s*(?:#{2,}\s*)?(?:Part\s+[A-Z]|Section\s+[A-Z]|[IVX]+\.\s+[^\n]*|[A-Z]\.\s+(?:Read|Complete|Fill|Choose|Section|Listen)[^\n]*|Choose\s+the\s+best\s+answer[^\n]*|Listen\s+to\s+the\s+passage[^\n]*)(?:\n|$)/gi;
+    console.log(`splitQuestions: Input text length: ${text.length}`);
+    console.log('Input text preview:', text.substring(0, 500));
+    let cleanText = text.replace(sectionHeaderRegex, '\n');
+    console.log(`After header removal: ${cleanText.length} chars`);
+    console.log('Clean text preview:', cleanText.substring(0, 500));
 
-    const marker = "|||SPLIT|||";
-    let textToProcess = text;
+    // 2. Split on question numbers (e.g., "21.", "22.", etc.)
+    // Use capturing group to keep the numbers
+    const parts = cleanText.split(/(\d+\.)/);
+    console.log(`splitQuestions: Split into ${parts.length} parts`);
+    console.log('First 5 parts:', parts.slice(0, 10).map(p => p.substring(0, 50)));
 
-    // Insert markers before Section Headers so they become separate chunks
-    textToProcess = textToProcess.replace(sectionHeaderRegex, (match) => {
-        return marker + "[[HEADER]]" + match.trim() + "\n";
-    });
-
-    // Insert markers before Questions
-    const textWithMarkers = textToProcess.replace(splitRegex, (match) => {
-        return marker + match.trim();
-    });
-
-    const rawParts = textWithMarkers.split(marker);
     const questions: string[] = [];
+    let currentQuestion = '';
 
-    for (const p of rawParts) {
-        const trimmed = p.trim();
-        if (!trimmed) continue;
+    for (let i = 0; i < parts.length; i++) {
+        const part = parts[i].trim();
+        if (!part) continue;
 
-        // Filter out the Section Headers we marked
-        if (trimmed.startsWith("[[HEADER]]")) {
-            continue;
+        // Check if this part is a question number
+        if (/^\d+\.$/.test(part)) {
+            // Save previous question if exists
+            if (currentQuestion) {
+                questions.push(currentQuestion.trim());
+            }
+            // Start new question with this number
+            currentQuestion = part;
+        } else {
+            // Append content to current question
+            if (currentQuestion) {
+                currentQuestion += ' ' + part;
+            } else {
+                // Content before first question number (likely preamble)
+                // Skip it or handle specially
+                continue;
+            }
         }
-
-        // Also simple heuristic: If it looks like a Roman Numeral header even if missed by above
-        // e.g. "II. Grammar"
-        if (/^[IVX]+\.\s/.test(trimmed) && trimmed.length < 100) {
-            continue;
-        }
-
-        questions.push(trimmed);
     }
 
-    return questions;
+    // Don't forget the last question
+    if (currentQuestion) {
+        questions.push(currentQuestion.trim());
+    }
+
+    // 3. Clean up each question: remove embedded section headers
+    // Pattern: optional markdown headers (####) + Roman numerals/letters/Part + section instructions
+    // Matches: "V. Rewrite...", "#### III. Choose...", "## Part 2 Phonetics..."
+    const embeddedHeaderRegex = /\s*#{0,}\s*(?:(?:[IVX]+|[A-Z])\.\s+(?:Choose|Complete|Fill|Read|Write|Rewrite|Transform)|Part\s+\d+)[^\n]*/i;
+    const cleanedQuestions = questions.map(q => {
+        // Find if there's an embedded header
+        const match = q.search(embeddedHeaderRegex);
+        if (match !== -1) {
+            // Truncate at the header
+            return q.substring(0, match).trim();
+        }
+        return q;
+    });
+
+    // 4. Filter out non-questions (too short, or looks like a header)
+    console.log(`Before filtering: ${cleanedQuestions.length} questions`);
+    const filtered = cleanedQuestions.filter(q => {
+        // Must have reasonable length
+        if (q.length < 10) {
+            console.log('Filtered (too short):', q);
+            return false;
+        }
+        // Must start with a number
+        if (!/^\d+\./.test(q)) {
+            console.log('Filtered (no number):', q.substring(0, 50));
+            return false;
+        }
+        // Filter out Roman numeral headers that might have slipped through
+        if (/^[IVX]+\.\s/.test(q) && q.length < 100) {
+            console.log('Filtered (Roman numeral):', q);
+            return false;
+        }
+        return true;
+    });
+    console.log(`After filtering: ${filtered.length} questions`);
+    return filtered;
 }
 
 function classifyQuestion(content: string): ParsedQuestion {
