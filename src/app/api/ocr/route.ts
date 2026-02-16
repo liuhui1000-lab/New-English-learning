@@ -61,15 +61,30 @@ export async function POST(req: NextRequest) {
             settings.forEach((s: any) => map[s.key] = s.value);
 
             // Prioritize new generic keys
-            if (map['ocr_token']) token = map['ocr_token'];
-            else if (map['paddle_ocr_token']) token = map['paddle_ocr_token'];
-            else if (map['baidu_ocr_api_key']) token = map['baidu_ocr_api_key'];
+            if (map['ocr_token']) {
+                token = map['ocr_token'];
+                console.log("Using DB 'ocr_token':", token.substring(0, 5) + "...");
+            }
+            else if (map['paddle_ocr_token']) {
+                token = map['paddle_ocr_token'];
+                console.log("Using DB 'paddle_ocr_token':", token.substring(0, 5) + "...");
+            }
+            else if (map['baidu_ocr_api_key']) {
+                token = map['baidu_ocr_api_key'];
+                console.log("Using DB 'baidu_ocr_api_key':", token.substring(0, 5) + "...");
+            }
 
             if (map['ocr_url']) apiUrl = map['ocr_url'];
         }
 
         // Fallback
-        if (!token) token = DEFAULT_TOKEN;
+        if (!token) {
+            token = DEFAULT_TOKEN;
+            console.warn("Using Default Token (likely invalid/expired). Check system settings.");
+        } else if (token === process.env.PADDLE_OCR_TOKEN) {
+            console.log("Using Env 'PADDLE_OCR_TOKEN'");
+        }
+
 
         const { image } = await req.json(); // Base64 image
         if (!image) return NextResponse.json({ error: "No image provided" }, { status: 400 });
