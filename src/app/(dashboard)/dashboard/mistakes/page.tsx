@@ -9,6 +9,8 @@ export default function ErrorNotebookPage() {
     const [mistakes, setMistakes] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [filter, setFilter] = useState<'all' | 'recitation' | 'quiz'>('all')
+    const [selectedType, setSelectedType] = useState<string>('all')
+    const [selectedTopic, setSelectedTopic] = useState<string>('all')
     const [sort, setSort] = useState<'date_desc' | 'date_asc' | 'count_desc' | 'az_asc'>('date_desc')
 
     const supabase = createBrowserClient(
@@ -93,7 +95,8 @@ export default function ErrorNotebookPage() {
                         note: record.questions.type === 'grammar' ? 'Grammar' : 'Collocation',
                         count: errorCounts.get(record.questions.id) || 1, // Use calculated count
                         explanation: record.questions.explanation,
-                        lastAttempt: record.attempt_at
+                        lastAttempt: record.attempt_at,
+                        tags: record.questions.tags // Pass tags for filtering
                     })
                 }
             })
@@ -104,7 +107,21 @@ export default function ErrorNotebookPage() {
     }
 
     const filteredMistakes = mistakes
-        .filter(m => filter === 'all' || m.type === filter)
+        .filter(m => {
+            // 1. Primary Filter (Tab)
+            if (filter !== 'all' && m.type !== filter) return false
+
+            // 2. Type Filter (Subtype/Note)
+            if (selectedType !== 'all' && m.note !== selectedType) return false
+
+            // 3. Topic Filter
+            if (selectedTopic !== 'all') {
+                const hasTopic = m.tags?.some((t: string) => t === `Topic:${selectedTopic}`)
+                if (!hasTopic) return false
+            }
+
+            return true
+        })
         .sort((a, b) => {
             switch (sort) {
                 case 'date_desc':
@@ -119,6 +136,15 @@ export default function ErrorNotebookPage() {
                     return 0
             }
         })
+
+    // Extract Available Options
+    const availableTypes = Array.from(new Set(mistakes.map(m => m.note))).filter(Boolean).sort()
+
+    const availableTopics = Array.from(new Set(
+        mistakes.flatMap(m => m.tags || [])
+            .filter((t: string) => t.startsWith('Topic:'))
+            .map((t: string) => t.replace('Topic:', ''))
+    )).sort()
 
     const [analyzing, setAnalyzing] = useState(false)
     const [report, setReport] = useState<string | null>(null)
@@ -406,6 +432,27 @@ export default function ErrorNotebookPage() {
                 </div>
 
                 <div className="flex items-center gap-4">
+                    {/* Advanced Filters */}
+                    <div className="flex gap-2">
+                        <select
+                            value={selectedType}
+                            onChange={(e) => setSelectedType(e.target.value)}
+                            className="text-sm border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-1.5 pl-3 pr-8"
+                        >
+                            <option value="all">所有题型</option>
+                            {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+
+                        <select
+                            value={selectedTopic}
+                            onChange={(e) => setSelectedTopic(e.target.value)}
+                            className="text-sm border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-1.5 pl-3 pr-8 max-w-[150px]"
+                        >
+                            <option value="all">所有话题</option>
+                            {availableTopics.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                    </div>
+
                     {/* Sort Dropdown */}
                     <div className="relative flex items-center">
                         <span className="text-sm text-gray-500 mr-2">排序:</span>
