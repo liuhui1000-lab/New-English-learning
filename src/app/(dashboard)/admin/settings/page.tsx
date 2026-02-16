@@ -144,19 +144,7 @@ export default function AdminSettingsPage() {
         setLoading(false)
     }
 
-    const handleSaveOCR = async () => {
-        setSaving(true)
-        try {
-            await upsertSettings([
-                { key: 'ocr_url', value: ocrConfig.url },
-                { key: 'ocr_token', value: ocrConfig.token }
-            ])
-            setMessage({ type: 'success', text: 'OCR 配置已保存' })
-        } catch (e: any) {
-            setMessage({ type: 'error', text: 'OCR 保存失败: ' + e.message })
-        }
-        setSaving(false)
-    }
+
 
     const handleActivateProvider = async (providerId: string) => {
         setSaving(true)
