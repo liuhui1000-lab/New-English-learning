@@ -96,6 +96,12 @@ function extractTargetSections(text: string): string {
         /(?:^|\n)\s*#{0,6}\s*(?:Part\s*(?:[IVX]+|\d+|[A-Z])\.?|[IVX]+\.|[A-Z]\.)\s*Reading\s*(?:and|&)\s*Writing/i,
         // Fallback: Match generic "Reading and Writing" header
         /(?:^|\n)\s*#{0,6}\s*Reading\s*(?:and|&)\s*Writing/i,
+        // Match "Part 3" or "III." (Reading section start)
+        /(?:^|\n)\s*#{0,6}\s*(?:Part\s*(?:III|3|Three)|III\.)\s/i,
+        // Match "VII. Writing" or similar (Writing section)
+        /(?:^|\n)\s*#{0,6}\s*(?:VII|Part\s*(?:VII|7|Seven))\.?\s*Writing/i,
+        // Match writing prompts
+        /(?:^|\n)\s*Write\s+at\s+least/i,
     ];
 
     let endIndex = text.length;
