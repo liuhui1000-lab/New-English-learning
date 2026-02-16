@@ -60,6 +60,7 @@ function cleanOCRText(text: string): string {
         .replace(/_{5,}/g, '______') // Normalize long underlines
         .replace(/…{3,}/g, '______') // Normalize ellipses to blanks
         .replace(/\\underline\{([^{}]+)\}/g, '<u>$1</u>') // Convert LaTeX underline to HTML
+        .replace(/\^\{([^{}]+)\}/g, '<sup>$1</sup>') // Convert LaTeX superscript to HTML
         .replace(/(?<=[a-zA-Z\s])\$\s*(?=[a-zA-Z])/g, '') // Remove stray $ artifacts inside words
         .replace(/\n\s*\n/g, '\n'); // Remove excessive blank lines
 }
