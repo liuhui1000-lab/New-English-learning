@@ -99,13 +99,18 @@ function extractTargetSections(text: string): string {
         // Fallback: Match generic "Reading and Writing" header
         /(?:^|\n)\s*#{0,6}\s*Reading\s*(?:and|&)\s*Writing/i,
         // Match "Part 3" or "Part III" or "III." (Reading/Writing section start)
-        // CRITICAL: Must be start of line OR preceded by multiple spaces/punctuation, followed by number, and then EITHER newline OR "Reading"/"Writing"
-        /(?:^|\n|\s{3,}|[\.!\?]\s+)(?:Part\s*(?:[IVX]+|\d+|[A-Z])(?:\.|:)?|[IVX]+\.|[A-Z]\.)\s*(?:\n|Reading|Writing)/i,
+        // CRITICAL: Handle OCR misreadings of III (111, TII, IlI) and Reading (Reacling, Reeding)
+        // Boundaries: Line start, 3+ spaces, or punctuation/parentheses.
+        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:Part\s*(?:III|I{3}|1{3}|TII|Three|3)|III|I{3}|1{3}|TII)\.?\s*(?:Rea[dl]ing|Writing)/i,
+        // Fallback for "Part 3" without the word Reading
+        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:Part\s*(?:III|I{3}|1{3}|TII|Three|3)|III|I{3}|1{3}|TII)\s*(?:\n|(?:\(|（))/i,
         // Match "VII. Writing" or similar (Writing section)
-        // Note: Handle OCR misreading VII as VIL
-        /(?:^|\n|\s{3,}|[\.!\?]\s+)(?:VII|VIL|Part\s*(?:VII|7|Seven))\.?\s*Writing/i,
+        // Handle OCR: VII -> VIL, VIII -> VILI/VIIII
+        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:VII|VIL|VIII|VILI|Part\s*(?:VII|7|Seven))\.?\s*Writing/i,
+        // Match generic Reading and Writing with very loose spelling
+        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:Rea[dl]ing|Writ[il]ng)\s*(?:and|&)\s*(?:Writ[il]ng|Rea[dl]ing)/i,
         // Match writing prompts (e.g., "94. Write at least...")
-        /(?:^|\n|\s{3,}|[\.!\?]\s+)(?:\d+\.\s*)?Write\s+at\s+least/i,
+        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:\d+\.\s*)?Write\s+at\s+least/i,
     ];
 
     let endIndex = text.length;
