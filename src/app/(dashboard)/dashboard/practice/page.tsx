@@ -56,7 +56,8 @@ function PracticeContent() {
                         // User request: "Auto recognize then fill" implies overwrite or fill if empty.
                         // Let's assume handwriting is authoritative if present.
                         const text = await recognizer.recognize()
-                        if (text) {
+                        // Allow empty string (clearing answer) if user wrote nothing
+                        if (text !== null) {
                             return { id: q.id, text }
                         }
                     }
@@ -64,15 +65,19 @@ function PracticeContent() {
                 })
 
                 const results = await Promise.all(recognitionPromises)
+                console.log("Batch Recognition Results:", results)
 
                 // Update answers state synchronously before grading
                 // Note: setAnswers is async, so we must use a local variable for grading
                 const newAnswers = { ...answers }
                 results.forEach(r => {
                     if (r) {
+                        console.log(`Setting answer for ${r.id}: ${r.text}`)
                         newAnswers[r.id] = r.text
                         // Also update UI state
                         setAnswers(prev => ({ ...prev, [r.id]: r.text }))
+                    } else {
+                        console.warn("No recognition result for question (null returned)")
                     }
                 })
 

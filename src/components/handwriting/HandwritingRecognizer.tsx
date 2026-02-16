@@ -25,8 +25,8 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
 
         // Check for empty or too short content (blank canvas)
         if (!dataUrl || dataUrl.length < 1000) {
-            // console.log("Canvas empty, skipping recognition")
-            return null
+            // Return empty string to explicitly clear the answer
+            return ""
         }
 
         setRecognizing(true)
