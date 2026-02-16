@@ -232,8 +232,13 @@ function PracticeContent() {
             if (!correctAnswer) {
                 newResults[q.id] = null // Mark as not graded
             } else {
-                // Explicitly mark empty answers as incorrect
-                const isCorrect = userAnswer !== "" && userAnswer === correctAnswer
+                // Normalize answers for comparison:
+                // 1. Replace separators (;,，) with spaces
+                // 2. Collapse multiple spaces to single space
+                // 3. Trim and lowercase
+                const normalize = (str: string) => str.replace(/[;；,，]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase()
+
+                const isCorrect = userAnswer !== "" && normalize(userAnswer) === normalize(correctAnswer)
                 newResults[q.id] = isCorrect
 
                 submissionData.push({
@@ -323,6 +328,12 @@ function PracticeContent() {
                         `}
                             placeholder="在此输入答案..."
                         />
+
+                        {submitted && results[q.id] === false && (
+                            <div className="mt-2 text-sm text-red-600 font-medium">
+                                正确答案：{q.answer}
+                            </div>
+                        )}
 
                         {submitted && results[q.id] === null && (
                             <div className="mt-3 p-3 bg-yellow-50 text-yellow-800 text-sm rounded-lg border border-yellow-100 flex items-center">
