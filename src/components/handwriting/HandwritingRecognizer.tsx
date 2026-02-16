@@ -34,60 +34,53 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
         let resultText = ""
 
         try {
-            // 1. Try Tesseract.js (Client-side)
-            console.log("Attempting Client-side OCR (Tesseract.js)...")
+            // 1. Try Server-side OCR (Paddle/Active Provider)
+            // console.log("Attempting Server-side OCR...")
 
-            if (!(window as any).Tesseract) {
-                await new Promise((resolve, reject) => {
-                    const script = document.createElement('script')
-                    script.src = 'https://unpkg.com/tesseract.js@5.1.0/dist/tesseract.min.js'
-                    script.onload = resolve
-                    script.onerror = reject
-                    document.head.appendChild(script)
-                })
-            }
-
-            const Tesseract = (window as any).Tesseract
-            const { data: { text } } = await Tesseract.recognize(dataUrl, 'eng', {
-                // logger: (m: any) => console.log(m)
+            const base64Image = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+            const res = await fetch('/api/ocr', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: base64Image })
             })
 
-            const cleanText = text.trim()
-            if (cleanText && cleanText.length > 0) {
-                console.log("Tesseract Success:", cleanText)
-                resultText = cleanText
-            } else {
-                throw new Error("Tesseract returned empty text")
+            if (!res.ok) {
+                const errorText = await res.text();
+                throw new Error(`Server OCR failed: ${res.status} ${errorText}`);
             }
 
-        } catch (clientError) {
-            console.warn("Client-side OCR failed, falling back to Paddle...", clientError)
+            const data = await res.json()
+            if (data.text) {
+                resultText = data.text
+            }
 
-            // 2. Fallback to Server-side PaddleOCR
+        } catch (serverError) {
+            console.warn("Server-side OCR failed, falling back to Tesseract...", serverError)
+
+            // 2. Fallback to Client-side Tesseract.js
             try {
-                const base64Image = dataUrl.replace(/^data:image\/\w+;base64,/, "");
-                const res = await fetch('/api/ocr', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: base64Image })
+                if (!(window as any).Tesseract) {
+                    await new Promise((resolve, reject) => {
+                        const script = document.createElement('script')
+                        script.src = 'https://unpkg.com/tesseract.js@5.1.0/dist/tesseract.min.js'
+                        script.onload = resolve
+                        script.onerror = reject
+                        document.head.appendChild(script)
+                    })
+                }
+
+                const Tesseract = (window as any).Tesseract
+                const { data: { text } } = await Tesseract.recognize(dataUrl, 'eng', {
+                    // logger: (m: any) => console.log(m)
                 })
 
-                if (!res.ok) {
-                    const errorText = await res.text();
-                    try {
-                        const errorJson = JSON.parse(errorText);
-                        throw new Error(errorJson.error || errorText);
-                    } catch {
-                        throw new Error(errorText);
-                    }
+                const cleanText = text.trim()
+                if (cleanText && cleanText.length > 0) {
+                    console.log("Tesseract Success:", cleanText)
+                    resultText = cleanText
                 }
-
-                const data = await res.json()
-                if (data.text) {
-                    resultText = data.text
-                }
-            } catch (serverError: any) {
-                console.error("Server-side OCR (Paddle) failed:", serverError)
+            } catch (clientError: any) {
+                console.error("Both OCR methods failed", clientError)
                 return null
             }
         } finally {
