@@ -36,7 +36,7 @@ export default function HandwritingRecognizer({ onRecognized, height = 150, plac
             }
         } catch (e: any) {
             console.error("Recognition failed:", e)
-            alert("识别失败，请重试")
+            alert(`识别失败: ${e.message}`)
         } finally {
             setRecognizing(false)
         }

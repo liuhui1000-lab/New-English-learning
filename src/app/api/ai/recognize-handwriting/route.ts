@@ -33,6 +33,8 @@ export async function POST(req: Request) {
                 const config = JSON.parse(settingsMap[configKey]);
                 if (config.apiKey) apiKey = config.apiKey;
                 if (config.baseUrl) baseUrl = config.baseUrl;
+                // Handle different casing from legacy saves
+                if (config.base_url) baseUrl = config.base_url;
                 if (config.model) model = config.model;
             } catch (e) {
                 console.error("Failed to parse provider config", e);
@@ -40,8 +42,10 @@ export async function POST(req: Request) {
         }
 
         if (!apiKey) {
+            console.error("AI API Key missing. Active Provider:", activeProvider);
             return NextResponse.json({ error: 'AI Settings not configured' }, { status: 500 });
         }
+        console.log("Using Provider:", activeProvider, "Model:", model, "BaseURL:", baseUrl);
 
         // 2. Call AI API (Vision)
         // Determine target URL
@@ -103,6 +107,6 @@ export async function POST(req: Request) {
 
     } catch (e: any) {
         console.error("Handwriting Recognition Error:", e);
-        return NextResponse.json({ error: e.message }, { status: 500 });
+        return NextResponse.json({ error: e.message, stack: e.stack }, { status: 500 });
     }
 }
