@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Question } from "@/types"
-import HandwritingCanvas from "@/components/handwriting/HandwritingCanvas"
+import HandwritingRecognizer from "@/components/handwriting/HandwritingRecognizer"
 
 function PracticeContent() {
     const searchParams = useSearchParams()
@@ -77,6 +77,10 @@ function PracticeContent() {
         }
     }
 
+    const handleRecognized = (questionId: string, text: string) => {
+        setAnswers(prev => ({ ...prev, [questionId]: text }))
+    }
+
     if (loading) return <div>Loading...</div>
 
     return (
@@ -137,9 +141,10 @@ function PracticeContent() {
 
                         {!submitted && showHandwriting && (
                             <div className="mt-4 pt-4 border-t border-gray-100">
-                                <HandwritingCanvas
+                                <HandwritingRecognizer
                                     height={150}
                                     placeholder="在 iPad 上用笔在此处草拟答案..."
+                                    onRecognized={(text) => handleRecognized(q.id, text)}
                                 />
                             </div>
                         )}
