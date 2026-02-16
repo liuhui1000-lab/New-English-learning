@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, useEffect, Suspense } from "react"
+import { useState, useEffect, Suspense, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Question } from "@/types"
 import HandwritingRecognizer from "@/components/handwriting/HandwritingRecognizer"
+import { Loader2 } from "lucide-react"
 
 function PracticeContent() {
     const searchParams = useSearchParams()
