@@ -11,11 +11,17 @@ type AIProviderConfig = {
     model: string
 }
 
+type OCRProviderConfig = {
+    apiUrl: string
+    token: string
+}
+
 type ProviderMeta = {
     id: string
     name: string
-    defaultBaseUrl: string
-    defaultModel: string
+    defaultBaseUrl?: string
+    defaultModel?: string
+    defaultApiUrl?: string
     description?: string
 }
 
@@ -28,20 +34,27 @@ const AI_PROVIDERS: ProviderMeta[] = [
     { id: 'openai', name: 'OpenAI (GPT)', defaultBaseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-3.5-turbo', description: 'Global Standard' },
 ]
 
+const OCR_PROVIDERS: ProviderMeta[] = [
+    { id: 'paddle', name: 'PaddleOCR (百度飞桨)', defaultApiUrl: 'https://5ejew8k4i019dek5.aistudio-app.com/layout-parsing', description: 'Best for layout & table recognition' },
+    { id: 'general', name: 'General/Custom OCR', defaultApiUrl: '', description: 'Compatible generic OCR API' }
+]
+
 export default function AdminSettingsPage() {
     // State
     const [activeProvider, setActiveProvider] = useState<string | null>(null)
     const [providerConfigs, setProviderConfigs] = useState<Record<string, AIProviderConfig>>({})
 
     // OCR State
-    const [ocrConfig, setOcrConfig] = useState({
-        url: '',
-        token: ''
-    })
+    const [activeOcrProvider, setActiveOcrProvider] = useState<string | null>(null)
+    const [ocrProviderConfigs, setOcrProviderConfigs] = useState<Record<string, OCRProviderConfig>>({})
 
     // Editing State
     const [editingProvider, setEditingProvider] = useState<string | null>(null)
     const [editForm, setEditForm] = useState<AIProviderConfig>({ apiKey: '', baseUrl: '', model: '' })
+
+    // OCR Editing State
+    const [editingOcrProvider, setEditingOcrProvider] = useState<string | null>(null)
+    const [editOcrForm, setEditOcrForm] = useState<OCRProviderConfig>({ apiUrl: '', token: '' })
 
     // Status
     const [loading, setLoading] = useState(true)
@@ -77,9 +90,12 @@ export default function AdminSettingsPage() {
             if (data) {
                 const configs: Record<string, AIProviderConfig> = {}
                 let active = 'deepseek' // Default fallback if DB is empty
-                let ocr = { url: '', token: '' }
+
+                const ocrConfigs: Record<string, OCRProviderConfig> = {}
+                let activeOcr = 'paddle'
 
                 data.forEach((item: any) => {
+                    // AI Configs
                     if (item.key === 'ai_provider') active = item.value
                     if (item.key.startsWith('ai_config_')) {
                         const providerId = item.key.replace('ai_config_', '')
@@ -89,13 +105,38 @@ export default function AdminSettingsPage() {
                             console.error(`Failed to parse config for ${providerId}`)
                         }
                     }
-                    if (item.key === 'ocr_url') ocr.url = item.value
-                    if (item.key === 'ocr_token') ocr.token = item.value
+
+                    // OCR Configs (New)
+                    if (item.key === 'ocr_provider') activeOcr = item.value
+                    if (item.key.startsWith('ocr_config_')) {
+                        const providerId = item.key.replace('ocr_config_', '')
+                        try {
+                            ocrConfigs[providerId] = JSON.parse(item.value)
+                        } catch (e) { console.error('Failed to parse OCR config', e) }
+                    }
+
+                    // Legacy OCR fallback (if no new config exists, try to port on UI side)
+                    // We can map legacy 'ocr_url' and 'ocr_token' to 'paddle' config if missing
+                    if (item.key === 'ocr_url' && !ocrConfigs['paddle']?.apiUrl) {
+                        ocrConfigs['paddle'] = { ...ocrConfigs['paddle'] || {}, apiUrl: item.value }
+                    }
+                    if (item.key === 'ocr_token' && !ocrConfigs['paddle']?.token) {
+                        ocrConfigs['paddle'] = { ...ocrConfigs['paddle'] || {}, token: item.value }
+                        // Also check legacy names
+                    }
+                    if (item.key === 'paddle_ocr_token' && !ocrConfigs['paddle']?.token) {
+                        ocrConfigs['paddle'] = { ...ocrConfigs['paddle'] || {}, token: item.value }
+                    }
                 })
+
+                // Ensure paddle has at least defaults or empty structure
+                if (!ocrConfigs['paddle']) ocrConfigs['paddle'] = { apiUrl: '', token: '' }
 
                 setActiveProvider(active)
                 setProviderConfigs(configs)
-                setOcrConfig(ocr)
+
+                setActiveOcrProvider(activeOcr)
+                setOcrProviderConfigs(ocrConfigs)
             }
         } catch (e: any) {
             console.error('Failed to fetch settings:', e)
@@ -103,19 +144,7 @@ export default function AdminSettingsPage() {
         setLoading(false)
     }
 
-    const handleSaveOCR = async () => {
-        setSaving(true)
-        try {
-            await upsertSettings([
-                { key: 'ocr_url', value: ocrConfig.url },
-                { key: 'ocr_token', value: ocrConfig.token }
-            ])
-            setMessage({ type: 'success', text: 'OCR 配置已保存' })
-        } catch (e: any) {
-            setMessage({ type: 'error', text: 'OCR 保存失败: ' + e.message })
-        }
-        setSaving(false)
-    }
+
 
     const handleActivateProvider = async (providerId: string) => {
         setSaving(true)
@@ -155,6 +184,54 @@ export default function AdminSettingsPage() {
             setEditingProvider(null)
         } catch (e: any) {
             setMessage({ type: 'error', text: '保存失败: ' + e.message })
+        }
+        setSaving(false)
+    }
+
+    // OCR Handlers
+    const openOcrEditModal = (providerId: string) => {
+        const currentConfig = ocrProviderConfigs[providerId] || {
+            apiUrl: OCR_PROVIDERS.find(p => p.id === providerId)?.defaultApiUrl || '',
+            token: ''
+        }
+        setEditOcrForm(currentConfig)
+        setEditingOcrProvider(providerId)
+    }
+
+    const saveOcrProviderConfig = async () => {
+        if (!editingOcrProvider) return
+        setSaving(true)
+
+        const newConfigs = { ...ocrProviderConfigs, [editingOcrProvider]: editOcrForm }
+
+        try {
+            // Save specific config
+            await upsertSettings([{
+                key: `ocr_config_${editingOcrProvider}`,
+                value: JSON.stringify(editOcrForm)
+            }])
+
+            // Also sync legacy keys if it's Paddle for backward compatibility?
+            // Or just let /api/ocr handle the new keys? 
+            // Best to rely on /api/ocr updating to read active provider.
+
+            setOcrProviderConfigs(newConfigs)
+            setMessage({ type: 'success', text: 'OCR 配置已保存' })
+            setEditingOcrProvider(null)
+        } catch (e: any) {
+            setMessage({ type: 'error', text: '保存失败: ' + e.message })
+        }
+        setSaving(false)
+    }
+
+    const handleActivateOcrProvider = async (providerId: string) => {
+        setSaving(true)
+        try {
+            await upsertSettings([{ key: 'ocr_provider', value: providerId }])
+            setActiveOcrProvider(providerId)
+            setMessage({ type: 'success', text: `OCR 已切换至 ${OCR_PROVIDERS.find(p => p.id === providerId)?.name}` })
+        } catch (e: any) {
+            setMessage({ type: 'error', text: '切换失败: ' + e.message })
         }
         setSaving(false)
     }
@@ -261,40 +338,76 @@ export default function AdminSettingsPage() {
                 )}
             </div>
 
-            {/* OCR Section */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <div className="flex justify-between items-center mb-4 border-b pb-2">
-                    <h3 className="text-lg font-bold text-gray-900">OCR 文字识别配置</h3>
-                    <button
-                        onClick={handleSaveOCR}
-                        disabled={saving}
-                        className="text-sm bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-100 font-medium"
-                    >
-                        保存 OCR 设置
-                    </button>
-                </div>
+            {/* OCR Providers Section */}
+            <div className="space-y-4">
+                <h3 className="text-lg font-bold text-gray-900 border-b pb-2">OCR 文字识别配置 (多线路管理)</h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">OCR API URL</label>
-                        <input
-                            type="text"
-                            value={ocrConfig.url}
-                            onChange={e => setOcrConfig({ ...ocrConfig, url: e.target.value })}
-                            placeholder="https://..."
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm font-mono"
-                        />
-                        <p className="text-xs text-gray-400 mt-1">默认为 PaddleHub / AIStudio Space URL</p>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Access Token (选填)</label>
-                        <input
-                            type="password"
-                            value={ocrConfig.token}
-                            onChange={e => setOcrConfig({ ...ocrConfig, token: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono"
-                        />
-                    </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {OCR_PROVIDERS.map(provider => {
+                        const config = ocrProviderConfigs[provider.id] || { apiUrl: '', token: '' }
+                        const isConfigured = !!config.apiUrl || !!config.token
+                        const isActive = activeOcrProvider === provider.id
+
+                        return (
+                            <div key={provider.id} className={`relative p-5 rounded-xl border-2 transition-all ${isActive
+                                ? 'border-indigo-500 bg-indigo-50/30'
+                                : 'border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm'
+                                }`}>
+                                {/* Header */}
+                                <div className="flex justify-between items-start mb-3">
+                                    <div>
+                                        <h4 className="font-bold text-gray-900">{provider.name}</h4>
+                                        <p className="text-xs text-gray-500 mt-1">{provider.description}</p>
+                                    </div>
+                                    <div className="flex flex-col items-end space-y-2">
+                                        {isActive && (
+                                            <span className="bg-indigo-100 text-indigo-700 text-xs px-2 py-1 rounded-full font-bold flex items-center">
+                                                <Check className="w-3 h-3 mr-1" /> 当前使用
+                                            </span>
+                                        )}
+                                        {!isActive && isConfigured && (
+                                            <span className="bg-green-50 text-green-700 text-xs px-2 py-1 rounded-full font-medium">
+                                                已配置
+                                            </span>
+                                        )}
+                                        {!isConfigured && (
+                                            <span className="bg-gray-100 text-gray-400 text-xs px-2 py-1 rounded-full">
+                                                未配置
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Config Info Preview */}
+                                {isConfigured && (
+                                    <div className="text-xs text-gray-500 font-mono bg-gray-50 p-2 rounded mb-4">
+                                        <div className="truncate">URL: {config.apiUrl}</div>
+                                        <div className="truncate">Token: {config.token ? '********' : '(Empty)'}</div>
+                                    </div>
+                                )}
+
+                                {/* Actions */}
+                                <div className="flex space-x-2 mt-auto">
+                                    <button
+                                        onClick={() => openOcrEditModal(provider.id)}
+                                        className="flex-1 bg-white border border-gray-300 text-gray-700 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition flex items-center justify-center"
+                                    >
+                                        <Edit2 className="w-3 h-3 mr-1" /> 配置
+                                    </button>
+
+                                    {isConfigured && !isActive && (
+                                        <button
+                                            onClick={() => handleActivateOcrProvider(provider.id)}
+                                            disabled={saving}
+                                            className="flex-1 bg-indigo-600 text-white py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition disabled:opacity-50"
+                                        >
+                                            启用
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        )
+                    })}
                 </div>
             </div>
 
@@ -387,6 +500,59 @@ export default function AdminSettingsPage() {
                             </button>
                             <button
                                 onClick={saveProviderConfig}
+                                disabled={saving}
+                                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50"
+                            >
+                                {saving ? '保存中...' : '确认保存'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* OCR Edit Modal */}
+            {editingOcrProvider && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+                        <div className="px-6 py-4 border-b flex justify-between items-center bg-gray-50">
+                            <h3 className="font-bold text-gray-900">
+                                配置 {OCR_PROVIDERS.find(p => p.id === editingOcrProvider)?.name}
+                            </h3>
+                            <button onClick={() => setEditingOcrProvider(null)} className="text-gray-400 hover:text-gray-600">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">API Endpoint URL</label>
+                                <input
+                                    type="text"
+                                    value={editOcrForm.apiUrl}
+                                    onChange={e => setEditOcrForm({ ...editOcrForm, apiUrl: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 font-mono text-sm"
+                                    placeholder="https://..."
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">API Token / Key</label>
+                                <input
+                                    type="password"
+                                    value={editOcrForm.token}
+                                    onChange={e => setEditOcrForm({ ...editOcrForm, token: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 font-mono text-sm"
+                                    placeholder="..."
+                                />
+                            </div>
+                        </div>
+                        <div className="px-6 py-4 bg-gray-50 flex justify-end space-x-3">
+                            <button
+                                onClick={() => setEditingOcrProvider(null)}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg"
+                            >
+                                取消
+                            </button>
+                            <button
+                                onClick={saveOcrProviderConfig}
                                 disabled={saving}
                                 className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50"
                             >

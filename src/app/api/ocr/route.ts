@@ -14,6 +14,8 @@ const DEFAULT_TOKEN = "483605608bc2d69ed9979463871dd4bc6095285a";
  */
 function cleanOCRText(text: string): string {
     return text
+        // Remove Markdown Headers (## Title) which PaddleOCR Layout often adds to single lines
+        .replace(/^#+\s+/gm, '')
         // Convert LaTeX underline to HTML: $ \underline{\text{in two months}} $ → <u>in two months</u>
         .replace(/\$\s*\\underline\{\\text\{([^}]+)\}\}\s*\$/g, '<u>$1</u>')
         // Empty underline becomes blank: $ \underline{\text{}} $ → ____
@@ -54,22 +56,37 @@ export async function POST(req: NextRequest) {
         const { data: settings } = await supabase
             .from('system_settings')
             .select('*')
-            .in('key', ['ocr_token', 'ocr_url', 'paddle_ocr_token', 'baidu_ocr_api_key']);
+            .or('key.eq.ocr_token,key.eq.ocr_url,key.eq.paddle_ocr_token,key.eq.baidu_ocr_api_key,key.eq.ocr_provider,key.like.ocr_config_%');
 
         if (settings) {
             const map: Record<string, string> = {};
             settings.forEach((s: any) => map[s.key] = s.value);
 
             // Prioritize new generic keys
-            if (map['ocr_token']) token = map['ocr_token'];
-            else if (map['paddle_ocr_token']) token = map['paddle_ocr_token'];
-            else if (map['baidu_ocr_api_key']) token = map['baidu_ocr_api_key'];
+            if (map['ocr_token']) {
+                token = map['ocr_token'];
+                console.log("Using DB 'ocr_token':", token.substring(0, 5) + "...");
+            }
+            else if (map['paddle_ocr_token']) {
+                token = map['paddle_ocr_token'];
+                console.log("Using DB 'paddle_ocr_token':", token.substring(0, 5) + "...");
+            }
+            else if (map['baidu_ocr_api_key']) {
+                token = map['baidu_ocr_api_key'];
+                console.log("Using DB 'baidu_ocr_api_key':", token.substring(0, 5) + "...");
+            }
 
             if (map['ocr_url']) apiUrl = map['ocr_url'];
         }
 
         // Fallback
-        if (!token) token = DEFAULT_TOKEN;
+        if (!token) {
+            token = DEFAULT_TOKEN;
+            console.warn("Using Default Token (likely invalid/expired). Check system settings.");
+        } else if (token === process.env.PADDLE_OCR_TOKEN) {
+            console.log("Using Env 'PADDLE_OCR_TOKEN'");
+        }
+
 
         const { image } = await req.json(); // Base64 image
         if (!image) return NextResponse.json({ error: "No image provided" }, { status: 400 });

@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, useEffect, Suspense } from "react"
+import { useState, useEffect, Suspense, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Question } from "@/types"
-import HandwritingCanvas from "@/components/handwriting/HandwritingCanvas"
+import HandwritingRecognizer from "@/components/handwriting/HandwritingRecognizer"
+import { Loader2 } from "lucide-react"
 
 function PracticeContent() {
     const searchParams = useSearchParams()
@@ -36,7 +37,66 @@ function PracticeContent() {
         setLoading(false)
     }
 
+    const recognizerRefs = useRef<Record<string, { recognize: () => Promise<string | null> }>>({})
+    const [isSubmitting, setIsSubmitting] = useState(false)
+
     const handleSubmit = async () => {
+        setIsSubmitting(true)
+
+        // 1. Process Handwriting Batch (if any)
+        if (showHandwriting) {
+            console.log("Batch processing handwriting answers...")
+            try {
+                const recognitionPromises = questions.map(async (q) => {
+                    const recognizer = recognizerRefs.current[q.id]
+                    if (recognizer) {
+                        // Skip if answer already manually filled? 
+                        // Strategy: If user manually typed something, keep it? 
+                        // Or handwriting overwrite? 
+                        // User request: "Auto recognize then fill" implies overwrite or fill if empty.
+                        // Let's assume handwriting is authoritative if present.
+                        const text = await recognizer.recognize()
+                        // Allow empty string (clearing answer) if user wrote nothing
+                        if (text !== null) {
+                            return { id: q.id, text }
+                        }
+                    }
+                    return null
+                })
+
+                const results = await Promise.all(recognitionPromises)
+                console.log("Batch Recognition Results:", results)
+
+                // Update answers state synchronously before grading
+                // Note: setAnswers is async, so we must use a local variable for grading
+                const newAnswers = { ...answers }
+                results.forEach(r => {
+                    if (r) {
+                        console.log(`Setting answer for ${r.id}: ${r.text}`)
+                        newAnswers[r.id] = r.text
+                        // Also update UI state
+                        setAnswers(prev => ({ ...prev, [r.id]: r.text }))
+                    } else {
+                        console.warn("No recognition result for question (null returned)")
+                    }
+                })
+
+                // Pass newAnswers to grading logic
+                await finalizeSubmission(newAnswers)
+
+            } catch (e) {
+                console.error("Batch recognition error:", e)
+                alert("手写识别过程中发生错误，将直接提交现有答案。")
+                await finalizeSubmission(answers)
+            }
+        } else {
+            await finalizeSubmission(answers)
+        }
+
+        setIsSubmitting(false)
+    }
+
+    const finalizeSubmission = async (currentAnswers: Record<string, string>) => {
         const newResults: Record<string, boolean> = {}
         const submissionData: any[] = []
 
@@ -48,7 +108,7 @@ function PracticeContent() {
         }
 
         questions.forEach(q => {
-            const userAnswer = (answers[q.id] || "").trim().toLowerCase()
+            const userAnswer = (currentAnswers[q.id] || "").trim().toLowerCase()
             const correctAnswer = (q.answer || "").trim().toLowerCase()
             const isCorrect = userAnswer === correctAnswer
             newResults[q.id] = isCorrect
@@ -77,10 +137,22 @@ function PracticeContent() {
         }
     }
 
+    // Keep handleRecognized for manual clicks
+    const handleRecognized = (questionId: string, text: string) => {
+        setAnswers(prev => ({ ...prev, [questionId]: text }))
+    }
+
     if (loading) return <div>Loading...</div>
 
     return (
         <div className="max-w-2xl mx-auto space-y-8 pb-12">
+            {isSubmitting && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center flex-col text-white">
+                    <Loader2 className="w-10 h-10 animate-spin mb-4" />
+                    <p className="text-lg font-bold">正在识别手写答案并判分...</p>
+                </div>
+            )}
+
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">
                     {type === 'word_transformation' ? '词汇转换特训 (5题)' :
@@ -137,9 +209,12 @@ function PracticeContent() {
 
                         {!submitted && showHandwriting && (
                             <div className="mt-4 pt-4 border-t border-gray-100">
-                                <HandwritingCanvas
+                                <HandwritingRecognizer
+                                    // @ts-ignore
+                                    ref={el => { if (el) recognizerRefs.current[q.id] = el }}
                                     height={150}
                                     placeholder="在 iPad 上用笔在此处草拟答案..."
+                                    onRecognized={(text) => handleRecognized(q.id, text)}
                                 />
                             </div>
                         )}
@@ -150,9 +225,10 @@ function PracticeContent() {
             {!submitted ? (
                 <button
                     onClick={handleSubmit}
-                    className="w-full py-4 bg-indigo-600 text-white font-bold rounded-lg shadow-lg hover:bg-indigo-700 transition"
+                    disabled={isSubmitting}
+                    className="w-full py-4 bg-indigo-600 text-white font-bold rounded-lg shadow-lg hover:bg-indigo-700 transition disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                    提交答案
+                    {isSubmitting ? '识别判分中...' : '提交答案 (自动识别)'}
                 </button>
             ) : (
                 <button

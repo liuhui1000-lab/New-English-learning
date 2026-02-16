@@ -2,7 +2,14 @@ import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 
+
 export const maxDuration = 60; // Allow up to 60s for AI processing
+
+// Simple in-memory cache
+let cachedSettings: Record<string, string> | null = null;
+let lastFetch = 0;
+const CACHE_TTL = 30000; // 30s TTL
+
 
 export async function POST(request: Request) {
     const cookieStore = await cookies()
@@ -58,14 +65,22 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Unauthorized Admin' }, { status: 401 })
     }
 
-    // 2. Get AI Settings
-    const { data: settingsData } = await supabase
-        .from('system_settings')
-        .select('key, value')
+    // 2. Get AI Settings (with Cache)
+    const now = Date.now();
+    let settingsMap: Record<string, string> = {}
 
-    const settingsMap: Record<string, string> = {}
-    if (settingsData) {
-        settingsData.forEach((s: any) => settingsMap[s.key] = s.value)
+    if (cachedSettings && (now - lastFetch < CACHE_TTL)) {
+        settingsMap = cachedSettings;
+    } else {
+        const { data: settingsData } = await supabase
+            .from('system_settings')
+            .select('key, value')
+
+        if (settingsData) {
+            settingsData.forEach((s: any) => settingsMap[s.key] = s.value)
+            cachedSettings = settingsMap;
+            lastFetch = now;
+        }
     }
 
     // Determine Active Provider
