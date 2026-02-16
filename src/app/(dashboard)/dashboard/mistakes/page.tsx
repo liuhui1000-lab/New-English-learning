@@ -3,11 +3,14 @@
 import { useState, useEffect } from "react"
 import { createBrowserClient } from "@supabase/ssr"
 import { FileDown, AlertTriangle, CheckCircle, RefreshCw, Trash } from "lucide-react"
+import SmartTooltip from "@/components/SmartTooltip"
 
 export default function ErrorNotebookPage() {
     const [mistakes, setMistakes] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [filter, setFilter] = useState<'all' | 'recitation' | 'quiz'>('all')
+    const [selectedType, setSelectedType] = useState<string>('all')
+    const [selectedTopic, setSelectedTopic] = useState<string>('all')
     const [sort, setSort] = useState<'date_desc' | 'date_asc' | 'count_desc' | 'az_asc'>('date_desc')
 
     const supabase = createBrowserClient(
@@ -31,7 +34,7 @@ export default function ErrorNotebookPage() {
             .select(`
                 *,
                 questions (
-                    id, content, answer, type
+                    id, content, answer, type, tags
                 )
             `)
             .eq('status', 'learning')
@@ -72,7 +75,7 @@ export default function ErrorNotebookPage() {
             .select(`
                 *,
                 questions (
-                    id, content, answer, type, explanation
+                    id, content, answer, type, explanation, tags
                 )
             `)
             .eq('is_correct', false)
@@ -92,7 +95,8 @@ export default function ErrorNotebookPage() {
                         note: record.questions.type === 'grammar' ? 'Grammar' : 'Collocation',
                         count: errorCounts.get(record.questions.id) || 1, // Use calculated count
                         explanation: record.questions.explanation,
-                        lastAttempt: record.attempt_at
+                        lastAttempt: record.attempt_at,
+                        tags: record.questions.tags // Pass tags for filtering
                     })
                 }
             })
@@ -103,7 +107,21 @@ export default function ErrorNotebookPage() {
     }
 
     const filteredMistakes = mistakes
-        .filter(m => filter === 'all' || m.type === filter)
+        .filter(m => {
+            // 1. Primary Filter (Tab)
+            if (filter !== 'all' && m.type !== filter) return false
+
+            // 2. Type Filter (Subtype/Note)
+            if (selectedType !== 'all' && m.note !== selectedType) return false
+
+            // 3. Topic Filter
+            if (selectedTopic !== 'all') {
+                const hasTopic = m.tags?.some((t: string) => t === `Topic:${selectedTopic}`)
+                if (!hasTopic) return false
+            }
+
+            return true
+        })
         .sort((a, b) => {
             switch (sort) {
                 case 'date_desc':
@@ -118,6 +136,15 @@ export default function ErrorNotebookPage() {
                     return 0
             }
         })
+
+    // Extract Available Options
+    const availableTypes = Array.from(new Set(mistakes.map(m => m.note))).filter(Boolean).sort()
+
+    const availableTopics = Array.from(new Set(
+        mistakes.flatMap(m => m.tags || [])
+            .filter((t: string) => t.startsWith('Topic:'))
+            .map((t: string) => t.replace('Topic:', ''))
+    )).sort()
 
     const [analyzing, setAnalyzing] = useState(false)
     const [report, setReport] = useState<string | null>(null)
@@ -136,12 +163,67 @@ export default function ErrorNotebookPage() {
         setAnalyzing(true)
         setReport(null)
         try {
-            // Limit to top 20 to avoid token limits
-            const subset = filteredMistakes.slice(0, 20)
+            // --- Smart Sampling Strategy ---
+
+            // 1. Sort by Date Descending to get "Recent" candidates
+            const sortedByDate = [...filteredMistakes].sort((a, b) =>
+                new Date(b.lastAttempt || 0).getTime() - new Date(a.lastAttempt || 0).getTime()
+            )
+            const recentCandidates = sortedByDate.slice(0, 10)
+            const recentIds = new Set(recentCandidates.map(m => m.id))
+
+            // 2. Count Tag Frequencies (Topic & Point)
+            const tagCounts = new Map<string, number>()
+            filteredMistakes.forEach(m => {
+                if (m.tags && Array.isArray(m.tags)) {
+                    m.tags.forEach((t: string) => {
+                        // Only count meaningful tags (Topic/Point), ignore Difficulty
+                        if (t.startsWith('Topic:') || t.startsWith('Point:')) {
+                            tagCounts.set(t, (tagCounts.get(t) || 0) + 1)
+                        }
+                    })
+                }
+            })
+
+            // 3. Select High-Frequency Mistakes
+            // Filter out mistakes that are already in "recentResults"
+            const remainingMistakes = filteredMistakes.filter(m => !recentIds.has(m.id))
+
+            // Sort remaining mistakes by their "Tag Score" (sum of weights of their tags)
+            const frequentCandidates = remainingMistakes.map(m => {
+                let score = 0
+                if (m.tags && Array.isArray(m.tags)) {
+                    m.tags.forEach((t: string) => {
+                        score += (tagCounts.get(t) || 0)
+                    })
+                }
+                // Fallback: if no tags, use Note/Type as a proxy
+                if (score === 0 && m.note) score = 1
+                return { ...m, score }
+            })
+                .sort((a, b) => b.score - a.score) // High score first
+                .slice(0, 10) // Take top 10
+
+            // 4. Construct Payload
+            const payload = {
+                recent: recentCandidates.map(m => ({
+                    content: m.content,
+                    answer: m.answer,
+                    user_error_count: m.count,
+                    tags: m.tags || []
+                })),
+                frequent: frequentCandidates.map(m => ({
+                    content: m.content,
+                    answer: m.answer,
+                    user_error_count: m.count,
+                    tags: m.tags || []
+                }))
+            }
+
             const res = await fetch('/api/ai/analyze-errors', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mistakes: subset })
+                body: JSON.stringify(payload)
             })
 
             if (!res.ok) throw new Error(await res.text())
@@ -260,21 +342,33 @@ export default function ErrorNotebookPage() {
 
                     <div className="h-6 w-px bg-gray-200 hidden md:block"></div>
 
-                    <button
-                        onClick={handleAnalyze}
-                        disabled={analyzing}
-                        className="bg-indigo-600 text-white hover:bg-indigo-700 border border-transparent px-4 py-2 rounded-lg flex items-center shadow-sm transition disabled:opacity-50 text-sm font-medium"
+                    <SmartTooltip
+                        content={
+                            <div>
+                                <div className="font-bold mb-1 border-b border-gray-700 pb-1">AI 分析逻辑 (Smart Sampling)</div>
+                                <ul className="space-y-1 text-gray-300 list-disc list-inside">
+                                    <li><span className="text-yellow-400 font-medium">最近错题 (Top 10)</span>: 分析当前学习状态</li>
+                                    <li><span className="text-red-400 font-medium">高频顽疾 (Top 10)</span>: 挖掘长期薄弱环节</li>
+                                </ul>
+                            </div>
+                        }
                     >
-                        {analyzing ? (
-                            <>
-                                <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> 分析中...
-                            </>
-                        ) : (
-                            <>
-                                <CheckCircle className="w-4 h-4 mr-2" /> 智能分析
-                            </>
-                        )}
-                    </button>
+                        <button
+                            onClick={handleAnalyze}
+                            disabled={analyzing}
+                            className="bg-indigo-600 text-white hover:bg-indigo-700 border border-transparent px-4 py-2 rounded-lg flex items-center shadow-sm transition disabled:opacity-50 text-sm font-medium"
+                        >
+                            {analyzing ? (
+                                <>
+                                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> 分析中...
+                                </>
+                            ) : (
+                                <>
+                                    <CheckCircle className="w-4 h-4 mr-2" /> 智能分析
+                                </>
+                            )}
+                        </button>
+                    </SmartTooltip>
 
                     <button
                         onClick={() => handleDelete('all')}
@@ -338,6 +432,27 @@ export default function ErrorNotebookPage() {
                 </div>
 
                 <div className="flex items-center gap-4">
+                    {/* Advanced Filters */}
+                    <div className="flex gap-2">
+                        <select
+                            value={selectedType}
+                            onChange={(e) => setSelectedType(e.target.value)}
+                            className="text-sm border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-1.5 pl-3 pr-8"
+                        >
+                            <option value="all">所有题型</option>
+                            {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+
+                        <select
+                            value={selectedTopic}
+                            onChange={(e) => setSelectedTopic(e.target.value)}
+                            className="text-sm border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-1.5 pl-3 pr-8 max-w-[150px]"
+                        >
+                            <option value="all">所有话题</option>
+                            {availableTopics.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                    </div>
+
                     {/* Sort Dropdown */}
                     <div className="relative flex items-center">
                         <span className="text-sm text-gray-500 mr-2">排序:</span>
