@@ -98,9 +98,10 @@ function extractTargetSections(text: string): string {
         /(?:^|\n)\s*#{0,6}\s*(?:Part\s*(?:[IVX]+|\d+|[A-Z])\.?|[IVX]+\.|[A-Z]\.)\s*Reading\s*(?:and|&)\s*Writing/i,
         // Fallback: Match generic "Reading and Writing" header
         /(?:^|\n)\s*#{0,6}\s*Reading\s*(?:and|&)\s*Writing/i,
-        // Match "Part 3" or "III." (Reading section start)
-        // CRITICAL: Must be start of line, followed by number, and then EITHER newline OR "Reading"
-        /(?:^|\n)\s*#{0,6}\s*(?:Part\s*(?:III|3|Three)|III\.)\s*(?:\n|Reading)/i,
+        // Match "Part 3" or "Part III" or "III." (Reading/Writing section start)
+        // CRITICAL: Must be start of line, followed by number, and then EITHER newline OR "Reading"/"Writing"
+        // Matches: "Part 3", "Part III", "Part Three", "III.", "Part 3 Reading", "Part III Writing"
+        /(?:^|\n)\s*#{0,6}\s*(?:Part\s*(?:[IVX]+|\d+|[A-Z])(?:\.|:)?|[IVX]+\.|[A-Z]\.)\s*(?:\n|Reading|Writing)/i,
         // Match "VII. Writing" or similar (Writing section)
         /(?:^|\n)\s*#{0,6}\s*(?:VII|Part\s*(?:VII|7|Seven))\.?\s*Writing/i,
         // Match writing prompts
