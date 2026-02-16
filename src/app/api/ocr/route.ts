@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
         const { data: settings } = await supabase
             .from('system_settings')
             .select('*')
-            .in('key', ['ocr_token', 'ocr_url', 'paddle_ocr_token', 'baidu_ocr_api_key']);
+            .or('key.eq.ocr_token,key.eq.ocr_url,key.eq.paddle_ocr_token,key.eq.baidu_ocr_api_key,key.eq.ocr_provider,key.like.ocr_config_%');
 
         if (settings) {
             const map: Record<string, string> = {};
