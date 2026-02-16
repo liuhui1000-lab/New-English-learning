@@ -26,14 +26,132 @@ function PracticeContent() {
         setLoading(true)
         const limit = (type === 'word_transformation' || type === 'sentence_transformation') ? 5 : 10
 
-        const { data } = await supabase
-            .from('questions')
-            .select('*')
-            .eq('type', type)
-            // .eq('status', 'learning') // Real logic needs progress join
-            .limit(limit)
+        try {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) return
 
-        if (data) setQuestions(data as Question[])
+            // 1. Fetch ALL Question IDs for this type
+            const { data: allQuestions } = await supabase
+                .from('questions')
+                .select('id')
+                .eq('type', type)
+
+            if (!allQuestions || allQuestions.length === 0) {
+                setQuestions([])
+                setLoading(false)
+                return
+            }
+
+            // 2. Fetch User History for this type
+            const { data: userHistory } = await supabase
+                .from('quiz_results')
+                .select('question_id, is_correct, attempt_at')
+                .eq('user_id', user.id)
+                .eq('question_type', type)
+                .order('attempt_at', { ascending: false }) // Latest first
+
+            // 3. Process & Categorize
+            const processedIds = new Set<string>()
+            const activeWrongIds: string[] = []
+            const masteredDetails: { id: string, errorCount: number }[] = []
+
+            // Map to track error counts per question
+            const errorCounts: Record<string, number> = {}
+
+            if (userHistory) {
+                userHistory.forEach((record: any) => {
+                    if (!errorCounts[record.question_id]) errorCounts[record.question_id] = 0
+                    if (!record.is_correct) errorCounts[record.question_id]++
+
+                    if (!processedIds.has(record.question_id)) {
+                        processedIds.add(record.question_id)
+                        if (record.is_correct) {
+                            // Last attempt correct -> Mastered
+                            masteredDetails.push({ id: record.question_id, errorCount: 0 }) // count updated later
+                        } else {
+                            // Last attempt wrong -> Active Wrong
+                            activeWrongIds.push(record.question_id)
+                        }
+                    }
+                })
+
+                // Update error counts for mastered items
+                masteredDetails.forEach(m => m.errorCount = errorCounts[m.id] || 0)
+            }
+
+            // New Questions = All - Processed
+            const newIds = allQuestions
+                .filter((q: any) => !processedIds.has(q.id))
+                .map((q: any) => q.id)
+
+            // 4. Selection Logic
+            let selectedIds: string[] = []
+            const maxWrong = Math.ceil(limit * 0.3) // Max 30% wrong
+
+            // 4.1. Pick max 30% from Active Wrong (Random)
+            // Shuffle Active Wrong first
+            activeWrongIds.sort(() => Math.random() - 0.5)
+            const chosenWrong = activeWrongIds.slice(0, maxWrong)
+            selectedIds.push(...chosenWrong)
+
+            // 4.2. Fill remainder with New (Random)
+            let remainingSlots = limit - selectedIds.length
+            newIds.sort(() => Math.random() - 0.5)
+            const chosenNew = newIds.slice(0, remainingSlots)
+            selectedIds.push(...chosenNew)
+
+            // 4.3. If New ran out, fill with more Active Wrong
+            remainingSlots = limit - selectedIds.length
+            if (remainingSlots > 0 && activeWrongIds.length > chosenWrong.length) {
+                const moreWrong = activeWrongIds.slice(maxWrong, maxWrong + remainingSlots)
+                selectedIds.push(...moreWrong)
+            }
+
+            // 4.4. Fallback: If still not enough, use Mastered (Sorted by Error Count DESC)
+            remainingSlots = limit - selectedIds.length
+            if (remainingSlots > 0 && masteredDetails.length > 0) {
+                // Sort by error count desc
+                masteredDetails.sort((a, b) => b.errorCount - a.errorCount)
+                const chosenMastered = masteredDetails.slice(0, remainingSlots).map(m => m.id)
+                selectedIds.push(...chosenMastered)
+                // Optional: Notify user they are reviewing mastered content?
+                if (selectedIds.length === chosenMastered.length) {
+                    // All are mastered
+                    // console.log("Review Mode: All questions are mastered")
+                }
+            }
+
+            // 5. Fetch Details for Selected IDs
+            // Handle edge case where total DB count < limit
+            if (selectedIds.length === 0) {
+                // Fallback to simple random if something went wrong or DB is empty
+                const { data: randomData } = await supabase
+                    .from('questions')
+                    .select('*')
+                    .eq('type', type)
+                    .limit(limit)
+                if (randomData) setQuestions(randomData as Question[])
+            } else {
+                const { data: finalQuestions } = await supabase
+                    .from('questions')
+                    .select('*')
+                    .in('id', selectedIds)
+
+                if (finalQuestions) {
+                    // Shuffle the final batch so "Wrong" questions aren't always at top
+                    const shuffled = (finalQuestions as Question[]).sort(() => Math.random() - 0.5)
+                    setQuestions(shuffled)
+                }
+            }
+
+            // Clear previous answers/results UI
+            setAnswers({})
+            setResults({})
+            setSubmitted(false)
+
+        } catch (error) {
+            console.error("Failed to fetch practice batch:", error)
+        }
         setLoading(false)
     }
 
@@ -97,7 +215,7 @@ function PracticeContent() {
     }
 
     const finalizeSubmission = async (currentAnswers: Record<string, string>) => {
-        const newResults: Record<string, boolean> = {}
+        const newResults: Record<string, boolean | null> = {}
         const submissionData: any[] = []
 
         // Get current user
