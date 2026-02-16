@@ -20,25 +20,66 @@ export default function HandwritingRecognizer({ onRecognized, height = 150, plac
         if (!dataUrl) return
 
         setRecognizing(true)
+        setLastRecognized(null) // Clear previous result
+        let resultText = ""
+
         try {
-            const res = await fetch('/api/ai/recognize-handwriting', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: dataUrl })
+            // 1. Try Tesseract.js (Client-side)
+            console.log("Attempting Client-side OCR (Tesseract.js)...")
+
+            // Dynamic import/load check
+            if (!(window as any).Tesseract) {
+                await new Promise((resolve, reject) => {
+                    const script = document.createElement('script')
+                    script.src = 'https://unpkg.com/tesseract.js@5.1.0/dist/tesseract.min.js'
+                    script.onload = resolve
+                    script.onerror = reject
+                    document.head.appendChild(script)
+                })
+            }
+
+            const Tesseract = (window as any).Tesseract
+            const { data: { text } } = await Tesseract.recognize(dataUrl, 'eng', {
+                logger: (m: any) => console.log(m)
             })
 
-            if (!res.ok) throw new Error(await res.text())
-
-            const data = await res.json()
-            if (data.text) {
-                setLastRecognized(data.text)
-                onRecognized(data.text)
+            const cleanText = text.trim()
+            if (cleanText && cleanText.length > 0) {
+                console.log("Tesseract Success:", cleanText)
+                resultText = cleanText
+            } else {
+                throw new Error("Tesseract returned empty text")
             }
-        } catch (e: any) {
-            console.error("Recognition failed:", e)
-            alert(`识别失败: ${e.message}`)
+
+        } catch (clientError) {
+            console.warn("Client-side OCR failed or empty, falling back to AI:", clientError)
+
+            // 2. Fallback to Server-side AI
+            try {
+                const res = await fetch('/api/ai/recognize-handwriting', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: dataUrl })
+                })
+
+                if (!res.ok) throw new Error(await res.text())
+
+                const data = await res.json()
+                if (data.text) {
+                    resultText = data.text
+                }
+            } catch (serverError: any) {
+                console.error("Server-side OCR also failed:", serverError)
+                alert(`识别失败 (OCR & AI): ${serverError.message}`)
+                return // Stop here
+            }
         } finally {
             setRecognizing(false)
+        }
+
+        if (resultText) {
+            setLastRecognized(resultText)
+            onRecognized(resultText)
         }
     }
 
