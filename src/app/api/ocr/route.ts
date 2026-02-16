@@ -14,6 +14,8 @@ const DEFAULT_TOKEN = "483605608bc2d69ed9979463871dd4bc6095285a";
  */
 function cleanOCRText(text: string): string {
     return text
+        // Remove Markdown Headers (## Title) which PaddleOCR Layout often adds to single lines
+        .replace(/^#+\s+/gm, '')
         // Convert LaTeX underline to HTML: $ \underline{\text{in two months}} $ → <u>in two months</u>
         .replace(/\$\s*\\underline\{\\text\{([^}]+)\}\}\s*\$/g, '<u>$1</u>')
         // Empty underline becomes blank: $ \underline{\text{}} $ → ____
