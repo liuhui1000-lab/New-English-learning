@@ -71,10 +71,12 @@ function extractTargetSections(text: string): string {
     // 1. Find Start
     const startPatterns = [
         /Part\s*2\s*Grammar\s*and\s*Vocabulary/i,
-        /II\.\s*Grammar\s*and\s*Vocabulary/i,
+        /Part\s*(?:II|2)\s*(?:Phonetics\s*,?\s*|Phonetics\s*and\s*)?Vocabulary\s*and\s*Grammar/i, // Matches "Part 2 Phonetics, Vocabulary and Grammar" (User case)
+        /II\.\s*(?:Phonetics\s*,?\s*)?Vocabulary\s*and\s*Grammar/i,
         /Section\s*B\s*Vocabulary/i,
         /Grammar\s*and\s*Vocabulary/i,
-        /Choose\s*the\s*best\s*answer/i // Fallback for when "Part II" is missing
+        /Phonetics\s*,?\s*Vocabulary\s*and\s*Grammar/i
+        // Removed generic "/Choose\s*the\s*best\s*answer/i" fallback as it captures Listening sections
     ];
 
     let startIndex = -1;
