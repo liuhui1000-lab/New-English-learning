@@ -99,7 +99,8 @@ function extractTargetSections(text: string): string {
         // Fallback: Match generic "Reading and Writing" header
         /(?:^|\n)\s*#{0,6}\s*Reading\s*(?:and|&)\s*Writing/i,
         // Match "Part 3" or "III." (Reading section start)
-        /(?:^|\n)\s*#{0,6}\s*(?:Part\s*(?:III|3|Three)|III\.)\s/i,
+        // CRITICAL: Must be start of line, followed by number, and then EITHER newline OR "Reading"
+        /(?:^|\n)\s*#{0,6}\s*(?:Part\s*(?:III|3|Three)|III\.)\s*(?:\n|Reading)/i,
         // Match "VII. Writing" or similar (Writing section)
         /(?:^|\n)\s*#{0,6}\s*(?:VII|Part\s*(?:VII|7|Seven))\.?\s*Writing/i,
         // Match writing prompts
