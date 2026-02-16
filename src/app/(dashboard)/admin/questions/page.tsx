@@ -142,50 +142,59 @@ export default function QuestionBankPage() {
 
             if (!targets) throw new Error("无法获取题目内容")
 
-            const BATCH_SIZE = 25 // Increased with extended timeout
+            const BATCH_SIZE = 15 // Reduced from 25 to avoid timeouts
             for (let i = 0; i < targets.length; i += BATCH_SIZE) {
                 const batch = targets.slice(i, i + BATCH_SIZE)
                 setStatusMessage(`AI 分析中... (${Math.min(i + BATCH_SIZE, targets.length)}/${targets.length})`)
 
                 const items = batch.map(q => q.content)
-                const res = await fetch('/api/ai/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ items, mode: 'tagging' })
-                })
 
-                if (!res.ok) {
-                    console.error("Batch failed", res.statusText)
-                    continue
-                }
+                try {
+                    const res = await fetch('/api/ai/analyze', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ items, mode: 'tagging' })
+                    })
 
-                const { results } = await res.json()
-
-                const updates = results.map((r: any, idx: number) => {
-                    const q = batch[idx]
-                    const newTags = new Set(q.tags || [])
-                    if (r.topic) newTags.add(`Topic:${r.topic}`)
-                    if (r.key_point) newTags.add(`Point:${r.key_point}`)
-                    if (r.difficulty) newTags.add(`Diff:${r.difficulty}`)
-
-                    return {
-                        id: q.id,
-                        tags: Array.from(newTags),
-                        answer: (!q.answer && r.answer) ? r.answer : q.answer,
-                        explanation: r.explanation || "",
-                        is_ai_analyzed: true
+                    if (!res.ok) {
+                        const errText = await res.text().catch(() => res.statusText)
+                        console.error(`Batch ${i / BATCH_SIZE + 1} failed:`, errText)
+                        continue // Skip this batch but continue with others
                     }
-                })
 
-                const { error: updateError } = await supabase
-                    .from('questions')
-                    .upsert(updates)
+                    const { results } = await res.json()
 
-                if (updateError) {
-                    console.error("Update failed", updateError)
+                    const updates = results.map((r: any, idx: number) => {
+                        const q = batch[idx]
+                        // ... (keep existing mapping logic)
+                        const newTags = new Set(q.tags || [])
+                        if (r.topic) newTags.add(`Topic:${r.topic}`)
+                        if (r.key_point) newTags.add(`Point:${r.key_point}`)
+                        if (r.difficulty) newTags.add(`Diff:${r.difficulty}`)
+
+                        return {
+                            id: q.id,
+                            tags: Array.from(newTags),
+                            answer: (!q.answer && r.answer) ? r.answer : q.answer,
+                            explanation: r.explanation || "",
+                            is_ai_analyzed: true
+                        }
+                    })
+
+                    const { error: updateError } = await supabase
+                        .from('questions')
+                        .upsert(updates)
+
+                    if (updateError) {
+                        console.error("Update failed", updateError)
+                    }
+
+                } catch (batchErr) {
+                    console.error(`Batch ${i / BATCH_SIZE + 1} exception:`, batchErr)
                 }
 
-                await new Promise(resolve => setTimeout(resolve, 500))
+                // Add delay to avoid rate limiting
+                await new Promise(resolve => setTimeout(resolve, 1000))
             }
 
             setStatusMessage("分析完成")
