@@ -326,10 +326,13 @@ function PracticeContent() {
 
                                 return lines.map((line, i) => (
                                     <span key={i} className={`block ${shouldSplit ? 'mb-2 last:mb-0' : ''}`}>
-                                        {/* HTML Tag Parsing (<u>) */}
-                                        {line.split(/(<u>.*?<\/u>)/g).map((part, j) => {
+                                        {/* HTML Tag Parsing (<u> and ^{}) */}
+                                        {line.split(/((?:<u>.*?<\/u>)|(?:\^\{[^}]+\}))/g).map((part, j) => {
                                             if (part.startsWith('<u>') && part.endsWith('</u>')) {
                                                 return <u key={j} className="decoration-2 underline-offset-4 decoration-indigo-500 font-semibold">{part.slice(3, -4)}</u>
+                                            }
+                                            if (part.startsWith('^{') && part.endsWith('}')) {
+                                                return <sup key={j}>{part.slice(2, -1)}</sup>
                                             }
                                             return <span key={j}>{part}</span>
                                         })}
