@@ -261,15 +261,15 @@ function PracticeContent() {
                             // Slight delay to prevent rate limits during fallback
                             await new Promise(r => setTimeout(r, 500))
                         }
+
+                        // Direct Submit
+                        setProcessingStatus("正在提交并保存成绩...")
+                        await finalizeSubmission(newAnswers)
+                        setIsSubmitting(false)
+                        setProcessingStatus("")
+                        return; // Exit early
                     }
                 }
-
-                // Direct Submit
-                setProcessingStatus("正在提交并保存成绩...")
-                await finalizeSubmission(newAnswers)
-                setIsSubmitting(false)
-                setProcessingStatus("")
-                return; // Exit early
             } catch (e) {
                 console.error("Batch recognition error:", e)
                 alert("手写识别过程中发生错误，将直接提交现有答案。")
