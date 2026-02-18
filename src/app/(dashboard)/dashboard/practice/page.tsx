@@ -216,6 +216,39 @@ function PracticeContent() {
                         const newAnswers = { ...answers, ...parsedResults }
                         setAnswers(newAnswers) // Update UI
 
+                        // 6. Check for Missing Answers (Partial Failure Recovery)
+                        const missingIds = imagesToStitch
+                            .map(img => img.id)
+                            .filter(id => !parsedResults[id] || !parsedResults[id].trim())
+
+                        if (missingIds.length > 0) {
+                            console.warn(`Batch OCR missed ${missingIds.length} questions. Triggering fallback...`, missingIds)
+                            setProcessingStatus(`批量识别完成，正在补充识别剩余 ${missingIds.length} 题...`)
+
+                            // Fallback Loop for missing items
+                            let fallbackCount = 0;
+                            for (const id of missingIds) {
+                                fallbackCount++;
+                                setProcessingStatus(`正在补充识别: ${fallbackCount}/${missingIds.length}...`)
+                                const recognizer = recognizerRefs.current[id]
+                                if (recognizer) {
+                                    try {
+                                        // Sequential fallback
+                                        const text = await recognizer.recognize()
+                                        if (text) {
+                                            newAnswers[id] = text
+                                            // Update UI incrementally
+                                            setAnswers(prev => ({ ...prev, [id]: text }))
+                                        }
+                                    } catch (err) {
+                                        console.error(`Fallback recognition failed for ${id}`, err)
+                                    }
+                                    // Slight delay to prevent rate limits during fallback
+                                    await new Promise(r => setTimeout(r, 500))
+                                }
+                            }
+                        }
+
                         // Direct Submit
                         setProcessingStatus("正在提交并保存成绩...")
                         await finalizeSubmission(newAnswers)

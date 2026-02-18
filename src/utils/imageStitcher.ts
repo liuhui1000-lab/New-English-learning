@@ -35,10 +35,10 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
         const processStitching = () => {
             try {
                 // 2. Calculate dimensions
-                // Standardize width to 1000px (or max of images)
-                const maxWidth = 1000;
+                // Standardize width to 800px (Balance resolution and layout)
+                const maxWidth = 800;
                 let totalHeight = 0;
-                const padding = 60; // Increased space for separator
+                const padding = 50; // Moderate spacing
 
                 loadedImages.forEach(img => {
                     // Calculate scaled height to fit maxWidth
@@ -70,19 +70,21 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
 
                     // Draw Separator/Marker (Machine Readable)
                     // We use a distinct format: [[ID:question_id]]
-                    // Increased font size and clarity for OCR
-                    ctx.fillStyle = '#000000';
-                    ctx.font = 'bold 24px monospace';
+                    // Use Dark Gray instead of Black to reduce contrast dominance
+                    ctx.fillStyle = '#444444';
+                    ctx.font = 'bold 20px monospace';
                     ctx.textBaseline = 'top';
                     ctx.fillText(`[[ID:${originalItem.id}]]`, 10, currentY + 10);
 
-                    // Draw a visual line too just in case
+                    // Draw a dashed visual line
                     ctx.beginPath();
-                    ctx.moveTo(0, currentY + 45);
-                    ctx.lineTo(maxWidth, currentY + 45);
-                    ctx.strokeStyle = '#999999';
+                    ctx.setLineDash([10, 10]);
+                    ctx.moveTo(0, currentY + 40);
+                    ctx.lineTo(maxWidth, currentY + 40);
+                    ctx.strokeStyle = '#bbbbbb';
                     ctx.lineWidth = 2;
                     ctx.stroke();
+                    ctx.setLineDash([]); // Reset
 
                     const contentStartY = currentY + 50;
 
