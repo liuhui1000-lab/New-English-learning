@@ -144,7 +144,23 @@ export async function POST(req: NextRequest) {
         }
 
         // 4. Parse Response
-        // Priority 1: Layout Parsing (Markdown) - from User's Script
+        // 4. Parse Response
+
+        // Priority 1: Check for Stitched Batch Content (Raw OCR Text)
+        // If the result contains our special marker "[[ID:", we prefer the raw text stream
+        // because Layout Parsing often mistakes handwriting on whitespace for images.
+        if (result.result && result.result.ocrResults) {
+            const ocrResults = result.result.ocrResults;
+            const rawText = ocrResults.map((r: any) => r.words || r.text || "").join("\n");
+
+            if (rawText.includes("[[ID:")) {
+                console.log("Detected Stitched Batch Content, using raw OCR results.");
+                const cleanedText = cleanOCRText(rawText);
+                return NextResponse.json({ text: cleanedText });
+            }
+        }
+
+        // Priority 2: Layout Parsing (Markdown) - Standard Documents
         if (result.result && result.result.layoutParsingResults) {
             const parsingResults = result.result.layoutParsingResults;
             let fullMarkdown = "";
