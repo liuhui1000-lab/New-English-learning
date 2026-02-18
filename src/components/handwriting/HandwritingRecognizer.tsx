@@ -63,89 +63,121 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                         const r = data[offset]
                         const g = data[offset + 1]
                         const b = data[offset + 2]
-                        const a = data[offset + 3]
+                        for (let i = 0; i < data.length; i += 4) {
+                            const r = data[i]
+                            const g = data[i + 1]
+                            const b = data[i + 2]
 
-                        // Threshold: If pixel is NOT white (and not transparent)
-                        if (a > 20 && (r < 240 || g < 240 || b < 240)) {
-                            if (x < minX) minX = x
-                            if (x > maxX) maxX = x
-                            if (y < minY) minY = y
-                            if (y > maxY) maxY = y
-                            foundAny = true
+                            // BINARIZATION: Force pixels to pure black or pure white
+                            // This creates a ultra-sharp binary image for OCR.
+                            if (r < 230 || g < 230 || b < 230) {
+                                // Found ink -> Make BLACK
+                                data[i] = 0
+                                data[i + 1] = 0
+                                data[i + 2] = 0
+
+                                // Update bounds
+                                const x = (i / 4) % img.width
+                                const y = Math.floor((i / 4) / img.width)
+
+                                if (!foundAny) {
+                                    minX = x; minY = y; maxX = x; maxY = y;
+                                    foundAny = true
+                                } else {
+                                    minX = Math.min(minX, x)
+                                    minY = Math.min(minY, y)
+                                    maxX = Math.max(maxX, x)
+                                    maxY = Math.max(maxY, y)
+                                }
+                            } else {
+                                // Background -> Make WHITE
+                                data[i] = 255
+                                data[i + 1] = 255
+                                data[i + 2] = 255
+                            }
                         }
+
+                        // Write the binary data back for the final draw
+                        tempCtx.putImageData(imageData, 0, 0);
+
+                        if (!foundAny) {
+                            console.warn("Auto-Crop finding NO content (Blank Canvas)");
+                        }
+
+                        // 3. Determine Cutout
+                        let cutX = 0, cutY = 0, cutW = img.width, cutH = img.height
+
+                        if (foundAny) {
+                            const cutPadding = 10
+                            cutX = Math.max(0, minX - cutPadding)
+                            cutY = Math.max(0, minY - cutPadding)
+                            cutW = Math.min(img.width, maxX + cutPadding) - cutX
+                            cutH = Math.min(img.height, maxY + cutPadding) - cutY
+                        } else {
+                            cutW = 0; cutH = 0;
+                        }
+
+                        // 4. Create Final Canvas (Fit to content)
+                        // Remove fixed minDimension of 300 which was creating too much whitespace
+
+                        const padding = 30
+                        const targetHeight = 100 // Target a good height for OCR (typical handwriting size)
+
+                        let scale = 1
+                        if (cutH > 0) {
+                            // Try to scale content to match target height
+                            scale = targetHeight / cutH
+                            // Clamp scale between 1x and 3x to avoid extreme distortion
+                            scale = Math.max(1, Math.min(scale, 3))
+                        }
+
+                        const finalW = cutW * scale
+                        const finalH = cutH * scale
+
+                        const canvasW = finalW + (padding * 2)
+                        const canvasH = finalH + (padding * 2)
+
+                        const canvas = document.createElement('canvas')
+                        canvas.width = canvasW
+                        canvas.height = canvasH
+                        const ctx = canvas.getContext('2d')
+
+                        if (!ctx) { reject(new Error("Failed")); return; }
+
+                        // Fill White Background
+                        ctx.fillStyle = '#FFFFFF'
+                        ctx.fillRect(0, 0, canvasW, canvasH)
+
+                        // Draw the CUTOUT centered
+                        if (cutW > 0 && cutH > 0) {
+                            const destX = padding
+                            const destY = padding
+
+                            // Disable Smoothing for Binary Images (Crisp edges)
+                            ctx.imageSmoothingEnabled = false;
+
+                            // Draw from TEMP CANVAS (which has binary pixels)
+                            ctx.drawImage(
+                                tempCanvas,
+                                cutX, cutY, cutW, cutH, // Source rect
+                                destX, destY, finalW, finalH // Dest rect
+                            )
+                        }
+
+                        // Use PNG for lossless quality on small payload (single char)
+                        // No quality param needed for PNG
+                        const base64 = canvas.toDataURL('image/png')
+                        console.log(isAuto ? `Auto-Recognizing (v${strokeVersion.current})...` : `Recognizing (v${strokeVersion.current})...`, "Original size:", dataUrl.length)
+                        // Report auto-crop debug info
+                        console.log(`Auto-Crop Scan: foundAny=${foundAny}, Bounds: [${minX}, ${minY}, ${maxX}, ${maxY}]`)
+                        if (foundAny) {
+                            console.log(`Auto-Crop Calculated: x=${cutX}, y=${cutY}, w=${cutW}, h=${cutH}`)
+                        }
+
+                        resolve(base64)
                     }
-                }
-
-                // 3. Determine Cutout
-                // DEBUG LOGGING
-                console.log(`Auto-Crop Scan: foundAny=${foundAny}, Bounds: [${minX}, ${minY}, ${maxX}, ${maxY}]`);
-
-                let cutX = 0, cutY = 0, cutW = img.width, cutH = img.height
-
-                if (foundAny) {
-                    const cutPadding = 10
-                    cutX = Math.max(0, minX - cutPadding)
-                    cutY = Math.max(0, minY - cutPadding)
-                    cutW = Math.min(img.width, maxX + cutPadding) - cutX
-                    cutH = Math.min(img.height, maxY + cutPadding) - cutY
-                    console.log(`Auto-Crop Calculated: x=${cutX}, y=${cutY}, w=${cutW}, h=${cutH}`);
-                } else {
-                    cutW = 0; cutH = 0;
-                    console.warn("Auto-Crop finding NO content (Blank Canvas)");
-                }
-
-                // 4. Create Final Canvas (Fit to content)
-                // Remove fixed minDimension of 300 which was creating too much whitespace
-
-                const padding = 30
-                const targetHeight = 100 // Target a good height for OCR (typical handwriting size)
-
-                let scale = 1
-                if (cutH > 0) {
-                    // Try to scale content to match target height
-                    scale = targetHeight / cutH
-                    // Clamp scale between 1x and 3x to avoid extreme distortion
-                    scale = Math.max(1, Math.min(scale, 3))
-                }
-
-                const finalW = cutW * scale
-                const finalH = cutH * scale
-
-                const canvasW = finalW + (padding * 2)
-                const canvasH = finalH + (padding * 2)
-
-                const canvas = document.createElement('canvas')
-                canvas.width = canvasW
-                canvas.height = canvasH
-                const ctx = canvas.getContext('2d')
-
-                if (!ctx) { reject(new Error("Failed")); return; }
-
-                // Fill White Background
-                ctx.fillStyle = '#FFFFFF'
-                ctx.fillRect(0, 0, canvasW, canvasH)
-
-                // Draw the CUTOUT centered
-                if (cutW > 0 && cutH > 0) {
-                    const destX = padding
-                    const destY = padding
-
-                    // High quality smoothing
-                    ctx.imageSmoothingEnabled = true;
-                    ctx.imageSmoothingQuality = 'high';
-
-                    // Draw from TEMP CANVAS
-                    ctx.drawImage(
-                        tempCanvas,
-                        cutX, cutY, cutW, cutH, // Source rect
-                        destX, destY, finalW, finalH // Dest rect
-                    )
-                }
-
-                resolve(canvas.toDataURL('image/jpeg', quality))
-            }
-            img.onerror = (e) => reject(e)
-        })
+                    img.onerror = (e) => reject(e)
+                })
     }
 
     // Auto-recognition state
