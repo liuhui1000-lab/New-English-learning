@@ -186,15 +186,30 @@ export const parseStitchedOCRResult = (
         blocks = ocrDebugResult.result.ocrResults;
     }
     // Priority 2: 'layoutParsingResults' (If OCR text is empty/missing, try layout blocks)
-    else if (ocrDebugResult.result.layoutParsingResults) {
-        // Flatten layout results
-        const layout = ocrDebugResult.result.layoutParsingResults;
-        blocks = layout.flatMap((l: any) => l.parsing_res_list || [l]);
+    else if (ocrDebugResult.result.layoutParsingResults && Array.isArray(ocrDebugResult.result.layoutParsingResults)) {
+        // Flatten layout results, looking into prunedResult if present
+        blocks = ocrDebugResult.result.layoutParsingResults.flatMap((l: any) => {
+            // Check nested structure seen in logs: l.prunedResult.parsing_res_list
+            if (l.prunedResult && l.prunedResult.parsing_res_list) {
+                return l.prunedResult.parsing_res_list;
+            }
+            return l.parsing_res_list || [l];
+        });
     }
 
     // Process blocks
     blocks.forEach((block: any) => {
-        const text = getBlockText(block);
+        let text = getBlockText(block);
+
+        // Ensure text is definitely a string to avoid .trim() errors
+        if (typeof text !== 'string') {
+            if (text && (text as any).toString) {
+                text = (text as any).toString();
+            } else {
+                text = "";
+            }
+        }
+
         const centerY = getBlockCenterY(block);
 
         if (!text || !text.trim()) return;
