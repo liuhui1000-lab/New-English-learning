@@ -50,29 +50,47 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 tempCtx.fillRect(0, 0, img.width, img.height)
                 tempCtx.drawImage(img, 0, 0)
 
-                // 2. Scan for bounding box (Auto-Crop)
+                // 2. Scan for bounding box (Auto-Crop) & Contrast Boost
                 const imageData = tempCtx.getImageData(0, 0, img.width, img.height)
                 const data = imageData.data
                 let minX = img.width, minY = img.height, maxX = 0, maxY = 0
                 let foundAny = false
 
-                // Optimization: Scan with stride of 2-4 if speed is needed, but precise is better for single char
-                for (let y = 0; y < img.height; y++) {
-                    for (let x = 0; x < img.width; x++) {
-                        const offset = (y * img.width + x) * 4
-                        const r = data[offset]
-                        const g = data[offset + 1]
-                        const b = data[offset + 2]
-                        // Simple threshold: if not white (allow some anti-aliasing noise)
-                        if (r < 250 || g < 250 || b < 250) {
-                            if (x < minX) minX = x
-                            if (x > maxX) maxX = x
-                            if (y < minY) minY = y
-                            if (y > maxY) maxY = y
-                            foundAny = true
-                        }
+                // Process Pixels: Contrast Boost + Bounding Box Scan
+                for (let i = 0; i < data.length; i += 4) {
+                    const r = data[i]
+                    const g = data[i + 1]
+                    const b = data[i + 2]
+
+                    // Simple Binarization / Thresholding
+                    // If it's not 'white enough', treat it as ink.
+                    // Threshold 230 allows for some anti-aliasing but cuts out paper noise/compression artifacts.
+                    if (r < 230 || g < 230 || b < 230) {
+                        // Make it PURE BLACK for maximum contrast
+                        data[i] = 0
+                        data[i + 1] = 0
+                        data[i + 2] = 0
+
+                        // Update bounding box based on index
+                        const pixelIndex = i / 4
+                        const x = pixelIndex % img.width
+                        const y = Math.floor(pixelIndex / img.width)
+
+                        if (x < minX) minX = x
+                        if (x > maxX) maxX = x
+                        if (y < minY) minY = y
+                        if (y > maxY) maxY = y
+                        foundAny = true
+                    } else {
+                        // Make it PURE WHITE to clean background
+                        data[i] = 255
+                        data[i + 1] = 255
+                        data[i + 2] = 255
                     }
                 }
+
+                // Put the High-Contrast data back to temp canvas so we draw the CLEARED version
+                tempCtx.putImageData(imageData, 0, 0)
 
                 // 3. Determine Cutout
                 // DEBUG LOGGING
@@ -81,7 +99,6 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 let cutX = 0, cutY = 0, cutW = img.width, cutH = img.height
 
                 if (foundAny) {
-                    // Add small padding to the cut itself to avoid clipping edges
                     const cutPadding = 10
                     cutX = Math.max(0, minX - cutPadding)
                     cutY = Math.max(0, minY - cutPadding)
@@ -89,7 +106,6 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     cutH = Math.min(img.height, maxY + cutPadding) - cutY
                     console.log(`Auto-Crop Calculated: x=${cutX}, y=${cutY}, w=${cutW}, h=${cutH}`);
                 } else {
-                    // Blank image -> will result in empty white canvas below
                     cutW = 0; cutH = 0;
                     console.warn("Auto-Crop finding NO content (Blank Canvas)");
                 }
@@ -98,23 +114,14 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 const minDimension = 300
                 const padding = 20
 
-                // Target: We want the content to fill the canvas (respecting aspect ratio)
-                // Current cut dimensions: cutW, cutH
-                // Available space: minDimension - padding*2
                 const availW = minDimension - (padding * 2)
                 const availH = minDimension - (padding * 2)
 
                 let scale = 1
                 if (cutW > 0 && cutH > 0) {
-                    // Calculate scale to fit the available space
-                    // We allow UPSCALING here because small letters need to be big for OCR
                     const scaleX = availW / cutW
                     const scaleY = availH / cutH
                     scale = Math.min(scaleX, scaleY)
-
-                    // Don't let it get TOO crazy if it's a dot, but max 300px is fine.
-                    // Also, if the original image was HUGE, allowing downscale is handled effectively by the same math 
-                    // (if cutW > availW, scale will be < 1)
                 }
 
                 const canvasW = minDimension
@@ -137,10 +144,10 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     const destX = (canvasW - finalW) / 2
                     const destY = (canvasH - finalH) / 2
 
-                    // Use better interpolation for upscaling
                     ctx.imageSmoothingEnabled = true;
                     ctx.imageSmoothingQuality = 'high';
 
+                    // Draw from TEMP CANVAS (which now has high-contrast pixels)
                     ctx.drawImage(
                         tempCanvas,
                         cutX, cutY, cutW, cutH, // Source rect
