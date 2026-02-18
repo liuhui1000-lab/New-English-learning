@@ -188,9 +188,9 @@ function PracticeContent() {
                     }
 
                     if (imagesToStitch.length > 0) {
-                        // 2. Stitch
+                        // 2. Stitch (Returns image + coordinate map)
                         console.log(`Stitching ${imagesToStitch.length} images...`)
-                        const stitchedImage = await stitchImages(imagesToStitch)
+                        const { dataUrl: stitchedImage, rects } = await stitchImages(imagesToStitch)
 
                         // 3. Send Single API Request
                         const base64Image = stitchedImage.replace(/^data:image\/\w+;base64,/, "");
@@ -206,11 +206,17 @@ function PracticeContent() {
                         }
 
                         const data = await res.json()
-                        console.log("Stitched Result:", data.text)
+                        console.log("Stitched OCR Raw Text:", data.text)
 
-                        // 4. Parse Results
-                        const parsedResults = parseStitchedOCRResult(data.text || "")
-                        console.log("Parsed Batch Answers:", parsedResults)
+                        // DEBUG: Log the full debug info to help diagnose issues if any
+                        if (data.debug) {
+                            console.log("Stitched OCR Full Debug:", JSON.stringify(data.debug));
+                        }
+
+                        // 4. Parse Results using COORDINATES
+                        // We pass the full DEBUG result (which has bounding boxes) and the RECTS map
+                        const parsedResults = parseStitchedOCRResult(data.debug, rects)
+                        console.log("Parsed Batch Answers (via coordinates):", parsedResults)
 
                         // 5. Update State
                         const newAnswers = { ...answers, ...parsedResults }

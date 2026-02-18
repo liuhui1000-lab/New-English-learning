@@ -30,7 +30,7 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
     useEffect(() => { lastRecognizedRef.current = lastRecognized }, [lastRecognized])
 
     // Helper to compress image (with Auto-Crop)
-    const compressImage = (dataUrl: string, maxWidth = 1000, quality = 0.95): Promise<string> => {
+    const compressImage = (dataUrl: string, maxWidth = 1000, quality = 0.95): Promise<string | null> => {
         return new Promise((resolve, reject) => {
             const img = new Image()
             img.src = dataUrl
@@ -87,6 +87,8 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
 
                 if (!foundAny) {
                     console.warn("Auto-Crop finding NO content (Blank Canvas)");
+                    resolve(null); // Return null to signal empty content
+                    return;
                 }
 
                 // 3. Determine Cutout
@@ -198,6 +200,12 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
             // Compress Image
             console.log(isAuto ? `Auto-Recognizing (v${currentVersion})...` : `Recognizing (v${currentVersion})...`, "Original size:", dataUrl.length)
             const compressedDataUrl = await compressImage(dataUrl)
+
+            if (!compressedDataUrl) {
+                console.log("Canvas is blank (auto-crop found nothing). Skipping OCR.");
+                return "";
+            }
+
             console.log("Compressed size:", compressedDataUrl.length)
 
             // 1. Try Server-side OCR (Paddle/Active Provider)

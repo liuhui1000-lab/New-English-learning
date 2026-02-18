@@ -1,26 +1,30 @@
-/**
- * Utility to stitch multiple base64 images into a single vertical image.
- * Used to reduce OCR API calls by batching multiple handwriting inputs into one request.
- */
 
-interface StitchedImageInput {
-    id: string;
+// Stitched Image Result Interface
+export interface StitchedImageResult {
     dataUrl: string;
+    // Map of Question ID -> Vertical Y-Range in the stitched image
+    // Used to map OCR text blocks back to questions
+    rects: Record<string, { startY: number, endY: number }>;
 }
 
-export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promise<string> => {
+/**
+ * Stitches multiple images vertically into a single image.
+ * Returns the data URL and a map of coordinates.
+ */
+export const stitchImages = (images: { id: string, dataUrl: string }[]): Promise<StitchedImageResult> => {
     return new Promise((resolve, reject) => {
         if (images.length === 0) {
-            resolve("");
+            reject(new Error("No images to stitch"));
             return;
         }
 
         const loadedImages: HTMLImageElement[] = [];
         let loadedCount = 0;
 
-        // 1. Load all images first to get dimensions
+        // 1. Load all images first
         images.forEach((item, index) => {
             const img = new Image();
+            img.src = item.dataUrl;
             img.onload = () => {
                 loadedImages[index] = img; // Keep order
                 loadedCount++;
@@ -28,25 +32,41 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
                     processStitching();
                 }
             };
-            img.onerror = (err) => reject(err);
-            img.src = item.dataUrl;
+            img.onerror = () => {
+                reject(new Error(`Failed to load image for ${item.id}`));
+            };
         });
 
         const processStitching = () => {
             try {
                 // 2. Calculate dimensions
-                // Increase width to 1024 to preserve handwriting details (was 600)
+                // Increase width to 1024 to preserve handwriting details
                 const maxWidth = 1024;
                 let totalHeight = 0;
-                const padding = 80; // More spacing to separate questions clearly
+                const padding = 80; // Spacing between questions (generous gap)
 
-                loadedImages.forEach(img => {
-                    // Calculate scaled height to fit maxWidth
-                    // If image is smaller than maxWidth, we still scale UP to ensure uniform width
-                    // This helps small handwriting become bigger.
+                const rects: Record<string, { startY: number, endY: number }> = {};
+
+                // First pass: Calculate total height and store expected Y ranges
+                let currentY = 0;
+
+                loadedImages.forEach((img, i) => {
+                    const originalItem = images[i];
+
+                    // Scale image to fit width (or scale up if smaller)
                     const scale = maxWidth / img.width;
                     const scaledHeight = img.height * scale;
-                    totalHeight += scaledHeight + padding;
+
+                    // We define the "Region" for this question as:
+                    // From currentY to currentY + scaledHeight + padding
+                    // This includes the gap after the image, catching any overflow text
+                    const startY = currentY;
+                    const endY = currentY + scaledHeight + padding;
+
+                    rects[originalItem.id] = { startY, endY };
+
+                    totalHeight = endY; // Update total height
+                    currentY = endY;
                 });
 
                 // 3. Create Canvas
@@ -60,45 +80,36 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
                     return;
                 }
 
-                // Fill white background
+                // Fill white background (Optimal for OCR)
                 ctx.fillStyle = '#FFFFFF';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                // 4. Draw Images & Separators
-                let currentY = 0;
+                // 4. Draw Images (CLEAN - NO MARKERS)
+                // We rely entirely on the Y-coordinates to map back.
 
-                loadedImages.forEach((img, i) => {
-                    const originalItem = images[i];
+                Object.entries(rects).forEach(([id, rect], i) => {
+                    // Find the image
+                    // Note: rects iteration order matches insertion order in JS, 
+                    // but safer to use loadedImages index.
+                    const img = loadedImages[i];
 
-                    // Draw Separator/Marker (Machine Readable)
-                    // We use a distinct format: [[ID:question_id]]
-                    // Use Dark Gray - Make it smaller relative to canvas width so it doesn't dominate?
-                    // Actually, bigger is better for OCR.
-                    ctx.fillStyle = '#444444';
-                    ctx.font = 'bold 24px monospace'; // Larger font
-                    ctx.textBaseline = 'top';
-                    ctx.fillText(`[[ID:${originalItem.id}]]`, 20, currentY + 20);
-
-                    // REMOVED: Dashed line which was triggering "Table Detection" (Layout Analysis)
-                    // Just use whitespace.
-
-                    const contentStartY = currentY + 60; // More gap after ID
-
-                    // Draw Image (Scaled)
+                    // Draw Image (Scaled) at startY
                     const scale = maxWidth / img.width;
-                    // Limit max height to prevent extremely tall images
-                    // But usually we want full content.
                     const scaledHeight = img.height * scale;
 
-                    ctx.drawImage(img, 0, contentStartY, maxWidth, scaledHeight);
+                    // Enable high quality scaling
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
 
-                    currentY += scaledHeight + padding;
+                    ctx.drawImage(img, 0, rect.startY, maxWidth, scaledHeight);
+
+                    // Optional: Draw a very faint separator? No, keep it clean.
                 });
 
                 // 5. Export Stitched Image
-                // Revert to JPEG (High Quality 0.95) for maximum clarity
+                // High Quality JPEG (0.95)
                 const resultDataUrl = canvas.toDataURL('image/jpeg', 0.95);
-                resolve(resultDataUrl);
+                resolve({ dataUrl: resultDataUrl, rects });
 
             } catch (error) {
                 reject(error);
@@ -108,54 +119,97 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
 };
 
 /**
- * Parses the OCR result text to extract answers based on the stitched markers.
- * Expected format in text: "[[ID:xxx]] ...answer... [[ID:yyy]] ...answer..."
+ * Parses OCR result based on COORDINATES (Bounding Boxes).
+ * Uses the pre-calculated question regions to assign text blocks.
+ * 
+ * @param ocrDebugResult The full 'debug' object returned by the API (contains 'result' > 'ocrResults')
+ * @param rects The mapping of ID -> {startY, endY}
  */
-export const parseStitchedOCRResult = (fullText: string): Record<string, string> => {
-    const results: Record<string, string> = {};
+export const parseStitchedOCRResult = (
+    ocrDebugResult: any,
+    rects: Record<string, { startY: number, endY: number }>
+): Record<string, string> => {
+    const results: Record<string, string[]> = {};
 
-    // Regex to match ID markers: supports [[ID:xxx]] or [ID:xxx] or [[ID:xxx]
-    // Capture group 1 is the UUID
-    const markerRegex = /(?:\[\[|\[)ID:([a-fA-F0-9\-]+)(?:\]\]|\])/g;
+    // Initialize empty arrays
+    Object.keys(rects).forEach(id => results[id] = []);
 
-    let match;
-    const matches: { id: string, index: number, length: number }[] = [];
-
-    // 1. Find all marker positions
-    while ((match = markerRegex.exec(fullText)) !== null) {
-        matches.push({
-            id: match[1],
-            index: match.index,
-            length: match[0].length
-        });
+    if (!ocrDebugResult || !ocrDebugResult.result) {
+        console.warn("parseStitchedOCRResult: No result found in debug info", ocrDebugResult);
+        return {};
     }
 
-    // 2. Extract content between markers
-    for (let i = 0; i < matches.length; i++) {
-        const current = matches[i];
-        const next = matches[i + 1];
-
-        // Content starts after current marker
-        const start = current.index + current.length;
-        // Content ends at next marker start (or end of string)
-        const end = next ? next.index : fullText.length;
-
-        let content = fullText.substring(start, end);
-
-        // Clean up content
-        content = content.replace(/<\/?[^>]+(>|$)/g, ""); // Strip HTML
-        content = content.trim();
-
-        // Remove the markers themselves if they appear in content (double safety)
-        content = content.replace(/(?:\[\[|\[)ID:([a-fA-F0-9\-]+)(?:\]\]|\])/g, "");
-
-        // Remove common OCR artifacts like underscores or dashes
-        content = content.replace(/^[-_—]{3,}/, '').trim();
-
-        if (current.id) {
-            results[current.id] = content;
+    // Helper: Get center Y of a block
+    const getBlockCenterY = (block: any): number => {
+        // 1. Try 'points' (Polygon: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]])
+        if (block.points && Array.isArray(block.points) && block.points.length > 0) {
+            const sumY = block.points.reduce((sum: number, p: number[]) => sum + p[1], 0);
+            return sumY / block.points.length;
         }
+
+        // 2. Try 'block_bbox' (Layout: [x, y, w, h])
+        if (block.block_bbox && Array.isArray(block.block_bbox) && block.block_bbox.length === 4) {
+            return block.block_bbox[1] + (block.block_bbox[3] / 2);
+        }
+
+        // 3. Try 'box' (Some OCR formats: [x, y, w, h] or similar)
+        if (block.box && Array.isArray(block.box) && block.box.length === 4) {
+            return block.box[1] + (block.box[3] / 2);
+        }
+
+        return -1;
+    };
+
+    // Helper: Get text from block
+    const getBlockText = (block: any): string => {
+        return block.prunedResult || block.text || block.words || block.block_content || "";
+    };
+
+    // Gather all potential text blocks
+    let blocks: any[] = [];
+
+    // Priority 1: 'ocrResults' (High Precision Text Lines)
+    if (ocrDebugResult.result.ocrResults && Array.isArray(ocrDebugResult.result.ocrResults)) {
+        blocks = ocrDebugResult.result.ocrResults;
+    }
+    // Priority 2: 'layoutParsingResults' (If OCR text is empty/missing, try layout blocks)
+    else if (ocrDebugResult.result.layoutParsingResults) {
+        // Flatten layout results
+        const layout = ocrDebugResult.result.layoutParsingResults;
+        blocks = layout.flatMap((l: any) => l.parsing_res_list || [l]);
     }
 
-    return results;
+    // Process blocks
+    blocks.forEach((block: any) => {
+        const centerY = getBlockCenterY(block);
+        const text = getBlockText(block);
+
+        if (centerY >= 0 && text && text.trim()) {
+            // Find valid region
+            for (const [id, rect] of Object.entries(rects)) {
+                if (centerY >= rect.startY && centerY < rect.endY) {
+                    results[id].push(text);
+                    break; // Belongs to only one question
+                }
+            }
+        }
+    });
+
+    // Join lines for each question
+    const final: Record<string, string> = {};
+    Object.entries(results).forEach(([id, lines]) => {
+        const combined = lines.join(" ").trim();
+        // Basic cleanup
+        const cleaned = combined
+            .replace(/<[^>]+>/g, '') // Strip HTML tags just in case
+            .replace(/_{3,}/g, '')   // Remove long underscores
+            .trim();
+
+        if (cleaned) {
+            final[id] = cleaned;
+        }
+    });
+
+    console.log("Coordinate-Based Parsing Result:", final);
+    return final;
 };
