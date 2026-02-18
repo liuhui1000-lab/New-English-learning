@@ -74,12 +74,12 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
 
         try {
             // Compress Image
-            // console.log("Original size:", dataUrl.length)
+            console.log("Original size:", dataUrl.length)
             const compressedDataUrl = await compressImage(dataUrl)
-            // console.log("Compressed size:", compressedDataUrl.length)
+            console.log("Compressed size:", compressedDataUrl.length)
 
             // 1. Try Server-side OCR (Paddle/Active Provider)
-            // console.log("Attempting Server-side OCR...")
+            console.log("Attempting Server-side OCR...")
 
             const base64Image = compressedDataUrl.replace(/^data:image\/\w+;base64,/, "");
             const res = await fetch('/api/ocr', {
