@@ -100,8 +100,9 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
                 });
 
                 // 5. Export Stitched Image
-                // Use PNG for lossless quality to ensure best OCR results for batch
-                const resultDataUrl = canvas.toDataURL('image/png');
+                // Revert to JPEG (High Quality) to avoid Vercel 4.5MB Payload Limit
+                // PNG was causing net::ERR_CONNECTION_CLOSED
+                const resultDataUrl = canvas.toDataURL('image/jpeg', 0.95);
                 resolve(resultDataUrl);
 
             } catch (error) {
