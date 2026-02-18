@@ -117,7 +117,10 @@ export async function POST(req: NextRequest) {
             useOcrForImageBlock: true, // Try both casings
             // Disable layout detection to prefer raw text lines
             use_layout_detection: false,
-            useLayoutDetection: false // Try both casings
+            useLayoutDetection: false, // Try both casings
+            // CRITICAL: Disable block merging to get separate results for close lines
+            merge_layout_blocks: false,
+            mergeLayoutBlocks: false
         };
 
         // 3. Call External API

@@ -117,6 +117,17 @@ export const stitchImages = (images: { id: string, dataUrl: string }[]): Promise
                     ctx.strokeStyle = "#E0E0E0"; // Light gray
                     ctx.lineWidth = 2;
                     ctx.stroke();
+
+                    // --- NEW: Draw Visual Anchor ---
+                    // Draw a clear text marker like "#1:" to the left
+                    // This creates a "Smart Anchor" for the OCR to find.
+                    ctx.fillStyle = "#A0A0A0"; // Medium gray (readable but not heavy)
+                    ctx.font = "bold 24px Arial";
+                    ctx.textAlign = "left";
+                    ctx.textBaseline = "top";
+                    // Offset slightly from left and top
+                    ctx.fillText(`#${i + 1}:`, 10, rect.startY + 10);
+                    // -----------------------------
                 });
 
                 // 5. Export Stitched Image
@@ -213,6 +224,26 @@ export const parseStitchedOCRResult = (
         const centerY = getBlockCenterY(block);
 
         if (!text || !text.trim()) return;
+
+        // --- NEW: Anchor Detection Logic ---
+        // Search for pattern like "#1:" or "# 1 :" at the start of the text
+        // Use [\s\S]* instead of /s flag for cross-environment compatibility
+        const anchorMatch = text.match(/^\s*#\s*(\d+)\s*[:：]\s*([\s\S]*)$/);
+        if (anchorMatch) {
+            const index = parseInt(anchorMatch[1]);
+            const actualText = anchorMatch[2].trim();
+
+            // Map index (1-based) to question ID
+            const questionIds = Object.keys(rects);
+            const targetId = questionIds[index - 1];
+
+            if (targetId && actualText) {
+                console.log(`Found Anchor for Question ${index} (${targetId}): "${actualText}"`);
+                results[targetId].push(actualText);
+                return; // Priority Match - skip coordinate logic
+            }
+        }
+        // ------------------------------------
 
         // NEW: Handle Merged Blocks (e.g. "A\nB") spanning multiple questions
         const lines = text.split('\n').map(l => l.trim()).filter(l => l);
