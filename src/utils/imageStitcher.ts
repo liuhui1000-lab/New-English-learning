@@ -194,13 +194,62 @@ export const parseStitchedOCRResult = (
 
     // Process blocks
     blocks.forEach((block: any) => {
-        const centerY = getBlockCenterY(block);
         const text = getBlockText(block);
+        const centerY = getBlockCenterY(block);
 
-        if (centerY >= 0 && text && text.trim()) {
+        if (!text || !text.trim()) return;
+
+        // NEW: Handle Merged Blocks (e.g. "A\nB") spanning multiple questions
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+
+        if (lines.length > 1) {
+            // Calculate block height relative to lines
+            let blockHeight = 0;
+            let blockTop = 0;
+
+            if (block.block_bbox && block.block_bbox.length === 4) {
+                blockTop = block.block_bbox[1];
+                blockHeight = block.block_bbox[3];
+            } else if (block.box && block.box.length === 4) {
+                blockTop = block.box[1];
+                blockHeight = block.box[3]; // format usually [x, y, w, h] or similar
+            } else if (block.points && block.points.length > 0) {
+                // rough min/max Y
+                const ys = block.points.map((p: any) => p[1]);
+                const minY = Math.min(...ys);
+                const maxY = Math.max(...ys);
+                blockTop = minY;
+                blockHeight = maxY - minY;
+            }
+
+            // If we have valid height info, interpolate line positions
+            if (blockHeight > 0) {
+                const step = blockHeight / lines.length;
+                lines.forEach((lineText, index) => {
+                    // Estimate center Y for this line
+                    const lineCenterY = blockTop + (index * step) + (step / 2);
+                    console.log(`Interpolated Line: "${lineText}" at Y=${lineCenterY} (Block: ${blockTop}-${blockTop + blockHeight})`);
+
+                    for (const [id, rect] of Object.entries(rects)) {
+                        if (lineCenterY >= rect.startY && lineCenterY < rect.endY) {
+                            results[id].push(lineText);
+                            break;
+                        }
+                    }
+                });
+                return; // Managed lines individually
+            }
+        }
+
+        // Standard Single Block Logic (if not split or no height info)
+        if (centerY >= 0) {
             // Find valid region
             for (const [id, rect] of Object.entries(rects)) {
                 if (centerY >= rect.startY && centerY < rect.endY) {
+                    // If it was a multi-line block but we couldn't split by height, 
+                    // we might just dump it all in one? Risky.
+                    // Better to invoke the splitter if lines > 1 regardless?
+                    // But we did invoke it above. If here, likely single line.
                     results[id].push(text);
                     break; // Belongs to only one question
                 }
