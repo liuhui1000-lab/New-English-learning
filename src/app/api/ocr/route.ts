@@ -172,7 +172,7 @@ export async function POST(req: NextRequest) {
             if (rawText.includes("[[ID:")) {
                 console.log("Detected Stitched Batch Content, using raw OCR results.");
                 const cleanedText = cleanOCRText(rawText);
-                return NextResponse.json({ text: cleanedText });
+                return NextResponse.json({ text: cleanedText, debug: result });
             }
         }
 
@@ -192,7 +192,7 @@ export async function POST(req: NextRequest) {
 
             // Only return if we actually found text. 
             if (cleanedText && cleanedText.length > 0) {
-                return NextResponse.json({ text: cleanedText });
+                return NextResponse.json({ text: cleanedText, debug: result });
             }
             console.log("Layout Parsing returned empty. Falling back to Raw OCR...");
         }
@@ -201,16 +201,25 @@ export async function POST(req: NextRequest) {
         // This is the primary path for the new 'ocr' endpoint.
         if (result.result && result.result.ocrResults) {
             const ocrResults = result.result.ocrResults;
-            const text = ocrResults.map((r: any) => r.prunedResult || r.words || r.text || "").join("\n");
+            const text = ocrResults.map((r: any) => {
+                // IMPORTANT: The API might return text in different fields.
+                // Standard: prunedResult
+                // Layout: text
+                // Others: words
+                const val = r.prunedResult || r.words || r.text || "";
+                return val;
+            }).join("\n");
+
             const cleanedText = cleanOCRText(text);
-            return NextResponse.json({ text: cleanedText });
+
+            // Return debug info in the response so client can see it
+            return NextResponse.json({ text: cleanedText, debug: result });
         }
 
-        // Priority 3: Handle "No Content Found" gracefully
+        // Priority 4: Handle "No Content Found" gracefully
         // If we reached here, it means the API call was valid but no text blocks were returned.
-        // This is common for single small characters that look like noise to the model.
         console.warn("OCR found no text content (layout or raw). Returning empty string.");
-        return NextResponse.json({ text: "" });
+        return NextResponse.json({ text: "", debug: result });
 
     } catch (error: any) {
         console.error("OCR Proxy Error:", error);
