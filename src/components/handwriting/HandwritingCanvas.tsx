@@ -20,8 +20,8 @@ export interface HandwritingCanvasRef {
 const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProps>(({
     width = "100%",
     height = 200,
-    color = "#3b82f6",
-    lineWidth = 3,
+    color = "#000000",
+    lineWidth = 4,
     className = "",
     placeholder = "请在此处手写作答...",
     onStrokeEnd
