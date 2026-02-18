@@ -114,8 +114,10 @@ export async function POST(req: NextRequest) {
             useTextlineOrientation: false,
             // Force OCR on content incorrectly detected as "image"
             use_ocr_for_image_block: true,
+            useOcrForImageBlock: true, // Try both casings
             // Disable layout detection to prefer raw text lines
-            use_layout_detection: false
+            use_layout_detection: false,
+            useLayoutDetection: false // Try both casings
         };
 
         // 3. Call External API
