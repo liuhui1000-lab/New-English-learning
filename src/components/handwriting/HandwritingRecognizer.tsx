@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useRef, useState, useImperativeHandle, forwardRef } from 'react'
+import React, { useRef, useState, useImperativeHandle, forwardRef, useEffect } from 'react'
 import HandwritingCanvas, { HandwritingCanvasRef } from './HandwritingCanvas'
 import { Check, Loader2, RefreshCw } from 'lucide-react'
 
@@ -8,6 +8,7 @@ interface HandwritingRecognizerProps {
     onRecognized: (text: string) => void
     height?: number | string
     placeholder?: string
+    enableAutoRecognize?: boolean
 }
 
 export interface HandwritingRecognizerRef {
@@ -15,10 +16,17 @@ export interface HandwritingRecognizerRef {
     recognize: () => Promise<string | null>
 }
 
-const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRecognizerProps>(({ onRecognized, height = 150, placeholder }, ref) => {
+const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRecognizerProps>(({ onRecognized, height = 150, placeholder, enableAutoRecognize = false }, ref) => {
     const canvasRef = useRef<HandwritingCanvasRef>(null)
     const [recognizing, setRecognizing] = useState(false)
     const [lastRecognized, setLastRecognized] = useState<string | null>(null)
+    const isDirty = useRef(false)
+    const strokeVersion = useRef(0)
+    const lastRecognizedRef = useRef<string | null>(null)
+    const [isAutoRecognizing, setIsAutoRecognizing] = useState(false)
+
+    // Sync state to ref
+    useEffect(() => { lastRecognizedRef.current = lastRecognized }, [lastRecognized])
 
     // Helper to compress image
     const compressImage = (dataUrl: string, maxWidth = 1000, quality = 0.6): Promise<string> => {
@@ -63,16 +71,23 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
     const debounceTimer = useRef<NodeJS.Timeout | null>(null)
 
     const handleStrokeEnd = () => {
+        isDirty.current = true
+        strokeVersion.current += 1
+
         // Clear existing timer
         if (debounceTimer.current) clearTimeout(debounceTimer.current)
 
-        // Set new timer (1.5s debounce)
-        debounceTimer.current = setTimeout(() => {
-            performRecognition(true)
-        }, 1500)
+        // Only start auto-recognition if enabled
+        if (enableAutoRecognize) {
+            // Set new timer (1.5s debounce)
+            debounceTimer.current = setTimeout(() => {
+                performRecognition(true)
+            }, 1500)
+        }
     }
 
     const performRecognition = async (isAuto = false): Promise<string | null> => {
+        const currentVersion = strokeVersion.current
         const dataUrl = canvasRef.current?.getDataUrl()
 
         // Check for empty or too short content (blank canvas)
@@ -80,8 +95,8 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
             return ""
         }
 
-        // For manual trigger, block UI. For auto, just show small indicator? 
-        if (!isAuto) setRecognizing(true)
+        if (isAuto) setIsAutoRecognizing(true)
+        else setRecognizing(true)
 
         // Don't clear lastRecognized immediately on auto to avoid flickering
         if (!isAuto) setLastRecognized(null)
@@ -90,13 +105,11 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
 
         try {
             // Compress Image
-            console.log(isAuto ? "Auto-Recognizing..." : "Recognizing...", "Original size:", dataUrl.length)
+            console.log(isAuto ? `Auto-Recognizing (v${currentVersion})...` : `Recognizing (v${currentVersion})...`, "Original size:", dataUrl.length)
             const compressedDataUrl = await compressImage(dataUrl)
             console.log("Compressed size:", compressedDataUrl.length)
 
             // 1. Try Server-side OCR (Paddle/Active Provider)
-            console.log("Attempting Server-side OCR...")
-
             const base64Image = compressedDataUrl.replace(/^data:image\/\w+;base64,/, "");
             const res = await fetch('/api/ocr', {
                 method: 'POST',
@@ -123,12 +136,23 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
             console.error("Server-side OCR failed", serverError)
             return null
         } finally {
-            if (!isAuto) setRecognizing(false)
+            if (isAuto) setIsAutoRecognizing(false)
+            else setRecognizing(false)
         }
 
         if (resultText) {
-            setLastRecognized(resultText)
-            onRecognized(resultText)
+            // Only update cache/clean state if version matches (no new strokes happened)
+            if (strokeVersion.current === currentVersion) {
+                setLastRecognized(resultText)
+                isDirty.current = false // Mark as clean
+                onRecognized(resultText)
+            } else {
+                console.log(`Recognition (v${currentVersion}) finished but new strokes detected (v${strokeVersion.current}). Marking as outdated.`)
+                // We still update the UI with what we got, but we don't mark as clean, 
+                // so subsequent submit will force re-recognition.
+                setLastRecognized(resultText)
+                onRecognized(resultText)
+            }
             return resultText
         }
         return null
@@ -138,8 +162,14 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
         clear: () => {
             canvasRef.current?.clear()
             setLastRecognized(null)
+            isDirty.current = false
         },
         recognize: async () => {
+            // Optimization: If not dirty and has result, return cached
+            if (!isDirty.current && lastRecognizedRef.current) {
+                console.log("Returning cached OCR result")
+                return lastRecognizedRef.current
+            }
             return await performRecognition()
         }
     }))
@@ -173,7 +203,14 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 </button>
             </div>
 
-            {lastRecognized && !recognizing && (
+            {/* Auto-Saving Indicator */}
+            {isAutoRecognizing && (
+                <div className="absolute top-2 right-2 bg-indigo-50 text-indigo-600 text-xs px-2 py-1 rounded-full animate-pulse flex items-center">
+                    <RefreshCw className="w-3 h-3 mr-1 animate-spin" /> 自动识别中...
+                </div>
+            )}
+
+            {lastRecognized && !recognizing && !isAutoRecognizing && (
                 <div className="absolute top-2 right-2 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full animate-in fade-in slide-in-from-bottom-2 flex items-center">
                     <Check className="w-3 h-3 mr-1" /> 已填入: {lastRecognized}
                 </div>
