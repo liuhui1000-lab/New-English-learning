@@ -30,35 +30,49 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
     useEffect(() => { lastRecognizedRef.current = lastRecognized }, [lastRecognized])
 
     // Helper to compress image
-    const compressImage = (dataUrl: string, maxWidth = 1000, quality = 0.6): Promise<string> => {
+    const compressImage = (dataUrl: string, maxWidth = 1000, quality = 0.95): Promise<string> => {
         return new Promise((resolve, reject) => {
             const img = new Image()
             img.src = dataUrl
             img.onload = () => {
-                const canvas = document.createElement('canvas')
+                // heuristic: for very small images (e.g. single letter), we need padding and decent size
+                const minDimension = 300
+
                 let width = img.width
                 let height = img.height
+                let scale = 1
 
-                // Resize logic
+                // Resize logic (Downscale only)
                 if (width > maxWidth) {
-                    height = Math.round((height * maxWidth) / width)
+                    scale = maxWidth / width
                     width = maxWidth
+                    height = height * scale
                 }
 
-                canvas.width = width
-                canvas.height = height
+                // Ensure canvas is at least minDimension (for context)
+                const canvasWidth = Math.max(width, minDimension)
+                const canvasHeight = Math.max(height, minDimension)
+
+                const canvas = document.createElement('canvas')
+                canvas.width = canvasWidth
+                canvas.height = canvasHeight
+
                 const ctx = canvas.getContext('2d')
                 if (!ctx) {
                     reject(new Error("Failed to get compression canvas context"))
                     return
                 }
 
-                // Fill white background (handling transparency)
+                // Fill white background
                 ctx.fillStyle = '#FFFFFF'
-                ctx.fillRect(0, 0, width, height)
+                ctx.fillRect(0, 0, canvasWidth, canvasHeight)
+
+                // Center the image
+                const x = (canvasWidth - width) / 2
+                const y = (canvasHeight - height) / 2
 
                 // Draw image
-                ctx.drawImage(img, 0, 0, width, height)
+                ctx.drawImage(img, x, y, width, height)
 
                 // Export to JPEG
                 const compressedDataUrl = canvas.toDataURL('image/jpeg', quality)
