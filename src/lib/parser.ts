@@ -490,9 +490,16 @@ async function extractText(file: File, onProgress?: (msg: string) => void, skipO
             }
 
             if (useOCR && !skipOCR) {
-                if (onProgress) onProgress(`检测到扫描件，切换至 OCR 模式 (较慢)...`);
+                if (onProgress) onProgress(`检测到扫描件，切换至 OCR Mode (需排队处理)...`);
                 for (let i = 1; i <= totalPages; i++) {
-                    if (onProgress) onProgress(`正在 OCR 识别第 ${i}/${totalPages} 页 (此步骤最耗时)...`);
+                    if (onProgress) onProgress(`正在 OCR 识别第 ${i}/${totalPages} 页...`);
+
+                    // Rate Limit Protection: Wait 1.5s before processing each page
+                    // This ensures we never exceed 1 QPS even if the API responds instantly
+                    if (i > 1) {
+                        await new Promise(r => setTimeout(r, 1500));
+                    }
+
                     const page = await pdf.getPage(i);
                     try {
                         const ocrText = await ocrPdfPage(page);
