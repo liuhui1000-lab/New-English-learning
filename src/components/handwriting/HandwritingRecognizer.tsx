@@ -62,7 +62,7 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     const b = data[i + 2]
 
                     // BINARIZATION: Force pixels to pure black or pure white
-                    if (r < 230 || g < 230 || b < 230) {
+                    if (r < 250 || g < 250 || b < 250) {
                         // Found ink -> Make BLACK
                         data[i] = 0
                         data[i + 1] = 0
