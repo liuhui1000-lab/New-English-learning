@@ -20,6 +20,45 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
     const [recognizing, setRecognizing] = useState(false)
     const [lastRecognized, setLastRecognized] = useState<string | null>(null)
 
+    // Helper to compress image
+    const compressImage = (dataUrl: string, maxWidth = 1000, quality = 0.6): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const img = new Image()
+            img.src = dataUrl
+            img.onload = () => {
+                const canvas = document.createElement('canvas')
+                let width = img.width
+                let height = img.height
+
+                // Resize logic
+                if (width > maxWidth) {
+                    height = Math.round((height * maxWidth) / width)
+                    width = maxWidth
+                }
+
+                canvas.width = width
+                canvas.height = height
+                const ctx = canvas.getContext('2d')
+                if (!ctx) {
+                    reject(new Error("Failed to get compression canvas context"))
+                    return
+                }
+
+                // Fill white background (handling transparency)
+                ctx.fillStyle = '#FFFFFF'
+                ctx.fillRect(0, 0, width, height)
+
+                // Draw image
+                ctx.drawImage(img, 0, 0, width, height)
+
+                // Export to JPEG
+                const compressedDataUrl = canvas.toDataURL('image/jpeg', quality)
+                resolve(compressedDataUrl)
+            }
+            img.onerror = (e) => reject(e)
+        })
+    }
+
     const performRecognition = async (): Promise<string | null> => {
         const dataUrl = canvasRef.current?.getDataUrl()
 
@@ -34,10 +73,15 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
         let resultText = ""
 
         try {
+            // Compress Image
+            // console.log("Original size:", dataUrl.length)
+            const compressedDataUrl = await compressImage(dataUrl)
+            // console.log("Compressed size:", compressedDataUrl.length)
+
             // 1. Try Server-side OCR (Paddle/Active Provider)
             // console.log("Attempting Server-side OCR...")
 
-            const base64Image = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+            const base64Image = compressedDataUrl.replace(/^data:image\/\w+;base64,/, "");
             const res = await fetch('/api/ocr', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -57,7 +101,9 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
         } catch (serverError) {
             console.warn("Server-side OCR failed, falling back to Tesseract...", serverError)
 
-            // 2. Fallback to Client-side Tesseract.js
+            // 2. Fallback to Client-side Tesseract.js (Use original higher quality image for local processing if needed, or compressed)
+            // Tesseract might actually benefit from clearer images, but let's try compressed first to save memory? 
+            // Actually for local Tesseract, network isn't an issue, so we can use original dataUrl for better accuracy.
             try {
                 if (!(window as any).Tesseract) {
                     await new Promise((resolve, reject) => {
@@ -70,7 +116,7 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 }
 
                 const Tesseract = (window as any).Tesseract
-                const { data: { text } } = await Tesseract.recognize(dataUrl, 'eng', {
+                const { data: { text } } = await Tesseract.recognize(dataUrl, 'eng', { // Use original dataUrl for local
                     // logger: (m: any) => console.log(m)
                 })
 
