@@ -100,9 +100,8 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
                 });
 
                 // 5. Export Stitched Image
-                // Revert to JPEG (High Quality) to avoid Vercel 4.5MB Payload Limit
-                // PNG was causing net::ERR_CONNECTION_CLOSED
-                const resultDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+                // Revert to JPEG (High Quality 0.8) to comply with User Request & Payload Limits
+                const resultDataUrl = canvas.toDataURL('image/jpeg', 0.8);
                 resolve(resultDataUrl);
 
             } catch (error) {
