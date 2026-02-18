@@ -75,6 +75,9 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 }
 
                 // 3. Determine Cutout
+                // DEBUG LOGGING
+                console.log(`Auto-Crop Scan: foundAny=${foundAny}, Bounds: [${minX}, ${minY}, ${maxX}, ${maxY}]`);
+
                 let cutX = 0, cutY = 0, cutW = img.width, cutH = img.height
 
                 if (foundAny) {
@@ -84,9 +87,11 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     cutY = Math.max(0, minY - cutPadding)
                     cutW = Math.min(img.width, maxX + cutPadding) - cutX
                     cutH = Math.min(img.height, maxY + cutPadding) - cutY
+                    console.log(`Auto-Crop Calculated: x=${cutX}, y=${cutY}, w=${cutW}, h=${cutH}`);
                 } else {
                     // Blank image -> will result in empty white canvas below
                     cutW = 0; cutH = 0;
+                    console.warn("Auto-Crop finding NO content (Blank Canvas)");
                 }
 
                 // 4. Create Final Canvas (Min Dimension 300)
