@@ -96,9 +96,12 @@ export async function POST(req: NextRequest) {
 
         if (!image) return NextResponse.json({ error: "No image provided" }, { status: 400 });
 
+        // Ensure clean base64 (strip data:image/...;base64, prefix if present)
+        const cleanImage = image.replace(/^data:image\/\w+;base64,/, "");
+
         // 2. Prepare Payload
         const payload = {
-            file: image,
+            file: cleanImage,
             fileType: 1,
             useDocOrientationClassify: false,
             useDocUnwarping: false,
