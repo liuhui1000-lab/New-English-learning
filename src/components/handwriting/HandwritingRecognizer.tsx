@@ -61,12 +61,10 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     const g = data[i + 1]
                     const b = data[i + 2]
 
-                    // BINARIZATION: Force pixels to pure black or pure white
+                    // BOUNDS DETECTION ONLY (Don't binarize)
+                    // If pixel is NOT white (detect ink)
                     if (r < 250 || g < 250 || b < 250) {
-                        // Found ink -> Make BLACK
-                        data[i] = 0
-                        data[i + 1] = 0
-                        data[i + 2] = 0
+                        // Found ink
 
                         // Update bounds
                         const x = (i / 4) % img.width
@@ -81,16 +79,11 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                             maxX = Math.max(maxX, x)
                             maxY = Math.max(maxY, y)
                         }
-                    } else {
-                        // Background -> Make WHITE
-                        data[i] = 255
-                        data[i + 1] = 255
-                        data[i + 2] = 255
                     }
                 }
 
-                // Write the binary data back for the final draw
-                tempCtx.putImageData(imageData, 0, 0);
+                // No need to putImageData back because we didn't modify pixels
+                // We want the NATURAL anti-aliased strokes.
 
                 if (!foundAny) {
                     console.warn("Auto-Crop finding NO content (Blank Canvas)");
@@ -142,11 +135,11 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     const destX = padding
                     const destY = padding
 
-                    // Disable Smoothing for Binary Images (Crisp edges)
-                    // If upscaling significantly (e.g. 5x), nearest neighbor keeps it sharp/blocky like pixel art
-                    ctx.imageSmoothingEnabled = false;
+                    // Enable Smoothing for Natural Images (Better for OCR model)
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
 
-                    // Draw from TEMP CANVAS (which has binary pixels)
+                    // Draw from TEMP CANVAS (which has natural pixels)
                     ctx.drawImage(
                         tempCanvas,
                         cutX, cutY, cutW, cutH, // Source rect
