@@ -36,6 +36,9 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
             try {
                 // 2. Calculate dimensions
                 // Standardize width to 600px (Closer to typical handwriting width, less scaling artifacts)
+                // Draw each item
+                // Increase height to prevent cramping
+                const itemHeight = 200;
                 const maxWidth = 600;
                 let totalHeight = 0;
                 const padding = 40; // Moderate spacing

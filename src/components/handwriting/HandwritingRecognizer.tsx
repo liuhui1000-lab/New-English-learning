@@ -96,7 +96,7 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
 
                 // 4. Create Final Canvas (Min Dimension 300)
                 const minDimension = 300
-                const padding = 20 // Revert to 20px padding (40px might be too aggressive)
+                const padding = 50 // Generous padding to isolate text
 
                 const availW = minDimension - (padding * 2)
                 const availH = minDimension - (padding * 2)
@@ -105,7 +105,9 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 if (cutW > 0 && cutH > 0) {
                     const scaleX = availW / cutW
                     const scaleY = availH / cutH
-                    scale = Math.min(scaleX, scaleY)
+                    // LIMIT SCALE: Don't upscale single chars too much (e.g. > 2.5x) 
+                    // otherwise they look like giant unrecognizable blobs to OCR models.
+                    scale = Math.min(scaleX, scaleY, 2.5)
                 }
 
                 const canvasW = minDimension
