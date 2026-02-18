@@ -50,8 +50,12 @@ export async function POST(req: NextRequest) {
         )
 
         // 1. Get Settings from DB
-        let token = process.env.PADDLE_OCR_TOKEN || process.env.BAIDU_OCR_API_KEY;
-        let apiUrl = PADDLE_API_URL;
+        const body = await req.json();
+        const { image } = body;
+
+        // Allow explicit config override for testing
+        let token = body.token || process.env.PADDLE_OCR_TOKEN || process.env.BAIDU_OCR_API_KEY;
+        let apiUrl = body.apiUrl || PADDLE_API_URL;
 
         const { data: settings } = await supabase
             .from('system_settings')
@@ -59,24 +63,23 @@ export async function POST(req: NextRequest) {
             .or('key.eq.ocr_token,key.eq.ocr_url,key.eq.paddle_ocr_token,key.eq.baidu_ocr_api_key,key.eq.ocr_provider,key.like.ocr_config_%');
 
         if (settings) {
-            const map: Record<string, string> = {};
-            settings.forEach((s: any) => map[s.key] = s.value);
+            if (map['ocr_url'] && !body.apiUrl) apiUrl = map['ocr_url'];
 
-            // Prioritize new generic keys
-            if (map['ocr_token']) {
-                token = map['ocr_token'];
-                console.log("Using DB 'ocr_token':", token.substring(0, 5) + "...");
+            // Only override if not provided in body
+            if (!body.token) {
+                if (map['ocr_token']) {
+                    token = map['ocr_token'];
+                    console.log("Using DB 'ocr_token':", token.substring(0, 5) + "...");
+                }
+                else if (map['paddle_ocr_token']) {
+                    token = map['paddle_ocr_token'];
+                    console.log("Using DB 'paddle_ocr_token':", token.substring(0, 5) + "...");
+                }
+                else if (map['baidu_ocr_api_key']) {
+                    token = map['baidu_ocr_api_key'];
+                    console.log("Using DB 'baidu_ocr_api_key':", token.substring(0, 5) + "...");
+                }
             }
-            else if (map['paddle_ocr_token']) {
-                token = map['paddle_ocr_token'];
-                console.log("Using DB 'paddle_ocr_token':", token.substring(0, 5) + "...");
-            }
-            else if (map['baidu_ocr_api_key']) {
-                token = map['baidu_ocr_api_key'];
-                console.log("Using DB 'baidu_ocr_api_key':", token.substring(0, 5) + "...");
-            }
-
-            if (map['ocr_url']) apiUrl = map['ocr_url'];
         }
 
         // Fallback
@@ -88,7 +91,6 @@ export async function POST(req: NextRequest) {
         }
 
 
-        const { image } = await req.json(); // Base64 image
         if (!image) return NextResponse.json({ error: "No image provided" }, { status: 400 });
 
         // 2. Prepare Payload
