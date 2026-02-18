@@ -111,7 +111,11 @@ export async function POST(req: NextRequest) {
             // Official API Params (Minimal Set)
             useDocOrientationClassify: false,
             useDocUnwarping: false,
-            useTextlineOrientation: false
+            useTextlineOrientation: false,
+            // Force OCR on content incorrectly detected as "image"
+            use_ocr_for_image_block: true,
+            // Disable layout detection to prefer raw text lines
+            use_layout_detection: false
         };
 
         // 3. Call External API
