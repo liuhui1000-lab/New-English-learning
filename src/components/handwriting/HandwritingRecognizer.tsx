@@ -94,24 +94,25 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     console.warn("Auto-Crop finding NO content (Blank Canvas)");
                 }
 
-                // 4. Create Final Canvas (Min Dimension 300)
-                const minDimension = 300
-                const padding = 50 // Generous padding to isolate text
+                // 4. Create Final Canvas (Fit to content)
+                // Remove fixed minDimension of 300 which was creating too much whitespace
 
-                const availW = minDimension - (padding * 2)
-                const availH = minDimension - (padding * 2)
+                const padding = 30
+                const targetHeight = 100 // Target a good height for OCR (typical handwriting size)
 
                 let scale = 1
-                if (cutW > 0 && cutH > 0) {
-                    const scaleX = availW / cutW
-                    const scaleY = availH / cutH
-                    // LIMIT SCALE: Don't upscale single chars too much (e.g. > 2.5x) 
-                    // otherwise they look like giant unrecognizable blobs to OCR models.
-                    scale = Math.min(scaleX, scaleY, 2.5)
+                if (cutH > 0) {
+                    // Try to scale content to match target height
+                    scale = targetHeight / cutH
+                    // Clamp scale between 1x and 3x to avoid extreme distortion
+                    scale = Math.max(1, Math.min(scale, 3))
                 }
 
-                const canvasW = minDimension
-                const canvasH = minDimension
+                const finalW = cutW * scale
+                const finalH = cutH * scale
+
+                const canvasW = finalW + (padding * 2)
+                const canvasH = finalH + (padding * 2)
 
                 const canvas = document.createElement('canvas')
                 canvas.width = canvasW
@@ -120,21 +121,20 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
 
                 if (!ctx) { reject(new Error("Failed")); return; }
 
+                // Fill White Background
                 ctx.fillStyle = '#FFFFFF'
                 ctx.fillRect(0, 0, canvasW, canvasH)
 
-                // Draw the CUTOUT centered and Scaled
+                // Draw the CUTOUT centered
                 if (cutW > 0 && cutH > 0) {
-                    const finalW = cutW * scale
-                    const finalH = cutH * scale
-                    const destX = (canvasW - finalW) / 2
-                    const destY = (canvasH - finalH) / 2
+                    const destX = padding
+                    const destY = padding
 
-                    // Re-enable Smoothing: Jagged nearest-neighbor edges might confuse OCR
+                    // High quality smoothing
                     ctx.imageSmoothingEnabled = true;
                     ctx.imageSmoothingQuality = 'high';
 
-                    // Draw from TEMP CANVAS (which now has high-contrast pixels)
+                    // Draw from TEMP CANVAS
                     ctx.drawImage(
                         tempCanvas,
                         cutX, cutY, cutW, cutH, // Source rect

@@ -183,7 +183,13 @@ export async function POST(req: NextRequest) {
 
             // Clean OCR artifacts
             const cleanedText = cleanOCRText(fullMarkdown);
-            return NextResponse.json({ text: cleanedText });
+
+            // Only return if we actually found text. 
+            // If Layout Parsing returns empty (e.g. single char considered noise), fall through to Raw OCR.
+            if (cleanedText && cleanedText.length > 0) {
+                return NextResponse.json({ text: cleanedText });
+            }
+            console.log("Layout Parsing returned empty. Falling back to Raw OCR...");
         }
 
         // Priority 2: Standard PP-OCRv5 (Plain Text) - from Doc Link
