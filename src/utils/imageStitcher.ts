@@ -15,7 +15,7 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
             return;
         }
 
-        const loadedImages: htmlImageElement[] = [];
+        const loadedImages: HTMLImageElement[] = [];
         let loadedCount = 0;
 
         // 1. Load all images first to get dimensions
