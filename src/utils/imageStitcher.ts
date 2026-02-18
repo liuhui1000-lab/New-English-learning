@@ -35,16 +35,15 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
         const processStitching = () => {
             try {
                 // 2. Calculate dimensions
-                // Standardize width to 600px (Closer to typical handwriting width, less scaling artifacts)
-                // Draw each item
-                // Increase height to prevent cramping
-                const itemHeight = 200;
-                const maxWidth = 600;
+                // Increase width to 1024 to preserve handwriting details (was 600)
+                const maxWidth = 1024;
                 let totalHeight = 0;
-                const padding = 40; // Moderate spacing
+                const padding = 80; // More spacing to separate questions clearly
 
                 loadedImages.forEach(img => {
                     // Calculate scaled height to fit maxWidth
+                    // If image is smaller than maxWidth, we still scale UP to ensure uniform width
+                    // This helps small handwriting become bigger.
                     const scale = maxWidth / img.width;
                     const scaledHeight = img.height * scale;
                     totalHeight += scaledHeight + padding;
@@ -73,16 +72,17 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
 
                     // Draw Separator/Marker (Machine Readable)
                     // We use a distinct format: [[ID:question_id]]
-                    // Use Dark Gray instead of Black to reduce contrast dominance
+                    // Use Dark Gray - Make it smaller relative to canvas width so it doesn't dominate?
+                    // Actually, bigger is better for OCR.
                     ctx.fillStyle = '#444444';
-                    ctx.font = 'bold 20px monospace';
+                    ctx.font = 'bold 24px monospace'; // Larger font
                     ctx.textBaseline = 'top';
-                    ctx.fillText(`[[ID:${originalItem.id}]]`, 10, currentY + 10);
+                    ctx.fillText(`[[ID:${originalItem.id}]]`, 20, currentY + 20);
 
                     // REMOVED: Dashed line which was triggering "Table Detection" (Layout Analysis)
                     // Just use whitespace.
 
-                    const contentStartY = currentY + 50;
+                    const contentStartY = currentY + 60; // More gap after ID
 
                     // Draw Image (Scaled)
                     const scale = maxWidth / img.width;
@@ -96,8 +96,8 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
                 });
 
                 // 5. Export Stitched Image
-                // Revert to JPEG (High Quality 0.8) to comply with User Request & Payload Limits
-                const resultDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                // Revert to JPEG (High Quality 0.95) for maximum clarity
+                const resultDataUrl = canvas.toDataURL('image/jpeg', 0.95);
                 resolve(resultDataUrl);
 
             } catch (error) {
