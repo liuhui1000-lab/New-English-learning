@@ -108,14 +108,10 @@ export async function POST(req: NextRequest) {
         const payload = {
             file: cleanImage,
             fileType: 1,
+            // Official API Params (Minimal Set)
             useDocOrientationClassify: false,
             useDocUnwarping: false,
-            useTextlineOrientation: false, // Replaced useChartRecognition with official param
-            // Force OCR on content detected as "Image" (e.g. single letters)
-            useOcrForImageBlock: true,
-            use_ocr_for_image_block: true, // Try both casings just in case
-            useLayoutDetection: false, // Maybe try disable layout detection? 
-            use_layout_detection: false
+            useTextlineOrientation: false
         };
 
         // 3. Call External API
