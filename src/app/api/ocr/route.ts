@@ -63,6 +63,9 @@ export async function POST(req: NextRequest) {
             .or('key.eq.ocr_token,key.eq.ocr_url,key.eq.paddle_ocr_token,key.eq.baidu_ocr_api_key,key.eq.ocr_provider,key.like.ocr_config_%');
 
         if (settings) {
+            const map: Record<string, string> = {};
+            settings.forEach((s: any) => map[s.key] = s.value);
+
             if (map['ocr_url'] && !body.apiUrl) apiUrl = map['ocr_url'];
 
             // Only override if not provided in body
