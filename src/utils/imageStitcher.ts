@@ -226,22 +226,33 @@ export const parseStitchedOCRResult = (
         if (!text || !text.trim()) return;
 
         // --- NEW: Anchor Detection Logic ---
-        // Search for pattern like "#1:" or "# 1 :" at the start of the text
-        // Use [\s\S]* instead of /s flag for cross-environment compatibility
-        const anchorMatch = text.match(/^\s*#\s*(\d+)\s*[:：]\s*([\s\S]*)$/);
-        if (anchorMatch) {
-            const index = parseInt(anchorMatch[1]);
-            const actualText = anchorMatch[2].trim();
+        // Search for all anchor patterns like "#1:" or "#2:" within the text
+        // Use global regex to handle cases where OCR merges multiple segments
+        const anchorRegex = /#\s*(\d+)\s*[:：]/g;
+        const matches = Array.from(text.matchAll(anchorRegex));
 
-            // Map index (1-based) to question ID
+        if (matches.length > 0) {
             const questionIds = Object.keys(rects);
-            const targetId = questionIds[index - 1];
+            console.log(`Found ${matches.length} anchors in single block: "${text}"`);
 
-            if (targetId && actualText) {
-                console.log(`Found Anchor for Question ${index} (${targetId}): "${actualText}"`);
-                results[targetId].push(actualText);
-                return; // Priority Match - skip coordinate logic
+            for (let i = 0; i < matches.length; i++) {
+                const match = matches[i];
+                const index = parseInt(match[1]);
+                const nextMatch = matches[i + 1];
+
+                // Content for this anchor starts after the current match 
+                // and ends before the next anchor (or end of block)
+                const startPos = match.index! + match[0].length;
+                const endPos = nextMatch ? nextMatch.index : text.length;
+                const snippet = text.substring(startPos, endPos).trim();
+
+                const targetId = questionIds[index - 1];
+                if (targetId && snippet) {
+                    console.log(`Mapped Anchor #${index} -> Snippet: "${snippet}"`);
+                    results[targetId].push(snippet);
+                }
             }
+            return; // Priority Match - skip coordinate logic
         }
         // ------------------------------------
 
