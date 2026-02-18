@@ -159,6 +159,7 @@ function PracticeContent() {
 
     const recognizerRefs = useRef<Record<string, { recognize: () => Promise<string | null>; getDataUrl?: () => string | null }>>({})
     const [processingStatus, setProcessingStatus] = useState("") // New state for detailed status
+    const [isSubmitting, setIsSubmitting] = useState(false)
 
     const handleSubmit = async () => {
         setIsSubmitting(true)
