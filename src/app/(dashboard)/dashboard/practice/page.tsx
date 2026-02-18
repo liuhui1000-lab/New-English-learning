@@ -201,8 +201,10 @@ function PracticeContent() {
                         })
 
                         if (!res.ok) {
+                            const errData = await res.json().catch(() => ({ error: res.statusText }));
+                            console.error("Batch OCR API Error:", errData);
                             // Fallback to sequential if bulk fails? Or just throw.
-                            throw new Error(`Batch OCR Failed: ${res.statusText}`)
+                            throw new Error(`Batch OCR Failed: ${errData.error || res.statusText}`)
                         }
 
                         const data = await res.json()

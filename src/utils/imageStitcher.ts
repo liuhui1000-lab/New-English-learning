@@ -40,10 +40,10 @@ export const stitchImages = (images: { id: string, dataUrl: string }[]): Promise
         const processStitching = () => {
             try {
                 // 2. Calculate dimensions
-                // Increase width to 1024 to preserve handwriting details
-                const maxWidth = 1024;
+                // Reduced from 1024 to avoid payload limits (Vercel 4.5MB)
+                const maxWidth = 800; // Optimal for handwriting without exceeding limits
                 let totalHeight = 0;
-                const padding = 80; // Spacing between questions (generous gap)
+                const padding = 60; // Reduced padding slightly
 
                 const rects: Record<string, { startY: number, endY: number }> = {};
 
@@ -107,8 +107,8 @@ export const stitchImages = (images: { id: string, dataUrl: string }[]): Promise
                 });
 
                 // 5. Export Stitched Image
-                // High Quality JPEG (0.95)
-                const resultDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+                // Standard Quality JPEG (0.8) - Adequate for OCR
+                const resultDataUrl = canvas.toDataURL('image/jpeg', 0.8);
                 resolve({ dataUrl: resultDataUrl, rects });
 
             } catch (error) {
