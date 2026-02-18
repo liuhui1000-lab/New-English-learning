@@ -14,6 +14,7 @@ interface HandwritingRecognizerProps {
 export interface HandwritingRecognizerRef {
     clear: () => void
     recognize: () => Promise<string | null>
+    getDataUrl: () => string | null
 }
 
 const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRecognizerProps>(({ onRecognized, height = 150, placeholder, enableAutoRecognize = false }, ref) => {
@@ -171,6 +172,9 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 return lastRecognizedRef.current
             }
             return await performRecognition()
+        },
+        getDataUrl: () => {
+            return canvasRef.current?.getDataUrl() || null
         }
     }))
 

@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase"
 import { Question } from "@/types"
 import HandwritingRecognizer from "@/components/handwriting/HandwritingRecognizer"
 import { Loader2, AlertCircle } from "lucide-react"
+import { stitchImages, parseStitchedOCRResult } from "@/utils/imageStitcher"
 
 function PracticeContent() {
     const searchParams = useSearchParams()
@@ -156,51 +157,107 @@ function PracticeContent() {
         setLoading(false)
     }
 
-    const recognizerRefs = useRef<Record<string, { recognize: () => Promise<string | null> }>>({})
-    const [isSubmitting, setIsSubmitting] = useState(false)
+    const recognizerRefs = useRef<Record<string, { recognize: () => Promise<string | null>; getDataUrl?: () => string | null }>>({})
+    const [processingStatus, setProcessingStatus] = useState("") // New state for detailed status
 
     const handleSubmit = async () => {
         setIsSubmitting(true)
+        setProcessingStatus("准备提交...") // Initial status
 
         // 1. Process Handwriting Batch (if any)
         if (showHandwriting) {
             console.log("Batch processing handwriting answers...")
             try {
-                const recognitionPromises = questions.map(async (q) => {
-                    const recognizer = recognizerRefs.current[q.id]
-                    if (recognizer) {
-                        // Skip if answer already manually filled? 
-                        // Strategy: If user manually typed something, keep it? 
-                        // Or handwriting overwrite? 
-                        // User request: "Auto recognize then fill" implies overwrite or fill if empty.
-                        // Let's assume handwriting is authoritative if present.
-                        const text = await recognizer.recognize()
-                        // Allow empty string (clearing answer) if user wrote nothing
-                        if (text !== null) {
-                            return { id: q.id, text }
+                // STRATEGY: Use Stitched Batch Recognition if Auto-OCR is disabled
+                // This saves API calls (1 call vs N calls) and is faster for bulk updates
+                if (!enableAutoOCR) {
+                    setProcessingStatus("正在合并图像并批量识别 (极速模式)...")
+                    const imagesToStitch: { id: string, dataUrl: string }[] = []
+
+                    // 1. Collect Valid Images
+                    for (const q of questions) {
+                        const recognizer = recognizerRefs.current[q.id]
+                        if (recognizer) {
+                            const dataUrl = recognizer.getDataUrl()
+                            // Only include if it has content (> 1000 length heuristic)
+                            if (dataUrl && dataUrl.length > 1000) {
+                                imagesToStitch.push({ id: q.id, dataUrl })
+                            }
                         }
                     }
-                    return null
-                })
 
-                const results = await Promise.all(recognitionPromises)
-                console.log("Batch Recognition Results:", results)
+                    if (imagesToStitch.length > 0) {
+                        // 2. Stitch
+                        console.log(`Stitching ${imagesToStitch.length} images...`)
+                        const stitchedImage = await stitchImages(imagesToStitch)
+
+                        // 3. Send Single API Request
+                        const base64Image = stitchedImage.replace(/^data:image\/\w+;base64,/, "");
+                        const res = await fetch('/api/ocr', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ image: base64Image })
+                        })
+
+                        if (!res.ok) {
+                            // Fallback to sequential if bulk fails? Or just throw.
+                            throw new Error(`Batch OCR Failed: ${res.statusText}`)
+                        }
+
+                        const data = await res.json()
+                        console.log("Stitched Result:", data.text)
+
+                        // 4. Parse Results
+                        const parsedResults = parseStitchedOCRResult(data.text || "")
+                        console.log("Parsed Batch Answers:", parsedResults)
+
+                        // 5. Update State
+                        const newAnswers = { ...answers, ...parsedResults }
+                        setAnswers(newAnswers) // Update UI
+
+                        // Direct Submit
+                        setProcessingStatus("正在提交并保存成绩...")
+                        await finalizeSubmission(newAnswers)
+                        setIsSubmitting(false)
+                        setProcessingStatus("")
+                        return; // Exit early
+                    }
+                }
+
+                // --- Fallback / Auto-OCR Mode (Sequential for safety) ---
+                // Only runs if enableAutoOCR is TRUE, or if Stitched mode gathered 0 images
+
+                const results = []
+                let processedCount = 0
+                const total = questions.length
+
+                for (const q of questions) {
+                    processedCount++
+                    setProcessingStatus(`正在检查/识别答案 (${processedCount}/${total})...`)
+
+                    const recognizer = recognizerRefs.current[q.id]
+                    if (recognizer) {
+                        try {
+                            const text = await recognizer.recognize()
+                            if (text !== null) {
+                                results.push({ id: q.id, text })
+                            }
+                        } catch (err) {
+                            console.error(`Error recognizing question ${q.id}:`, err)
+                        }
+                    }
+                    // Small delay to prevent 429 Rate Limits
+                    await new Promise(r => setTimeout(r, 300))
+                }
 
                 // Update answers state synchronously before grading
-                // Note: setAnswers is async, so we must use a local variable for grading
                 const newAnswers = { ...answers }
                 results.forEach(r => {
-                    if (r) {
-                        console.log(`Setting answer for ${r.id}: ${r.text}`)
-                        newAnswers[r.id] = r.text
-                        // Also update UI state
-                        setAnswers(prev => ({ ...prev, [r.id]: r.text }))
-                    } else {
-                        console.warn("No recognition result for question (null returned)")
-                    }
+                    if (r) newAnswers[r.id] = r.text
                 })
+                setAnswers(newAnswers)
 
-                // Pass newAnswers to grading logic
+                setProcessingStatus("正在提交并保存成绩...")
                 await finalizeSubmission(newAnswers)
 
             } catch (e) {
@@ -209,6 +266,7 @@ function PracticeContent() {
                 await finalizeSubmission(answers)
             }
         } else {
+            setProcessingStatus("正在提交...")
             await finalizeSubmission(answers)
         }
 
