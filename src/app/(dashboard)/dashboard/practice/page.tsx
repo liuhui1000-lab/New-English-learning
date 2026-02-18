@@ -270,265 +270,227 @@ function PracticeContent() {
                 setIsSubmitting(false)
                 setProcessingStatus("")
                 return; // Exit early
+            } catch (e) {
+                console.error("Batch recognition error:", e)
+                alert("手写识别过程中发生错误，将直接提交现有答案。")
+                await finalizeSubmission(answers)
             }
-                }
-
-        // --- Fallback / Auto-OCR Mode (Sequential for safety) ---
-        // Only runs if enableAutoOCR is TRUE, or if Stitched mode gathered 0 images
-
-        const results = []
-        let processedCount = 0
-        const total = questions.length
-
-        for (const q of questions) {
-            processedCount++
-            setProcessingStatus(`正在检查/识别答案 (${processedCount}/${total})...`)
-
-            const recognizer = recognizerRefs.current[q.id]
-            if (recognizer) {
-                try {
-                    const text = await recognizer.recognize()
-                    if (text !== null) {
-                        results.push({ id: q.id, text })
-                    }
-                } catch (err) {
-                    console.error(`Error recognizing question ${q.id}:`, err)
-                }
-            }
-            // Small delay to prevent 429 Rate Limits
-            await new Promise(r => setTimeout(r, 300))
-        }
-
-        // Update answers state synchronously before grading
-        const newAnswers = { ...answers }
-        results.forEach(r => {
-            if (r) newAnswers[r.id] = r.text
-        })
-        setAnswers(newAnswers)
-
-        setProcessingStatus("正在提交并保存成绩...")
-        await finalizeSubmission(newAnswers)
-
-    } catch (e) {
-        console.error("Batch recognition error:", e)
-        alert("手写识别过程中发生错误，将直接提交现有答案。")
-        await finalizeSubmission(answers)
-    }
-} else {
-    setProcessingStatus("正在提交...")
-    await finalizeSubmission(answers)
-}
-
-setIsSubmitting(false)
-    }
-
-const finalizeSubmission = async (currentAnswers: Record<string, string>) => {
-    const newResults: Record<string, boolean | null> = {}
-    const submissionData: any[] = []
-
-    // Get current user
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-        alert("请先登录")
-        return
-    }
-
-    questions.forEach(q => {
-        const userAnswer = (currentAnswers[q.id] || "").trim().toLowerCase()
-        const correctAnswer = (q.answer || "").trim().toLowerCase()
-
-        if (!correctAnswer) {
-            newResults[q.id] = null // Mark as not graded
         } else {
-            // Normalize answers for comparison:
-            // 1. Replace separators (;,，) with spaces
-            // 2. Collapse multiple spaces to single space
-            // 3. Trim and lowercase
-            const normalize = (str: string) => str.replace(/[;；,，]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase()
-
-            const isCorrect = userAnswer !== "" && normalize(userAnswer) === normalize(correctAnswer)
-            newResults[q.id] = isCorrect
-
-            submissionData.push({
-                user_id: user.id,
-                question_id: q.id,
-                is_correct: isCorrect,
-                answer: userAnswer,
-                question_type: type,
-                source_type: 'quiz'
-            })
+            // No handwriting enabled, just submit
+            setProcessingStatus("正在提交...")
+            await finalizeSubmission(answers)
         }
-    })
 
-    setResults(newResults)
-    setSubmitted(true)
-
-    // Async save to DB
-    const { error } = await supabase
-        .from('quiz_results')
-        .insert(submissionData)
-
-    if (error) {
-        console.error("Failed to save results:", error)
-        alert("提交失败，成绩未能保存！错误信息：" + error.message)
+        setIsSubmitting(false)
     }
-}
 
-// Keep handleRecognized for manual clicks
-const handleRecognized = (questionId: string, text: string) => {
-    setAnswers(prev => ({ ...prev, [questionId]: text }))
-}
+    const finalizeSubmission = async (currentAnswers: Record<string, string>) => {
+        const newResults: Record<string, boolean | null> = {}
+        const submissionData: any[] = []
 
-if (loading) return <div>Loading...</div>
+        // Get current user
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+            alert("请先登录")
+            return
+        }
 
-return (
-    <div className="max-w-2xl mx-auto space-y-8 pb-12">
-        {isSubmitting && (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center flex-col text-white">
-                <Loader2 className="w-10 h-10 animate-spin mb-4" />
-                <p className="text-lg font-bold">正在识别手写答案并判分...</p>
-            </div>
-        )}
+        questions.forEach(q => {
+            const userAnswer = (currentAnswers[q.id] || "").trim().toLowerCase()
+            const correctAnswer = (q.answer || "").trim().toLowerCase()
 
-        <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold">
-                {type === 'word_transformation' ? '词汇转换特训 (5题)' :
-                    type === 'sentence_transformation' ? '句型转换特训 (5题)' :
-                        '固定搭配/语法 (10题)'}
-            </h2>
+            if (!correctAnswer) {
+                newResults[q.id] = null // Mark as not graded
+            } else {
+                // Normalize answers for comparison:
+                // 1. Replace separators (;,，) with spaces
+                // 2. Collapse multiple spaces to single space
+                // 3. Trim and lowercase
+                const normalize = (str: string) => str.replace(/[;；,，]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase()
 
-            {(type === 'word_transformation' || type === 'sentence_transformation') && (
-                <label className="flex items-center cursor-pointer">
-                    <div className="mr-3 text-sm font-medium text-gray-700">启用手写板</div>
-                    <div className="relative">
+                const isCorrect = userAnswer !== "" && normalize(userAnswer) === normalize(correctAnswer)
+                newResults[q.id] = isCorrect
+
+                submissionData.push({
+                    user_id: user.id,
+                    question_id: q.id,
+                    is_correct: isCorrect,
+                    answer: userAnswer,
+                    question_type: type,
+                    source_type: 'quiz'
+                })
+            }
+        })
+
+        setResults(newResults)
+        setSubmitted(true)
+
+        // Async save to DB
+        const { error } = await supabase
+            .from('quiz_results')
+            .insert(submissionData)
+
+        if (error) {
+            console.error("Failed to save results:", error)
+            alert("提交失败，成绩未能保存！错误信息：" + error.message)
+        }
+    }
+
+    // Keep handleRecognized for manual clicks
+    const handleRecognized = (questionId: string, text: string) => {
+        setAnswers(prev => ({ ...prev, [questionId]: text }))
+    }
+
+    if (loading) return <div>Loading...</div>
+
+    return (
+        <div className="max-w-2xl mx-auto space-y-8 pb-12">
+            {isSubmitting && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center flex-col text-white">
+                    <Loader2 className="w-10 h-10 animate-spin mb-4" />
+                    <p className="text-lg font-bold">正在识别手写答案并判分...</p>
+                </div>
+            )}
+
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold">
+                    {type === 'word_transformation' ? '词汇转换特训 (5题)' :
+                        type === 'sentence_transformation' ? '句型转换特训 (5题)' :
+                            '固定搭配/语法 (10题)'}
+                </h2>
+
+                {(type === 'word_transformation' || type === 'sentence_transformation') && (
+                    <label className="flex items-center cursor-pointer">
+                        <div className="mr-3 text-sm font-medium text-gray-700">启用手写板</div>
+                        <div className="relative">
+                            <input
+                                type="checkbox"
+                                className="sr-only"
+                                checked={showHandwriting}
+                                onChange={() => setShowHandwriting(!showHandwriting)}
+                            />
+                            <div className={`block w-10 h-6 rounded-full transition-colors ${showHandwriting ? 'bg-indigo-600' : 'bg-gray-300'}`}></div>
+                            <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${showHandwriting ? 'transform translate-x-4' : ''}`}></div>
+                        </div>
+                    </label>
+                )}
+
+                {showHandwriting && (
+                    <label className="flex items-center cursor-pointer ml-4">
+                        <div className="mr-2 text-xs font-medium text-gray-500">自动识别(Beta)</div>
                         <input
                             type="checkbox"
-                            className="sr-only"
-                            checked={showHandwriting}
-                            onChange={() => setShowHandwriting(!showHandwriting)}
+                            className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                            checked={enableAutoOCR}
+                            onChange={(e) => setEnableAutoOCR(e.target.checked)}
                         />
-                        <div className={`block w-10 h-6 rounded-full transition-colors ${showHandwriting ? 'bg-indigo-600' : 'bg-gray-300'}`}></div>
-                        <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${showHandwriting ? 'transform translate-x-4' : ''}`}></div>
+                    </label>
+                )}
+            </div>
+
+            {questions.map((q, idx) => (
+                <div key={q.id} className="bg-white p-6 rounded-lg shadow space-y-4">
+                    <div className="flex items-start">
+                        <span className="font-bold text-gray-400 mr-2">{idx + 1}.</span>
+                        <p className="text-lg text-gray-800 leading-relaxed font-serif">
+                            {/* Parse and format content: html tags & line breaks */}
+                            {(() => {
+                                // Only apply line splitting for Sentence Transformation questions
+                                const shouldSplit = type === 'sentence_transformation'
+                                let lines: string[] = [q.content]
+
+                                if (shouldSplit) {
+                                    // Split by brackets containing Chinese/Instruction
+                                    // Match (xyz) or （xyz） followed by space
+                                    const formattedText = q.content.replace(/(\([^)]+\)|（[^）]+）)\s*/g, "$1\n")
+                                    lines = formattedText.split('\n')
+                                }
+
+                                return lines.map((line, i) => (
+                                    <span key={i} className={`block ${shouldSplit ? 'mb-2 last:mb-0' : ''}`}>
+                                        {/* HTML Tag Parsing (<u> and ^{}) */}
+                                        {line.split(/((?:<u>.*?<\/u>)|(?:\^\{[^}]+\}))/g).map((part, j) => {
+                                            if (part.startsWith('<u>') && part.endsWith('</u>')) {
+                                                return <u key={j} className="decoration-2 underline-offset-4 decoration-indigo-500 font-semibold">{part.slice(3, -4)}</u>
+                                            }
+                                            if (part.startsWith('^{') && part.endsWith('}')) {
+                                                return <sup key={j}>{part.slice(2, -1)}</sup>
+                                            }
+                                            return <span key={j}>{part}</span>
+                                        })}
+                                    </span>
+                                ))
+                            })()}
+                        </p>
                     </div>
-                </label>
-            )}
 
-            {showHandwriting && (
-                <label className="flex items-center cursor-pointer ml-4">
-                    <div className="mr-2 text-xs font-medium text-gray-500">自动识别(Beta)</div>
-                    <input
-                        type="checkbox"
-                        className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
-                        checked={enableAutoOCR}
-                        onChange={(e) => setEnableAutoOCR(e.target.checked)}
-                    />
-                </label>
-            )}
-        </div>
-
-        {questions.map((q, idx) => (
-            <div key={q.id} className="bg-white p-6 rounded-lg shadow space-y-4">
-                <div className="flex items-start">
-                    <span className="font-bold text-gray-400 mr-2">{idx + 1}.</span>
-                    <p className="text-lg text-gray-800 leading-relaxed font-serif">
-                        {/* Parse and format content: html tags & line breaks */}
-                        {(() => {
-                            // Only apply line splitting for Sentence Transformation questions
-                            const shouldSplit = type === 'sentence_transformation'
-                            let lines: string[] = [q.content]
-
-                            if (shouldSplit) {
-                                // Split by brackets containing Chinese/Instruction
-                                // Match (xyz) or （xyz） followed by space
-                                const formattedText = q.content.replace(/(\([^)]+\)|（[^）]+）)\s*/g, "$1\n")
-                                lines = formattedText.split('\n')
-                            }
-
-                            return lines.map((line, i) => (
-                                <span key={i} className={`block ${shouldSplit ? 'mb-2 last:mb-0' : ''}`}>
-                                    {/* HTML Tag Parsing (<u> and ^{}) */}
-                                    {line.split(/((?:<u>.*?<\/u>)|(?:\^\{[^}]+\}))/g).map((part, j) => {
-                                        if (part.startsWith('<u>') && part.endsWith('</u>')) {
-                                            return <u key={j} className="decoration-2 underline-offset-4 decoration-indigo-500 font-semibold">{part.slice(3, -4)}</u>
-                                        }
-                                        if (part.startsWith('^{') && part.endsWith('}')) {
-                                            return <sup key={j}>{part.slice(2, -1)}</sup>
-                                        }
-                                        return <span key={j}>{part}</span>
-                                    })}
-                                </span>
-                            ))
-                        })()}
-                    </p>
-                </div>
-
-                <div className="pl-6">
-                    <input
-                        type="text"
-                        disabled={submitted}
-                        value={answers[q.id] || ""}
-                        onChange={(e) => setAnswers({ ...answers, [q.id]: e.target.value })}
-                        className={`w-full border-b-2 border-0 border-gray-300 focus:ring-0 focus:border-indigo-600 bg-gray-50 px-2 py-1 rounded transition
+                    <div className="pl-6">
+                        <input
+                            type="text"
+                            disabled={submitted}
+                            value={answers[q.id] || ""}
+                            onChange={(e) => setAnswers({ ...answers, [q.id]: e.target.value })}
+                            className={`w-full border-b-2 border-0 border-gray-300 focus:ring-0 focus:border-indigo-600 bg-gray-50 px-2 py-1 rounded transition
                             ${submitted && results[q.id] ? 'bg-green-50 border-green-500 text-green-700' : ''}
                             ${submitted && !results[q.id] ? 'bg-red-50 border-red-500 text-red-700' : ''}
                         `}
-                        placeholder="在此输入答案..."
-                    />
+                            placeholder="在此输入答案..."
+                        />
 
-                    {submitted && results[q.id] === false && (
-                        <div className="mt-2 text-sm text-red-600 font-medium">
-                            正确答案：{q.answer}
-                        </div>
-                    )}
+                        {submitted && results[q.id] === false && (
+                            <div className="mt-2 text-sm text-red-600 font-medium">
+                                正确答案：{q.answer}
+                            </div>
+                        )}
 
-                    {submitted && results[q.id] === null && (
-                        <div className="mt-3 p-3 bg-yellow-50 text-yellow-800 text-sm rounded-lg border border-yellow-100 flex items-center">
-                            <AlertCircle className="w-4 h-4 mr-2" />
-                            系统尚无标准答案，无法自动批改。
-                        </div>
-                    )}
+                        {submitted && results[q.id] === null && (
+                            <div className="mt-3 p-3 bg-yellow-50 text-yellow-800 text-sm rounded-lg border border-yellow-100 flex items-center">
+                                <AlertCircle className="w-4 h-4 mr-2" />
+                                系统尚无标准答案，无法自动批改。
+                            </div>
+                        )}
 
-                    {submitted && results[q.id] !== null && q.explanation && (
-                        <div className="mt-3 p-3 bg-blue-50 text-blue-800 text-sm rounded-lg border border-blue-100">
-                            <span className="font-bold block mb-1">解析：</span>
-                            {q.explanation}
-                        </div>
-                    )}
+                        {submitted && results[q.id] !== null && q.explanation && (
+                            <div className="mt-3 p-3 bg-blue-50 text-blue-800 text-sm rounded-lg border border-blue-100">
+                                <span className="font-bold block mb-1">解析：</span>
+                                {q.explanation}
+                            </div>
+                        )}
 
-                    {!submitted && showHandwriting && (
-                        <div className="mt-4 pt-4 border-t border-gray-100">
-                            <HandwritingRecognizer
-                                // @ts-ignore
-                                ref={el => { if (el) recognizerRefs.current[q.id] = el }}
-                                height={150}
-                                placeholder="在 iPad 上用笔在此处草拟答案..."
-                                onRecognized={(text) => handleRecognized(q.id, text)}
-                                enableAutoRecognize={enableAutoOCR}
-                            />
-                        </div>
-                    )}
+                        {!submitted && showHandwriting && (
+                            <div className="mt-4 pt-4 border-t border-gray-100">
+                                <HandwritingRecognizer
+                                    // @ts-ignore
+                                    ref={el => { if (el) recognizerRefs.current[q.id] = el }}
+                                    height={150}
+                                    placeholder="在 iPad 上用笔在此处草拟答案..."
+                                    onRecognized={(text) => handleRecognized(q.id, text)}
+                                    enableAutoRecognize={enableAutoOCR}
+                                />
+                            </div>
+                        )}
+                    </div>
                 </div>
-            </div>
-        ))}
+            ))}
 
-        {!submitted ? (
-            <button
-                onClick={handleSubmit}
-                disabled={isSubmitting}
-                className="w-full py-4 bg-indigo-600 text-white font-bold rounded-lg shadow-lg hover:bg-indigo-700 transition disabled:opacity-70 disabled:cursor-not-allowed"
-            >
-                {isSubmitting ? '识别判分中...' : '提交答案 (自动识别)'}
-            </button>
-        ) : (
-            <button
-                onClick={() => window.location.reload()}
-                className="w-full py-4 bg-gray-600 text-white font-bold rounded-lg shadow-lg hover:bg-gray-700 transition"
-            >
-                再来一组
-            </button>
-        )}
-    </div>
-)
+            {!submitted ? (
+                <button
+                    onClick={handleSubmit}
+                    disabled={isSubmitting}
+                    className="w-full py-4 bg-indigo-600 text-white font-bold rounded-lg shadow-lg hover:bg-indigo-700 transition disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                    {isSubmitting ? '识别判分中...' : '提交答案 (自动识别)'}
+                </button>
+            ) : (
+                <button
+                    onClick={() => window.location.reload()}
+                    className="w-full py-4 bg-gray-600 text-white font-bold rounded-lg shadow-lg hover:bg-gray-700 transition"
+                >
+                    再来一组
+                </button>
+            )}
+        </div>
+    )
 }
 
 export default function PracticePage() {
