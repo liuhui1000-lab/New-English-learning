@@ -18,7 +18,7 @@ function PracticeContent() {
     const [submitted, setSubmitted] = useState(false)
     const [loading, setLoading] = useState(true)
     const [showHandwriting, setShowHandwriting] = useState(false)
-    const [enableAutoOCR, setEnableAutoOCR] = useState(true)
+    const [enableAutoOCR, setEnableAutoOCR] = useState(false) // Default to manual submission for cost saving
 
     useEffect(() => {
         fetchPracticeBatch()
