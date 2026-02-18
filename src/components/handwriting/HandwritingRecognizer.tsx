@@ -93,21 +93,27 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 const minDimension = 300
                 const padding = 20
 
-                // Logic: We want final image to contain the CUTOUT, but meet minDimension
-                let finalW = cutW + (padding * 2)
-                let finalH = cutH + (padding * 2)
+                // Target: We want the content to fill the canvas (respecting aspect ratio)
+                // Current cut dimensions: cutW, cutH
+                // Available space: minDimension - padding*2
+                const availW = minDimension - (padding * 2)
+                const availH = minDimension - (padding * 2)
 
-                // Scale down if cut is huge (larger than maxWidth)
                 let scale = 1
-                if (finalW > maxWidth) {
-                    scale = maxWidth / finalW
-                    finalW = maxWidth
-                    finalH = finalH * scale
+                if (cutW > 0 && cutH > 0) {
+                    // Calculate scale to fit the available space
+                    // We allow UPSCALING here because small letters need to be big for OCR
+                    const scaleX = availW / cutW
+                    const scaleY = availH / cutH
+                    scale = Math.min(scaleX, scaleY)
+
+                    // Don't let it get TOO crazy if it's a dot, but max 300px is fine.
+                    // Also, if the original image was HUGE, allowing downscale is handled effectively by the same math 
+                    // (if cutW > availW, scale will be < 1)
                 }
 
-                // Enforce Min Dimension (Canvas Size)
-                const canvasW = Math.max(finalW, minDimension)
-                const canvasH = Math.max(finalH, minDimension)
+                const canvasW = minDimension
+                const canvasH = minDimension
 
                 const canvas = document.createElement('canvas')
                 canvas.width = canvasW
@@ -119,15 +125,21 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 ctx.fillStyle = '#FFFFFF'
                 ctx.fillRect(0, 0, canvasW, canvasH)
 
-                // Draw the CUTOUT centered
+                // Draw the CUTOUT centered and Scaled
                 if (cutW > 0 && cutH > 0) {
-                    const destX = (canvasW - (cutW * scale)) / 2
-                    const destY = (canvasH - (cutH * scale)) / 2
+                    const finalW = cutW * scale
+                    const finalH = cutH * scale
+                    const destX = (canvasW - finalW) / 2
+                    const destY = (canvasH - finalH) / 2
+
+                    // Use better interpolation for upscaling
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
 
                     ctx.drawImage(
                         tempCanvas,
                         cutX, cutY, cutW, cutH, // Source rect
-                        destX, destY, cutW * scale, cutH * scale // Dest rect
+                        destX, destY, finalW, finalH // Dest rect
                     )
                 }
 
