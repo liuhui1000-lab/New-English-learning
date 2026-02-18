@@ -144,8 +144,9 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     const destX = (canvasW - finalW) / 2
                     const destY = (canvasH - finalH) / 2
 
-                    ctx.imageSmoothingEnabled = true;
-                    ctx.imageSmoothingQuality = 'high';
+                    // Use Nearest Neighbor for upscaling to keep edges SHARP (Pixel Perfect)
+                    // This prevents "blurring" of the high-contrast pixels
+                    ctx.imageSmoothingEnabled = false;
 
                     // Draw from TEMP CANVAS (which now has high-contrast pixels)
                     ctx.drawImage(
