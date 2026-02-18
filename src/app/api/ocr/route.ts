@@ -110,7 +110,12 @@ export async function POST(req: NextRequest) {
             fileType: 1,
             useDocOrientationClassify: false,
             useDocUnwarping: false,
-            useTextlineOrientation: false // Replaced useChartRecognition with official param
+            useTextlineOrientation: false, // Replaced useChartRecognition with official param
+            // Force OCR on content detected as "Image" (e.g. single letters)
+            useOcrForImageBlock: true,
+            use_ocr_for_image_block: true, // Try both casings just in case
+            useLayoutDetection: false, // Maybe try disable layout detection? 
+            use_layout_detection: false
         };
 
         // 3. Call External API
