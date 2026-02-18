@@ -178,7 +178,7 @@ function PracticeContent() {
                     // 1. Collect Valid Images
                     for (const q of questions) {
                         const recognizer = recognizerRefs.current[q.id]
-                        if (recognizer) {
+                        if (recognizer && recognizer.getDataUrl) {
                             const dataUrl = recognizer.getDataUrl()
                             // Only include if it has content (> 1000 length heuristic)
                             if (dataUrl && dataUrl.length > 1000) {
