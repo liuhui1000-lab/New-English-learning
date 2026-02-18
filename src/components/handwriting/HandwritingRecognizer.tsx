@@ -59,22 +59,38 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
         })
     }
 
-    const performRecognition = async (): Promise<string | null> => {
+    // Auto-recognition state
+    const debounceTimer = useRef<NodeJS.Timeout | null>(null)
+
+    const handleStrokeEnd = () => {
+        // Clear existing timer
+        if (debounceTimer.current) clearTimeout(debounceTimer.current)
+
+        // Set new timer (1.5s debounce)
+        debounceTimer.current = setTimeout(() => {
+            performRecognition(true)
+        }, 1500)
+    }
+
+    const performRecognition = async (isAuto = false): Promise<string | null> => {
         const dataUrl = canvasRef.current?.getDataUrl()
 
         // Check for empty or too short content (blank canvas)
         if (!dataUrl || dataUrl.length < 1000) {
-            // Return empty string to explicitly clear the answer
             return ""
         }
 
-        setRecognizing(true)
-        setLastRecognized(null)
+        // For manual trigger, block UI. For auto, just show small indicator? 
+        if (!isAuto) setRecognizing(true)
+
+        // Don't clear lastRecognized immediately on auto to avoid flickering
+        if (!isAuto) setLastRecognized(null)
+
         let resultText = ""
 
         try {
             // Compress Image
-            console.log("Original size:", dataUrl.length)
+            console.log(isAuto ? "Auto-Recognizing..." : "Recognizing...", "Original size:", dataUrl.length)
             const compressedDataUrl = await compressImage(dataUrl)
             console.log("Compressed size:", compressedDataUrl.length)
 
@@ -90,6 +106,11 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
 
             if (!res.ok) {
                 const errorText = await res.text();
+                // If 429 in auto mode, just warn and stop silently
+                if (res.status === 429 && isAuto) {
+                    console.warn("Auto-OCR rate limited, skipping.")
+                    return null
+                }
                 throw new Error(`Server OCR failed: ${res.status} ${errorText}`);
             }
 
@@ -100,10 +121,9 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
 
         } catch (serverError) {
             console.error("Server-side OCR failed", serverError)
-            // Tesseract fallback disabled by user request due to poor quality
             return null
         } finally {
-            setRecognizing(false)
+            if (!isAuto) setRecognizing(false)
         }
 
         if (resultText) {
@@ -135,6 +155,7 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 height={height}
                 placeholder={placeholder}
                 className={recognizing ? "opacity-50 pointer-events-none" : ""}
+                onStrokeEnd={handleStrokeEnd}
             />
 
             <div className="absolute bottom-2 right-12 flex space-x-2">
