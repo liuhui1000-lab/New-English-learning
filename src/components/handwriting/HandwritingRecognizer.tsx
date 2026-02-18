@@ -112,7 +112,7 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
 
                 // 4. Create Final Canvas (Min Dimension 300)
                 const minDimension = 300
-                const padding = 20
+                const padding = 40 // MORE PADDING (was 20) to give OCR context
 
                 const availW = minDimension - (padding * 2)
                 const availH = minDimension - (padding * 2)
@@ -144,9 +144,9 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     const destX = (canvasW - finalW) / 2
                     const destY = (canvasH - finalH) / 2
 
-                    // Use Nearest Neighbor for upscaling to keep edges SHARP (Pixel Perfect)
-                    // This prevents "blurring" of the high-contrast pixels
-                    ctx.imageSmoothingEnabled = false;
+                    // Re-enable Smoothing: Jagged nearest-neighbor edges might confuse OCR
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
 
                     // Draw from TEMP CANVAS (which now has high-contrast pixels)
                     ctx.drawImage(
