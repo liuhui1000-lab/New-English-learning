@@ -76,15 +76,8 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
                     ctx.textBaseline = 'top';
                     ctx.fillText(`[[ID:${originalItem.id}]]`, 10, currentY + 10);
 
-                    // Draw a dashed visual line
-                    ctx.beginPath();
-                    ctx.setLineDash([10, 10]);
-                    ctx.moveTo(0, currentY + 40);
-                    ctx.lineTo(maxWidth, currentY + 40);
-                    ctx.strokeStyle = '#bbbbbb';
-                    ctx.lineWidth = 2;
-                    ctx.stroke();
-                    ctx.setLineDash([]); // Reset
+                    // REMOVED: Dashed line which was triggering "Table Detection" (Layout Analysis)
+                    // Just use whitespace.
 
                     const contentStartY = currentY + 50;
 
@@ -131,6 +124,7 @@ export const parseStitchedOCRResult = (fullText: string): Record<string, string>
         let content = parts[i + 1] || "";
 
         // Clean up content
+        content = content.replace(/<\/?[^>]+(>|$)/g, ""); // Strip HTML tags (<table>, <tr>, <td>)
         content = content.trim();
 
         // Remove the visual separator line if OCR picked it up (e.g. underscores or dashes)

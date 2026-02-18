@@ -28,8 +28,10 @@ function cleanOCRText(text: string): string {
         .replace(/\s{2,}/g, ' ')
         // Clean up multiple underscores (normalize to 4)
         .replace(/_{5,}/g, '____')
-        // Remove HTML tags (div, img, figure)
-        .replace(/<\/?(?:div|img|figure|span|p)[^>]*>/gi, ' ')
+        // Remove HTML tags (div, img, figure, table, tr, td, etc.)
+        .replace(/<\/?(?:div|img|figure|span|p|table|tbody|thead|tr|td|th)[^>]*>/gi, ' ')
+        // Remove known table artifact strings that might remain
+        .replace(/(?:\||___){3,}/g, ' ')
         .trim();
 }
 
