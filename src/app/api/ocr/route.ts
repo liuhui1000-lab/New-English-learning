@@ -151,6 +151,8 @@ export async function POST(req: NextRequest) {
             console.log("OCR Result Keys:", Object.keys(result.result));
             if (result.result.ocrResults) console.log("Has ocrResults:", result.result.ocrResults.length);
             if (result.result.layoutParsingResults) console.log("Has layoutParsingResults:", result.result.layoutParsingResults.length);
+            // Log model info if present (e.g. algo_version)
+            if (result.result.algo_version) console.log("OCR Algo Version:", result.result.algo_version);
         }
 
         // 4. Parse Response
