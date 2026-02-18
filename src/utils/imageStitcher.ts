@@ -99,9 +99,9 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
                     currentY += scaledHeight + padding;
                 });
 
-                // 5. Export Compressed JPEG
-                // Use higher quality (0.8) to prevent compression artifacts from hurting OCR
-                const resultDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                // 5. Export Stitched Image
+                // Use PNG for lossless quality to ensure best OCR results for batch
+                const resultDataUrl = canvas.toDataURL('image/png');
                 resolve(resultDataUrl);
 
             } catch (error) {
