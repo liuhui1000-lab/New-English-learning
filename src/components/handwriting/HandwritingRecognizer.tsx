@@ -110,13 +110,14 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 }
 
                 // 4. Create Final Canvas (Fit to content)
-                const padding = 30
-                const targetHeight = 100 // Target a good height for OCR
+                const padding = 50 // Increased padding for context
+                const targetHeight = 300 // Target a LARGER height (300px) typical for OCR. 100px is too small.
 
                 let scale = 1
                 if (cutH > 0) {
                     scale = targetHeight / cutH
-                    scale = Math.max(1, Math.min(scale, 3))
+                    // Allow upscaling up to 5x to reach 300px
+                    scale = Math.min(scale, 5)
                 }
 
                 const finalW = cutW * scale
@@ -142,6 +143,7 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     const destY = padding
 
                     // Disable Smoothing for Binary Images (Crisp edges)
+                    // If upscaling significantly (e.g. 5x), nearest neighbor keeps it sharp/blocky like pixel art
                     ctx.imageSmoothingEnabled = false;
 
                     // Draw from TEMP CANVAS (which has binary pixels)
@@ -152,16 +154,10 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     )
                 }
 
-                // Use High Quality JPEG (0.95) - better for text details than 0.8
-                // Reverted from PNG per user request to avoid payload limits
+                // Use High Quality JPEG (0.95)
                 const base64 = canvas.toDataURL('image/jpeg', 0.95)
 
                 console.log(`Recognizing (v${strokeVersion.current})... Original size: ${dataUrl.length}`)
-                // Report auto-crop debug info
-                console.log(`Auto-Crop Scan: foundAny=${foundAny}, Bounds: [${minX}, ${minY}, ${maxX}, ${maxY}]`)
-                if (foundAny) {
-                    console.log(`Auto-Crop Calculated: x=${cutX}, y=${cutY}, w=${cutW}, h=${cutH}`)
-                }
 
                 resolve(base64)
             }
@@ -230,6 +226,12 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
             }
 
             const data = await res.json()
+
+            // Log Server Debug Info
+            if (data.debug) {
+                console.log("Server Debug Info:", data.debug);
+            }
+
             if (data.text) {
                 resultText = data.text
             }
