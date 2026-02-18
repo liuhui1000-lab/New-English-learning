@@ -35,10 +35,10 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
         const processStitching = () => {
             try {
                 // 2. Calculate dimensions
-                // Standardize width to 800px (Balance resolution and layout)
-                const maxWidth = 800;
+                // Standardize width to 600px (Closer to typical handwriting width, less scaling artifacts)
+                const maxWidth = 600;
                 let totalHeight = 0;
-                const padding = 50; // Moderate spacing
+                const padding = 40; // Moderate spacing
 
                 loadedImages.forEach(img => {
                     // Calculate scaled height to fit maxWidth
@@ -100,7 +100,8 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
                 });
 
                 // 5. Export Compressed JPEG
-                const resultDataUrl = canvas.toDataURL('image/jpeg', quality);
+                // Use higher quality (0.8) to prevent compression artifacts from hurting OCR
+                const resultDataUrl = canvas.toDataURL('image/jpeg', 0.8);
                 resolve(resultDataUrl);
 
             } catch (error) {

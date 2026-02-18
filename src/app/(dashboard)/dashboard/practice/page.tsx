@@ -234,11 +234,16 @@ function PracticeContent() {
                                 if (recognizer) {
                                     try {
                                         // Sequential fallback
+                                        console.log(`Fallback recognizing for ${id}...`)
                                         const text = await recognizer.recognize()
+                                        console.log(`Fallback result for ${id}:`, text)
+
                                         if (text) {
                                             newAnswers[id] = text
                                             // Update UI incrementally
                                             setAnswers(prev => ({ ...prev, [id]: text }))
+                                        } else {
+                                            console.warn(`Fallback returned empty for ${id}`)
                                         }
                                     } catch (err) {
                                         console.error(`Fallback recognition failed for ${id}`, err)
