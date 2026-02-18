@@ -222,7 +222,12 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
 
             // Log Server Debug Info
             if (data.debug) {
-                console.log("Server Debug Info:", data.debug);
+                console.log("Server Debug Info (Full):", JSON.stringify(data.debug, null, 2));
+
+                // Also log warnings if empty
+                if (!data.text) {
+                    console.warn("Server returned empty text but success status.");
+                }
             }
 
             if (data.text) {
