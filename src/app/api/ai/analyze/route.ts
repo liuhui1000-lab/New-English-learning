@@ -172,20 +172,36 @@ Input Questions:
         })
 
         if (!response.ok) {
-            const err = await response.text()
+            const errBody = await response.text();
+            let providerError = "Unknown Provider Error";
+            try {
+                const parsed = JSON.parse(errBody);
+                providerError = parsed.error?.message || parsed.message || errBody;
+            } catch {
+                providerError = errBody;
+            }
 
-            // Forward specific error code to client
+            // Forward specific error code to client with detailed message
             if (response.status === 429) {
-                return NextResponse.json({ error: "AI Rate Limit / Quota Exceeded (429). Please slow down." }, { status: 429 })
+                return NextResponse.json({
+                    error: "AI Rate Limit / Quota Exceeded (429)",
+                    details: providerError
+                }, { status: 429 });
             }
             if (response.status === 401) {
-                return NextResponse.json({ error: `Invalid AI API Key (401) for provider: ${activeProvider}. Check Settings.` }, { status: 401 })
+                return NextResponse.json({
+                    error: `Invalid AI API Key (401) for provider: ${activeProvider}`,
+                    details: providerError
+                }, { status: 401 });
             }
             if (response.status >= 500) {
-                return NextResponse.json({ error: "AI Provider Server Error (5xx). Try changing model." }, { status: 502 })
+                return NextResponse.json({
+                    error: "AI Provider Server Error (5xx)",
+                    details: providerError
+                }, { status: 502 });
             }
 
-            throw new Error(`Provider API Error: ${response.status} ${err}`)
+            throw new Error(`Provider API Error: ${response.status} ${providerError}`);
         }
 
         const aiData = await response.json()
