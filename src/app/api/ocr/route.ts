@@ -28,6 +28,8 @@ function cleanOCRText(text: string): string {
         .replace(/\s{2,}/g, ' ')
         // Clean up multiple underscores (normalize to 4)
         .replace(/_{5,}/g, '____')
+        // Remove HTML tags (div, img, figure)
+        .replace(/<\/?(?:div|img|figure|span|p)[^>]*>/gi, ' ')
         .trim();
 }
 
@@ -141,6 +143,12 @@ export async function POST(req: NextRequest) {
         }
         if (result.error_code !== undefined && result.error_code !== 0) {
             throw new Error(result.error_msg || "Unknown Error");
+        }
+
+        if (result.result) {
+            console.log("OCR Result Keys:", Object.keys(result.result));
+            if (result.result.ocrResults) console.log("Has ocrResults:", result.result.ocrResults.length);
+            if (result.result.layoutParsingResults) console.log("Has layoutParsingResults:", result.result.layoutParsingResults.length);
         }
 
         // 4. Parse Response

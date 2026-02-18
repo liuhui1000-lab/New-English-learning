@@ -38,7 +38,7 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
                 // Standardize width to 1000px (or max of images)
                 const maxWidth = 1000;
                 let totalHeight = 0;
-                const padding = 40; // Space for separator
+                const padding = 60; // Increased space for separator
 
                 loadedImages.forEach(img => {
                     // Calculate scaled height to fit maxWidth
@@ -70,24 +70,26 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
 
                     // Draw Separator/Marker (Machine Readable)
                     // We use a distinct format: [[ID:question_id]]
-                    // This creates a reliable anchor for parsing later
+                    // Increased font size and clarity for OCR
                     ctx.fillStyle = '#000000';
-                    ctx.font = 'bold 16px monospace';
+                    ctx.font = 'bold 24px monospace';
                     ctx.textBaseline = 'top';
-                    ctx.fillText(`[[ID:${originalItem.id}]]`, 10, currentY + 5);
+                    ctx.fillText(`[[ID:${originalItem.id}]]`, 10, currentY + 10);
 
                     // Draw a visual line too just in case
                     ctx.beginPath();
-                    ctx.moveTo(0, currentY + 25);
-                    ctx.lineTo(maxWidth, currentY + 25);
-                    ctx.strokeStyle = '#cccccc';
-                    ctx.lineWidth = 1;
+                    ctx.moveTo(0, currentY + 45);
+                    ctx.lineTo(maxWidth, currentY + 45);
+                    ctx.strokeStyle = '#999999';
+                    ctx.lineWidth = 2;
                     ctx.stroke();
 
-                    const contentStartY = currentY + 30;
+                    const contentStartY = currentY + 50;
 
                     // Draw Image (Scaled)
                     const scale = maxWidth / img.width;
+                    // Limit max height to prevent extremely tall images
+                    // But usually we want full content.
                     const scaledHeight = img.height * scale;
 
                     ctx.drawImage(img, 0, contentStartY, maxWidth, scaledHeight);
