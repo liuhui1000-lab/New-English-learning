@@ -99,36 +99,9 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
             }
 
         } catch (serverError) {
-            console.warn("Server-side OCR failed, falling back to Tesseract...", serverError)
-
-            // 2. Fallback to Client-side Tesseract.js (Use original higher quality image for local processing if needed, or compressed)
-            // Tesseract might actually benefit from clearer images, but let's try compressed first to save memory? 
-            // Actually for local Tesseract, network isn't an issue, so we can use original dataUrl for better accuracy.
-            try {
-                if (!(window as any).Tesseract) {
-                    await new Promise((resolve, reject) => {
-                        const script = document.createElement('script')
-                        script.src = 'https://unpkg.com/tesseract.js@5.1.0/dist/tesseract.min.js'
-                        script.onload = resolve
-                        script.onerror = reject
-                        document.head.appendChild(script)
-                    })
-                }
-
-                const Tesseract = (window as any).Tesseract
-                const { data: { text } } = await Tesseract.recognize(dataUrl, 'eng', { // Use original dataUrl for local
-                    // logger: (m: any) => console.log(m)
-                })
-
-                const cleanText = text.trim()
-                if (cleanText && cleanText.length > 0) {
-                    console.log("Tesseract Success:", cleanText)
-                    resultText = cleanText
-                }
-            } catch (clientError: any) {
-                console.error("Both OCR methods failed", clientError)
-                return null
-            }
+            console.error("Server-side OCR failed", serverError)
+            // Tesseract fallback disabled by user request due to poor quality
+            return null
         } finally {
             setRecognizing(false)
         }
