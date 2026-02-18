@@ -200,7 +200,11 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ text: cleanedText });
         }
 
-        throw new Error("Invalid response structure: No layoutParsingResults or ocrResults found");
+        // Priority 3: Handle "No Content Found" gracefully
+        // If we reached here, it means the API call was valid but no text blocks were returned.
+        // This is common for single small characters that look like noise to the model.
+        console.warn("OCR found no text content (layout or raw). Returning empty string.");
+        return NextResponse.json({ text: "" });
 
     } catch (error: any) {
         console.error("OCR Proxy Error:", error);
