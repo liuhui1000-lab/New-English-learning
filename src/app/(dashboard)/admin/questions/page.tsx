@@ -381,7 +381,7 @@ export default function QuestionBankPage() {
                                 <input
                                     type="checkbox"
                                     onChange={handleSelectAll}
-                                    checked={questions.length > 0 && selectedIds.size >= questions.length} // Simple check
+                                    checked={questions.length > 0 && questions.every(q => selectedIds.has(q.id))}
                                     className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                                 />
                             </th>
