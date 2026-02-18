@@ -43,7 +43,8 @@ export const stitchImages = (images: { id: string, dataUrl: string }[]): Promise
                 // Reduced from 1024 to avoid payload limits (Vercel 4.5MB)
                 const maxWidth = 800; // Optimal for handwriting without exceeding limits
                 let totalHeight = 0;
-                const padding = 60; // Reduced padding slightly
+                const padding = 100; // INCREASED padding to force separation
+                const separatorHeight = 2; // Height of the visual separator line
 
                 const rects: Record<string, { startY: number, endY: number }> = {};
 
@@ -61,7 +62,7 @@ export const stitchImages = (images: { id: string, dataUrl: string }[]): Promise
                     // From currentY to currentY + scaledHeight + padding
                     // This includes the gap after the image, catching any overflow text
                     const startY = currentY;
-                    const endY = currentY + scaledHeight + padding;
+                    const endY = currentY + scaledHeight + padding + separatorHeight;
 
                     rects[originalItem.id] = { startY, endY };
 
@@ -93,6 +94,7 @@ export const stitchImages = (images: { id: string, dataUrl: string }[]): Promise
                     // but safer to use loadedImages index.
                     const img = loadedImages[i];
 
+
                     // Draw Image (Scaled) at startY
                     const scale = maxWidth / img.width;
                     const scaledHeight = img.height * scale;
@@ -103,7 +105,18 @@ export const stitchImages = (images: { id: string, dataUrl: string }[]): Promise
 
                     ctx.drawImage(img, 0, rect.startY, maxWidth, scaledHeight);
 
-                    // Optional: Draw a very faint separator? No, keep it clean.
+                    // Draw a faint separator line to force OCR layout splitting
+                    // But make it faint enough so it doesn't get read as text (underscore)?
+                    // Actually, a gap is usually better, but if it merges, we need a "wall".
+                    // Let's draw a light gray line at the bottom of the padding area.
+
+                    const lineY = rect.endY - (padding / 2);
+                    ctx.beginPath();
+                    ctx.moveTo(0, lineY);
+                    ctx.lineTo(maxWidth, lineY);
+                    ctx.strokeStyle = "#E0E0E0"; // Light gray
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
                 });
 
                 // 5. Export Stitched Image
