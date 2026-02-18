@@ -225,41 +225,37 @@ function PracticeContent() {
                             console.warn(`Batch OCR missed ${missingIds.length} questions. Triggering fallback...`, missingIds)
                             setProcessingStatus(`批量识别完成，正在补充识别剩余 ${missingIds.length} 题...`)
 
-                            // Fallback Loop for missing items (Parallelized)
-                            // Process in chunks of 3 to balance speed vs rate limits
-                            const chunkSize = 3;
-                            for (let i = 0; i < missingIds.length; i += chunkSize) {
-                                const chunk = missingIds.slice(i, i + chunkSize);
-                                setProcessingStatus(`正在补充识别: ${i + 1}-${Math.min(i + chunkSize, missingIds.length)}/${missingIds.length}...`);
+                            // Fallback Loop for missing items (Sequential for Rate Limit)
+                            // Strict Limit: 1 QPS, Concurrency 1
+                            let processedCount = 0;
+                            for (const id of missingIds) {
+                                processedCount++;
+                                setProcessingStatus(`正在补充识别: ${processedCount}/${missingIds.length}...`);
 
-                                await Promise.all(chunk.map(async (id) => {
-                                    const recognizer = recognizerRefs.current[id];
-                                    if (recognizer) {
-                                        try {
-                                            console.log(`Fallback recognizing for ${id}...`);
-                                            const text = await recognizer.recognize();
-                                            console.log(`Fallback result for ${id}:`, text);
+                                const recognizer = recognizerRefs.current[id];
+                                if (recognizer) {
+                                    try {
+                                        console.log(`Fallback recognizing for ${id}...`);
+                                        const text = await recognizer.recognize();
+                                        console.log(`Fallback result for ${id}:`, text);
 
-                                            if (text) {
-                                                newAnswers[id] = text;
-                                                // Update UI incrementally
-                                                setAnswers(prev => ({ ...prev, [id]: text }));
-                                            } else {
-                                                console.warn(`Fallback returned empty for ${id}`);
-                                            }
-                                        } catch (err) {
-                                            console.error(`Fallback recognition failed for ${id}`, err);
+                                        if (text) {
+                                            newAnswers[id] = text;
+                                            // Update UI incrementally
+                                            setAnswers(prev => ({ ...prev, [id]: text }));
+                                        } else {
+                                            console.warn(`Fallback returned empty for ${id}`);
                                         }
+                                    } catch (err) {
+                                        console.error(`Fallback recognition failed for ${id}`, err);
                                     }
-                                }));
+                                }
 
-                                // Small delay between chunks if there are more
-                                if (i + chunkSize < missingIds.length) {
-                                    await new Promise(r => setTimeout(r, 300));
+                                // Strict Delay: > 1000ms to avoid 429
+                                if (processedCount < missingIds.length) {
+                                    await new Promise(r => setTimeout(r, 1200));
                                 }
                             }
-                            // Slight delay to prevent rate limits during fallback
-                            await new Promise(r => setTimeout(r, 500))
                         }
 
                         // Direct Submit
