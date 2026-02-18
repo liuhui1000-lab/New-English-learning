@@ -4,9 +4,9 @@ import { cookies } from "next/headers";
 
 export const maxDuration = 60; // Allow up to 60 seconds for OCR processing
 
-// Configuration for Paddle OCR (Layout Parsing)
-const PADDLE_API_URL = "https://5ejew8k4i019dek5.aistudio-app.com/layout-parsing";
-// Default token provided by user, but prefer Env/DB
+// Configuration for Paddle OCR (Official OCR Endpoint)
+const PADDLE_API_URL = "https://42g0y668o7v230je.aistudio-app.com/ocr";
+// Default token provided by user
 const DEFAULT_TOKEN = "483605608bc2d69ed9979463871dd4bc6095285a";
 
 /**
@@ -103,13 +103,14 @@ export async function POST(req: NextRequest) {
         // Ensure clean base64 (strip data:image/...;base64, prefix if present)
         const cleanImage = image.replace(/^data:image\/\w+;base64,/, "");
 
-        // 2. Prepare Payload
+        // 2. Prepare Payload (Match Official Spec)
+        // For images, fileType should be 1
         const payload = {
             file: cleanImage,
             fileType: 1,
             useDocOrientationClassify: false,
             useDocUnwarping: false,
-            useChartRecognition: false
+            useTextlineOrientation: false // Replaced useChartRecognition with official param
         };
 
         // 3. Call External API
@@ -156,14 +157,12 @@ export async function POST(req: NextRequest) {
         }
 
         // 4. Parse Response
-        // 4. Parse Response
 
         // Priority 1: Check for Stitched Batch Content (Raw OCR Text)
-        // If the result contains our special marker "[[ID:", we prefer the raw text stream
-        // because Layout Parsing often mistakes handwriting on whitespace for images.
         if (result.result && result.result.ocrResults) {
             const ocrResults = result.result.ocrResults;
-            const rawText = ocrResults.map((r: any) => r.words || r.text || "").join("\n");
+            // Support 'prunedResult' (official API) as well as 'words'/'text' fallbacks.
+            const rawText = ocrResults.map((r: any) => r.prunedResult || r.words || r.text || "").join("\n");
 
             if (rawText.includes("[[ID:")) {
                 console.log("Detected Stitched Batch Content, using raw OCR results.");
@@ -172,7 +171,7 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // Priority 2: Layout Parsing (Markdown) - Standard Documents
+        // Priority 2: Layout Parsing (Markdown) - If available (unlikely in pure OCR endpoint)
         if (result.result && result.result.layoutParsingResults) {
             const parsingResults = result.result.layoutParsingResults;
             let fullMarkdown = "";
@@ -187,17 +186,17 @@ export async function POST(req: NextRequest) {
             const cleanedText = cleanOCRText(fullMarkdown);
 
             // Only return if we actually found text. 
-            // If Layout Parsing returns empty (e.g. single char considered noise), fall through to Raw OCR.
             if (cleanedText && cleanedText.length > 0) {
                 return NextResponse.json({ text: cleanedText });
             }
             console.log("Layout Parsing returned empty. Falling back to Raw OCR...");
         }
 
-        // Priority 2: Standard PP-OCRv5 (Plain Text) - from Doc Link
+        // Priority 3: Standard OCR (Plain Text) from 'ocrResults'
+        // This is the primary path for the new 'ocr' endpoint.
         if (result.result && result.result.ocrResults) {
             const ocrResults = result.result.ocrResults;
-            const text = ocrResults.map((r: any) => r.words || r.text || "").join("\n");
+            const text = ocrResults.map((r: any) => r.prunedResult || r.words || r.text || "").join("\n");
             const cleanedText = cleanOCRText(text);
             return NextResponse.json({ text: cleanedText });
         }
