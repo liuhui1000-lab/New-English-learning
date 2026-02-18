@@ -50,47 +50,31 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 tempCtx.fillRect(0, 0, img.width, img.height)
                 tempCtx.drawImage(img, 0, 0)
 
-                // 2. Scan for bounding box (Auto-Crop) & Contrast Boost
+                // 2. Scan for bounding box (Auto-Crop)
                 const imageData = tempCtx.getImageData(0, 0, img.width, img.height)
                 const data = imageData.data
                 let minX = img.width, minY = img.height, maxX = 0, maxY = 0
                 let foundAny = false
 
-                // Process Pixels: Contrast Boost + Bounding Box Scan
-                for (let i = 0; i < data.length; i += 4) {
-                    const r = data[i]
-                    const g = data[i + 1]
-                    const b = data[i + 2]
+                // Scan for content
+                for (let y = 0; y < img.height; y++) {
+                    for (let x = 0; x < img.width; x++) {
+                        const offset = (y * img.width + x) * 4
+                        const r = data[offset]
+                        const g = data[offset + 1]
+                        const b = data[offset + 2]
+                        const a = data[offset + 3]
 
-                    // Simple Binarization / Thresholding
-                    // If it's not 'white enough', treat it as ink.
-                    // Threshold 230 allows for some anti-aliasing but cuts out paper noise/compression artifacts.
-                    if (r < 230 || g < 230 || b < 230) {
-                        // Make it PURE BLACK for maximum contrast
-                        data[i] = 0
-                        data[i + 1] = 0
-                        data[i + 2] = 0
-
-                        // Update bounding box based on index
-                        const pixelIndex = i / 4
-                        const x = pixelIndex % img.width
-                        const y = Math.floor(pixelIndex / img.width)
-
-                        if (x < minX) minX = x
-                        if (x > maxX) maxX = x
-                        if (y < minY) minY = y
-                        if (y > maxY) maxY = y
-                        foundAny = true
-                    } else {
-                        // Make it PURE WHITE to clean background
-                        data[i] = 255
-                        data[i + 1] = 255
-                        data[i + 2] = 255
+                        // Threshold: If pixel is NOT white (and not transparent)
+                        if (a > 20 && (r < 240 || g < 240 || b < 240)) {
+                            if (x < minX) minX = x
+                            if (x > maxX) maxX = x
+                            if (y < minY) minY = y
+                            if (y > maxY) maxY = y
+                            foundAny = true
+                        }
                     }
                 }
-
-                // Put the High-Contrast data back to temp canvas so we draw the CLEARED version
-                tempCtx.putImageData(imageData, 0, 0)
 
                 // 3. Determine Cutout
                 // DEBUG LOGGING
@@ -112,7 +96,7 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
 
                 // 4. Create Final Canvas (Min Dimension 300)
                 const minDimension = 300
-                const padding = 40 // MORE PADDING (was 20) to give OCR context
+                const padding = 20 // Revert to 20px padding (40px might be too aggressive)
 
                 const availW = minDimension - (padding * 2)
                 const availH = minDimension - (padding * 2)

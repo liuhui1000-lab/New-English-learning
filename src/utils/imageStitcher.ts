@@ -111,27 +111,46 @@ export const stitchImages = (images: StitchedImageInput[], quality = 0.6): Promi
 export const parseStitchedOCRResult = (fullText: string): Record<string, string> => {
     const results: Record<string, string> = {};
 
-    // Split by the marker pattern [[ID:xyz]]
-    // Regex matches [[ID: and captures the ID until ]]
-    const parts = fullText.split(/\[\[ID:([^\]]+)\]\]/);
+    // Regex to match ID markers: supports [[ID:xxx]] or [ID:xxx] or [[ID:xxx]
+    // Capture group 1 is the UUID
+    const markerRegex = /(?:\[\[|\[)ID:([a-fA-F0-9\-]+)(?:\]\]|\])/g;
 
-    // parts[0] is usually empty or pre-amble
-    // parts[1] is ID1, parts[2] is Content1
-    // parts[3] is ID2, parts[4] is Content2
+    let match;
+    const matches: { id: string, index: number, length: number }[] = [];
 
-    for (let i = 1; i < parts.length; i += 2) {
-        const id = parts[i].trim();
-        let content = parts[i + 1] || "";
+    // 1. Find all marker positions
+    while ((match = markerRegex.exec(fullText)) !== null) {
+        matches.push({
+            id: match[1],
+            index: match.index,
+            length: match[0].length
+        });
+    }
+
+    // 2. Extract content between markers
+    for (let i = 0; i < matches.length; i++) {
+        const current = matches[i];
+        const next = matches[i + 1];
+
+        // Content starts after current marker
+        const start = current.index + current.length;
+        // Content ends at next marker start (or end of string)
+        const end = next ? next.index : fullText.length;
+
+        let content = fullText.substring(start, end);
 
         // Clean up content
-        content = content.replace(/<\/?[^>]+(>|$)/g, ""); // Strip HTML tags (<table>, <tr>, <td>)
+        content = content.replace(/<\/?[^>]+(>|$)/g, ""); // Strip HTML
         content = content.trim();
 
-        // Remove the visual separator line if OCR picked it up (e.g. underscores or dashes)
+        // Remove the markers themselves if they appear in content (double safety)
+        content = content.replace(/(?:\[\[|\[)ID:([a-fA-F0-9\-]+)(?:\]\]|\])/g, "");
+
+        // Remove common OCR artifacts like underscores or dashes
         content = content.replace(/^[-_—]{3,}/, '').trim();
 
-        if (id && content) {
-            results[id] = content;
+        if (current.id) {
+            results[current.id] = content;
         }
     }
 
