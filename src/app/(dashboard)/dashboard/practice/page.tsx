@@ -17,6 +17,7 @@ function PracticeContent() {
     const [submitted, setSubmitted] = useState(false)
     const [loading, setLoading] = useState(true)
     const [showHandwriting, setShowHandwriting] = useState(false)
+    const [enableAutoOCR, setEnableAutoOCR] = useState(true)
 
     useEffect(() => {
         fetchPracticeBatch()
@@ -304,6 +305,18 @@ function PracticeContent() {
                         </div>
                     </label>
                 )}
+
+                {showHandwriting && (
+                    <label className="flex items-center cursor-pointer ml-4">
+                        <div className="mr-2 text-xs font-medium text-gray-500">自动识别(Beta)</div>
+                        <input
+                            type="checkbox"
+                            className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                            checked={enableAutoOCR}
+                            onChange={(e) => setEnableAutoOCR(e.target.checked)}
+                        />
+                    </label>
+                )}
             </div>
 
             {questions.map((q, idx) => (
@@ -383,6 +396,7 @@ function PracticeContent() {
                                     height={150}
                                     placeholder="在 iPad 上用笔在此处草拟答案..."
                                     onRecognized={(text) => handleRecognized(q.id, text)}
+                                    enableAutoRecognize={enableAutoOCR}
                                 />
                             </div>
                         )}
