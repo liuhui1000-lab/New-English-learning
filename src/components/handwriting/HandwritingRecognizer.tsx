@@ -29,54 +29,109 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
     // Sync state to ref
     useEffect(() => { lastRecognizedRef.current = lastRecognized }, [lastRecognized])
 
-    // Helper to compress image
+    // Helper to compress image (with Auto-Crop)
     const compressImage = (dataUrl: string, maxWidth = 1000, quality = 0.95): Promise<string> => {
         return new Promise((resolve, reject) => {
             const img = new Image()
             img.src = dataUrl
             img.onload = () => {
-                // heuristic: for very small images (e.g. single letter), we need padding and decent size
-                const minDimension = 300
-
-                let width = img.width
-                let height = img.height
-                let scale = 1
-
-                // Resize logic (Downscale only)
-                if (width > maxWidth) {
-                    scale = maxWidth / width
-                    width = maxWidth
-                    height = height * scale
-                }
-
-                // Ensure canvas is at least minDimension (for context)
-                const canvasWidth = Math.max(width, minDimension)
-                const canvasHeight = Math.max(height, minDimension)
-
-                const canvas = document.createElement('canvas')
-                canvas.width = canvasWidth
-                canvas.height = canvasHeight
-
-                const ctx = canvas.getContext('2d')
-                if (!ctx) {
-                    reject(new Error("Failed to get compression canvas context"))
+                // 1. Create temp canvas to read pixels
+                const tempCanvas = document.createElement('canvas')
+                tempCanvas.width = img.width
+                tempCanvas.height = img.height
+                const tempCtx = tempCanvas.getContext('2d')
+                if (!tempCtx) {
+                    reject(new Error("Failed to get temp canvas context"))
                     return
                 }
 
-                // Fill white background
+                // Fill white first (handle transparency)
+                tempCtx.fillStyle = '#FFFFFF'
+                tempCtx.fillRect(0, 0, img.width, img.height)
+                tempCtx.drawImage(img, 0, 0)
+
+                // 2. Scan for bounding box (Auto-Crop)
+                const imageData = tempCtx.getImageData(0, 0, img.width, img.height)
+                const data = imageData.data
+                let minX = img.width, minY = img.height, maxX = 0, maxY = 0
+                let foundAny = false
+
+                // Optimization: Scan with stride of 2-4 if speed is needed, but precise is better for single char
+                for (let y = 0; y < img.height; y++) {
+                    for (let x = 0; x < img.width; x++) {
+                        const offset = (y * img.width + x) * 4
+                        const r = data[offset]
+                        const g = data[offset + 1]
+                        const b = data[offset + 2]
+                        // Simple threshold: if not white (allow some anti-aliasing noise)
+                        if (r < 250 || g < 250 || b < 250) {
+                            if (x < minX) minX = x
+                            if (x > maxX) maxX = x
+                            if (y < minY) minY = y
+                            if (y > maxY) maxY = y
+                            foundAny = true
+                        }
+                    }
+                }
+
+                // 3. Determine Cutout
+                let cutX = 0, cutY = 0, cutW = img.width, cutH = img.height
+
+                if (foundAny) {
+                    // Add small padding to the cut itself to avoid clipping edges
+                    const cutPadding = 10
+                    cutX = Math.max(0, minX - cutPadding)
+                    cutY = Math.max(0, minY - cutPadding)
+                    cutW = Math.min(img.width, maxX + cutPadding) - cutX
+                    cutH = Math.min(img.height, maxY + cutPadding) - cutY
+                } else {
+                    // Blank image -> will result in empty white canvas below
+                    cutW = 0; cutH = 0;
+                }
+
+                // 4. Create Final Canvas (Min Dimension 300)
+                const minDimension = 300
+                const padding = 20
+
+                // Logic: We want final image to contain the CUTOUT, but meet minDimension
+                let finalW = cutW + (padding * 2)
+                let finalH = cutH + (padding * 2)
+
+                // Scale down if cut is huge (larger than maxWidth)
+                let scale = 1
+                if (finalW > maxWidth) {
+                    scale = maxWidth / finalW
+                    finalW = maxWidth
+                    finalH = finalH * scale
+                }
+
+                // Enforce Min Dimension (Canvas Size)
+                const canvasW = Math.max(finalW, minDimension)
+                const canvasH = Math.max(finalH, minDimension)
+
+                const canvas = document.createElement('canvas')
+                canvas.width = canvasW
+                canvas.height = canvasH
+                const ctx = canvas.getContext('2d')
+
+                if (!ctx) { reject(new Error("Failed")); return; }
+
                 ctx.fillStyle = '#FFFFFF'
-                ctx.fillRect(0, 0, canvasWidth, canvasHeight)
+                ctx.fillRect(0, 0, canvasW, canvasH)
 
-                // Center the image
-                const x = (canvasWidth - width) / 2
-                const y = (canvasHeight - height) / 2
+                // Draw the CUTOUT centered
+                if (cutW > 0 && cutH > 0) {
+                    const destX = (canvasW - (cutW * scale)) / 2
+                    const destY = (canvasH - (cutH * scale)) / 2
 
-                // Draw image
-                ctx.drawImage(img, x, y, width, height)
+                    ctx.drawImage(
+                        tempCanvas,
+                        cutX, cutY, cutW, cutH, // Source rect
+                        destX, destY, cutW * scale, cutH * scale // Dest rect
+                    )
+                }
 
-                // Export to JPEG
-                const compressedDataUrl = canvas.toDataURL('image/jpeg', quality)
-                resolve(compressedDataUrl)
+                resolve(canvas.toDataURL('image/jpeg', quality))
             }
             img.onerror = (e) => reject(e)
         })
