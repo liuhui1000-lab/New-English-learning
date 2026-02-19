@@ -543,6 +543,53 @@ export default function AdminSettingsPage() {
                                     placeholder="..."
                                 />
                             </div>
+
+                            {/* OCR Test Connection Button */}
+                            <div className="pt-2">
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        const btn = document.getElementById('ocr-test-btn');
+                                        if (btn) btn.innerText = '测试中...';
+
+                                        try {
+                                            // 1x1 Pixel White JPEG Base64
+                                            const dummyImage = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwH7+AD/2Q=="
+
+                                            const res = await fetch('/api/ocr', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                    image: dummyImage,
+                                                    apiUrl: editOcrForm.apiUrl,
+                                                    token: editOcrForm.token
+                                                })
+                                            });
+
+                                            const data = await res.json();
+
+                                            if (res.ok) {
+                                                alert('✅ 连接成功！额度/接口正常。\n(注意：测试消耗了一次调用)');
+                                            } else {
+                                                // Specific handling for 429
+                                                if (res.status === 429) {
+                                                    alert('❌ 连接失败：配额已用完 (429)。请明日再试或更换 Key。');
+                                                } else {
+                                                    alert(`❌ 连接失败 (${res.status}): ` + (data.error || 'Unknown error'));
+                                                }
+                                            }
+                                        } catch (err: any) {
+                                            alert('❌ 网络错误: ' + err.message);
+                                        } finally {
+                                            if (btn) btn.innerText = '测试连接';
+                                        }
+                                    }}
+                                    id="ocr-test-btn"
+                                    className="text-indigo-600 text-sm hover:underline flex items-center"
+                                >
+                                    <Server className="w-4 h-4 mr-1" /> 测试连接 (Test Connection)
+                                </button>
+                            </div>
                         </div>
                         <div className="px-6 py-4 bg-gray-50 flex justify-end space-x-3">
                             <button

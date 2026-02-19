@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase"
 import { Question } from "@/types"
 import HandwritingRecognizer from "@/components/handwriting/HandwritingRecognizer"
 import { Loader2, AlertCircle } from "lucide-react"
+import { stitchImages, parseStitchedOCRResult } from "@/utils/imageStitcher"
 
 function PracticeContent() {
     const searchParams = useSearchParams()
@@ -17,6 +18,7 @@ function PracticeContent() {
     const [submitted, setSubmitted] = useState(false)
     const [loading, setLoading] = useState(true)
     const [showHandwriting, setShowHandwriting] = useState(false)
+    const [enableAutoOCR, setEnableAutoOCR] = useState(false) // Default to manual submission for cost saving
 
     useEffect(() => {
         fetchPracticeBatch()
@@ -155,59 +157,131 @@ function PracticeContent() {
         setLoading(false)
     }
 
-    const recognizerRefs = useRef<Record<string, { recognize: () => Promise<string | null> }>>({})
+    const recognizerRefs = useRef<Record<string, { recognize: () => Promise<string | null>; getDataUrl?: () => string | null }>>({})
+    const [processingStatus, setProcessingStatus] = useState("") // New state for detailed status
     const [isSubmitting, setIsSubmitting] = useState(false)
 
     const handleSubmit = async () => {
         setIsSubmitting(true)
+        setProcessingStatus("准备提交...") // Initial status
 
         // 1. Process Handwriting Batch (if any)
         if (showHandwriting) {
             console.log("Batch processing handwriting answers...")
             try {
-                const recognitionPromises = questions.map(async (q) => {
-                    const recognizer = recognizerRefs.current[q.id]
-                    if (recognizer) {
-                        // Skip if answer already manually filled? 
-                        // Strategy: If user manually typed something, keep it? 
-                        // Or handwriting overwrite? 
-                        // User request: "Auto recognize then fill" implies overwrite or fill if empty.
-                        // Let's assume handwriting is authoritative if present.
-                        const text = await recognizer.recognize()
-                        // Allow empty string (clearing answer) if user wrote nothing
-                        if (text !== null) {
-                            return { id: q.id, text }
+                // STRATEGY: Use Stitched Batch Recognition if Auto-OCR is disabled
+                // This saves API calls (1 call vs N calls) and is faster for bulk updates
+                if (!enableAutoOCR) {
+                    setProcessingStatus("正在合并图像并批量识别 (极速模式)...")
+                    const imagesToStitch: { id: string, dataUrl: string }[] = []
+
+                    // 1. Collect Valid Images
+                    for (const q of questions) {
+                        const recognizer = recognizerRefs.current[q.id]
+                        if (recognizer && recognizer.getDataUrl) {
+                            const dataUrl = recognizer.getDataUrl()
+                            // Only include if it has content (> 1000 length heuristic)
+                            if (dataUrl && dataUrl.length > 1000) {
+                                imagesToStitch.push({ id: q.id, dataUrl })
+                            }
                         }
                     }
-                    return null
-                })
 
-                const results = await Promise.all(recognitionPromises)
-                console.log("Batch Recognition Results:", results)
+                    if (imagesToStitch.length > 0) {
+                        // 2. Stitch (Returns image + coordinate map)
+                        console.log(`Stitching ${imagesToStitch.length} images...`)
+                        const { dataUrl: stitchedImage, rects } = await stitchImages(imagesToStitch)
 
-                // Update answers state synchronously before grading
-                // Note: setAnswers is async, so we must use a local variable for grading
-                const newAnswers = { ...answers }
-                results.forEach(r => {
-                    if (r) {
-                        console.log(`Setting answer for ${r.id}: ${r.text}`)
-                        newAnswers[r.id] = r.text
-                        // Also update UI state
-                        setAnswers(prev => ({ ...prev, [r.id]: r.text }))
-                    } else {
-                        console.warn("No recognition result for question (null returned)")
+                        // 3. Send Single API Request
+                        const base64Image = stitchedImage.replace(/^data:image\/\w+;base64,/, "");
+                        const res = await fetch('/api/ocr', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ image: base64Image })
+                        })
+
+                        if (!res.ok) {
+                            const errData = await res.json().catch(() => ({ error: res.statusText }));
+                            console.error("Batch OCR API Error:", errData);
+                            // Fallback to sequential if bulk fails? Or just throw.
+                            throw new Error(`Batch OCR Failed: ${errData.error || res.statusText}`)
+                        }
+
+                        const data = await res.json()
+                        console.log("Stitched OCR Raw Text:", data.text)
+
+                        // DEBUG: Log the full debug info to help diagnose issues if any
+                        if (data.debug) {
+                            console.log("Stitched OCR Full Debug:", JSON.stringify(data.debug));
+                        }
+
+                        // 4. Parse Results using COORDINATES
+                        // We pass the full DEBUG result (which has bounding boxes) and the RECTS map
+                        const parsedResults = parseStitchedOCRResult(data.debug, rects)
+                        console.log("Parsed Batch Answers (via coordinates):", parsedResults)
+
+                        // 5. Update State
+                        const newAnswers = { ...answers, ...parsedResults }
+                        setAnswers(newAnswers) // Update UI
+
+                        // 6. Check for Missing Answers (Partial Failure Recovery)
+                        const missingIds = imagesToStitch
+                            .map(img => img.id)
+                            .filter(id => !parsedResults[id] || !parsedResults[id].trim())
+
+                        if (missingIds.length > 0) {
+                            console.warn(`Batch OCR missed ${missingIds.length} questions. Triggering fallback...`, missingIds)
+                            setProcessingStatus(`批量识别完成，正在补充识别剩余 ${missingIds.length} 题...`)
+
+                            // Fallback Loop for missing items (Sequential for Rate Limit)
+                            // Strict Limit: 1 QPS, Concurrency 1
+                            let processedCount = 0;
+                            for (const id of missingIds) {
+                                processedCount++;
+                                setProcessingStatus(`正在补充识别: ${processedCount}/${missingIds.length}...`);
+
+                                const recognizer = recognizerRefs.current[id];
+                                if (recognizer) {
+                                    try {
+                                        console.log(`Fallback recognizing for ${id}...`);
+                                        const text = await recognizer.recognize();
+                                        console.log(`Fallback result for ${id}:`, text);
+
+                                        if (text) {
+                                            newAnswers[id] = text;
+                                            // Update UI incrementally
+                                            setAnswers(prev => ({ ...prev, [id]: text }));
+                                        } else {
+                                            console.warn(`Fallback returned empty for ${id}`);
+                                        }
+                                    } catch (err) {
+                                        console.error(`Fallback recognition failed for ${id}`, err);
+                                    }
+                                }
+
+                                // Strict Delay: > 1000ms to avoid 429
+                                if (processedCount < missingIds.length) {
+                                    await new Promise(r => setTimeout(r, 1200));
+                                }
+                            }
+                        }
+
+                        // Direct Submit
+                        setProcessingStatus("正在提交并保存成绩...")
+                        await finalizeSubmission(newAnswers)
+                        setIsSubmitting(false)
+                        setProcessingStatus("")
+                        return; // Exit early
                     }
-                })
-
-                // Pass newAnswers to grading logic
-                await finalizeSubmission(newAnswers)
-
+                }
             } catch (e) {
                 console.error("Batch recognition error:", e)
                 alert("手写识别过程中发生错误，将直接提交现有答案。")
                 await finalizeSubmission(answers)
             }
         } else {
+            // No handwriting enabled, just submit
+            setProcessingStatus("正在提交...")
             await finalizeSubmission(answers)
         }
 
@@ -304,6 +378,18 @@ function PracticeContent() {
                         </div>
                     </label>
                 )}
+
+                {showHandwriting && (
+                    <label className="flex items-center cursor-pointer ml-4">
+                        <div className="mr-2 text-xs font-medium text-gray-500">自动识别(Beta)</div>
+                        <input
+                            type="checkbox"
+                            className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                            checked={enableAutoOCR}
+                            onChange={(e) => setEnableAutoOCR(e.target.checked)}
+                        />
+                    </label>
+                )}
             </div>
 
             {questions.map((q, idx) => (
@@ -383,6 +469,7 @@ function PracticeContent() {
                                     height={150}
                                     placeholder="在 iPad 上用笔在此处草拟答案..."
                                     onRecognized={(text) => handleRecognized(q.id, text)}
+                                    enableAutoRecognize={enableAutoOCR}
                                 />
                             </div>
                         )}

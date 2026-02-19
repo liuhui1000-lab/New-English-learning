@@ -4,9 +4,9 @@ import { cookies } from "next/headers";
 
 export const maxDuration = 60; // Allow up to 60 seconds for OCR processing
 
-// Configuration for Paddle OCR (Layout Parsing)
-const PADDLE_API_URL = "https://5ejew8k4i019dek5.aistudio-app.com/layout-parsing";
-// Default token provided by user, but prefer Env/DB
+// Configuration for Paddle OCR (Official OCR Endpoint)
+const PADDLE_API_URL = "https://42g0y668o7v230je.aistudio-app.com/ocr";
+// Default token provided by user
 const DEFAULT_TOKEN = "483605608bc2d69ed9979463871dd4bc6095285a";
 
 /**
@@ -28,6 +28,10 @@ function cleanOCRText(text: string): string {
         .replace(/\s{2,}/g, ' ')
         // Clean up multiple underscores (normalize to 4)
         .replace(/_{5,}/g, '____')
+        // Remove HTML tags (div, img, figure, table, tr, td, etc.)
+        .replace(/<\/?(?:div|img|figure|span|p|table|tbody|thead|tr|td|th)[^>]*>/gi, ' ')
+        // Remove known table artifact strings that might remain
+        .replace(/(?:\||___){3,}/g, ' ')
         .trim();
 }
 
@@ -50,8 +54,12 @@ export async function POST(req: NextRequest) {
         )
 
         // 1. Get Settings from DB
-        let token = process.env.PADDLE_OCR_TOKEN || process.env.BAIDU_OCR_API_KEY;
-        let apiUrl = PADDLE_API_URL;
+        const body = await req.json();
+        const { image } = body;
+
+        // Allow explicit config override for testing
+        let token = body.token || process.env.PADDLE_OCR_TOKEN || process.env.BAIDU_OCR_API_KEY;
+        let apiUrl = body.apiUrl || PADDLE_API_URL;
 
         const { data: settings } = await supabase
             .from('system_settings')
@@ -62,21 +70,23 @@ export async function POST(req: NextRequest) {
             const map: Record<string, string> = {};
             settings.forEach((s: any) => map[s.key] = s.value);
 
-            // Prioritize new generic keys
-            if (map['ocr_token']) {
-                token = map['ocr_token'];
-                console.log("Using DB 'ocr_token':", token.substring(0, 5) + "...");
-            }
-            else if (map['paddle_ocr_token']) {
-                token = map['paddle_ocr_token'];
-                console.log("Using DB 'paddle_ocr_token':", token.substring(0, 5) + "...");
-            }
-            else if (map['baidu_ocr_api_key']) {
-                token = map['baidu_ocr_api_key'];
-                console.log("Using DB 'baidu_ocr_api_key':", token.substring(0, 5) + "...");
-            }
+            if (map['ocr_url'] && !body.apiUrl) apiUrl = map['ocr_url'];
 
-            if (map['ocr_url']) apiUrl = map['ocr_url'];
+            // Only override if not provided in body
+            if (!body.token) {
+                if (map['ocr_token']) {
+                    token = map['ocr_token'];
+                    console.log("Using DB 'ocr_token':", token.substring(0, 5) + "...");
+                }
+                else if (map['paddle_ocr_token']) {
+                    token = map['paddle_ocr_token'];
+                    console.log("Using DB 'paddle_ocr_token':", token.substring(0, 5) + "...");
+                }
+                else if (map['baidu_ocr_api_key']) {
+                    token = map['baidu_ocr_api_key'];
+                    console.log("Using DB 'baidu_ocr_api_key':", token.substring(0, 5) + "...");
+                }
+            }
         }
 
         // Fallback
@@ -88,16 +98,29 @@ export async function POST(req: NextRequest) {
         }
 
 
-        const { image } = await req.json(); // Base64 image
         if (!image) return NextResponse.json({ error: "No image provided" }, { status: 400 });
 
-        // 2. Prepare Payload
+        // Ensure clean base64 (strip data:image/...;base64, prefix if present)
+        const cleanImage = image.replace(/^data:image\/\w+;base64,/, "");
+
+        // 2. Prepare Payload (Match Official Spec)
+        // For images, fileType should be 1
         const payload = {
-            file: image,
+            file: cleanImage,
             fileType: 1,
+            // Official API Params (Minimal Set)
             useDocOrientationClassify: false,
             useDocUnwarping: false,
-            useChartRecognition: false
+            useTextlineOrientation: false,
+            // Force OCR on content incorrectly detected as "image"
+            use_ocr_for_image_block: true,
+            useOcrForImageBlock: true, // Try both casings
+            // Disable layout detection to prefer raw text lines
+            use_layout_detection: false,
+            useLayoutDetection: false, // Try both casings
+            // CRITICAL: Disable block merging to get separate results for close lines
+            merge_layout_blocks: false,
+            mergeLayoutBlocks: false
         };
 
         // 3. Call External API
@@ -135,8 +158,35 @@ export async function POST(req: NextRequest) {
             throw new Error(result.error_msg || "Unknown Error");
         }
 
+        if (result.result) {
+            console.log("OCR Result Keys:", Object.keys(result.result));
+            if (result.result.ocrResults) console.log("Has ocrResults:", result.result.ocrResults.length);
+            if (result.result.layoutParsingResults) console.log("Has layoutParsingResults:", result.result.layoutParsingResults.length);
+            // Log model info if present (e.g. algo_version)
+            if (result.result.algo_version) console.log("OCR Algo Version:", result.result.algo_version);
+
+            // DEBUG: Print the raw ocrResults to see what's happening
+            if (result.result.ocrResults) {
+                console.log("Raw OCR Results:", JSON.stringify(result.result.ocrResults.slice(0, 3)));
+            }
+        }
+
         // 4. Parse Response
-        // Priority 1: Layout Parsing (Markdown) - from User's Script
+
+        // Priority 1: Check for Stitched Batch Content (Raw OCR Text)
+        if (result.result && result.result.ocrResults) {
+            const ocrResults = result.result.ocrResults;
+            // Support 'prunedResult' (official API) as well as 'words'/'text' fallbacks.
+            const rawText = ocrResults.map((r: any) => r.prunedResult || r.words || r.text || "").join("\n");
+
+            if (rawText.includes("[[ID:")) {
+                console.log("Detected Stitched Batch Content, using raw OCR results.");
+                const cleanedText = cleanOCRText(rawText);
+                return NextResponse.json({ text: cleanedText, debug: result });
+            }
+        }
+
+        // Priority 2: Layout Parsing (Markdown) - If available (unlikely in pure OCR endpoint)
         if (result.result && result.result.layoutParsingResults) {
             const parsingResults = result.result.layoutParsingResults;
             let fullMarkdown = "";
@@ -149,18 +199,37 @@ export async function POST(req: NextRequest) {
 
             // Clean OCR artifacts
             const cleanedText = cleanOCRText(fullMarkdown);
-            return NextResponse.json({ text: cleanedText });
+
+            // Only return if we actually found text. 
+            if (cleanedText && cleanedText.length > 0) {
+                return NextResponse.json({ text: cleanedText, debug: result });
+            }
+            console.log("Layout Parsing returned empty. Falling back to Raw OCR...");
         }
 
-        // Priority 2: Standard PP-OCRv5 (Plain Text) - from Doc Link
+        // Priority 3: Standard OCR (Plain Text) from 'ocrResults'
+        // This is the primary path for the new 'ocr' endpoint.
         if (result.result && result.result.ocrResults) {
             const ocrResults = result.result.ocrResults;
-            const text = ocrResults.map((r: any) => r.words || r.text || "").join("\n");
+            const text = ocrResults.map((r: any) => {
+                // IMPORTANT: The API might return text in different fields.
+                // Standard: prunedResult
+                // Layout: text
+                // Others: words
+                const val = r.prunedResult || r.words || r.text || "";
+                return val;
+            }).join("\n");
+
             const cleanedText = cleanOCRText(text);
-            return NextResponse.json({ text: cleanedText });
+
+            // Return debug info in the response so client can see it
+            return NextResponse.json({ text: cleanedText, debug: result });
         }
 
-        throw new Error("Invalid response structure: No layoutParsingResults or ocrResults found");
+        // Priority 4: Handle "No Content Found" gracefully
+        // If we reached here, it means the API call was valid but no text blocks were returned.
+        console.warn("OCR found no text content (layout or raw). Returning empty string.");
+        return NextResponse.json({ text: "", debug: result });
 
     } catch (error: any) {
         console.error("OCR Proxy Error:", error);

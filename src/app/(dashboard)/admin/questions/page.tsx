@@ -126,7 +126,32 @@ export default function QuestionBankPage() {
         }
     }
 
-    const [batchSize, setBatchSize] = useState(15) // Default batch size
+    const [batchSize, setBatchSize] = useState(10) // Reduced default batch size
+
+    const fetchWithRetry = async (url: string, options: any, maxRetries = 3): Promise<Response> => {
+        let lastError: any;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            if (attempt > 0) {
+                const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                console.log(`Retrying after ${Math.round(delay)}ms... (Attempt ${attempt}/${maxRetries})`);
+                setStatusMessage(`AI 繁忙，正在重试 (${attempt}/${maxRetries})...`);
+                await new Promise(r => setTimeout(r, delay));
+            }
+
+            try {
+                const res = await fetch(url, options);
+                if (res.status === 429 && attempt < maxRetries) {
+                    continue; // Trigger retry
+                }
+                return res;
+            } catch (err) {
+                lastError = err;
+                if (attempt < maxRetries) continue;
+                throw err;
+            }
+        }
+        throw lastError;
+    }
 
     const handleBatchAIAnalyze = async () => {
         const idsToProcess = Array.from(selectedIds)
@@ -151,23 +176,28 @@ export default function QuestionBankPage() {
                 const items = batch.map(q => q.content)
 
                 try {
-                    const res = await fetch('/api/ai/analyze', {
+                    const res = await fetchWithRetry('/api/ai/analyze', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ items, mode: 'tagging' })
                     })
 
                     if (!res.ok) {
-                        const errText = await res.text().catch(() => res.statusText)
-                        console.error(`Batch ${Math.floor(i / batchSize) + 1} failed:`, errText)
-                        continue // Skip this batch but continue with others
+                        const errData = await res.json().catch(() => ({ error: res.statusText }));
+                        const errorMsg = errData.details || errData.error || res.statusText;
+                        console.error(`Batch ${Math.floor(i / batchSize) + 1} failed:`, errorMsg)
+
+                        if (res.status === 429) {
+                            alert(`AI 分析受限 (429): ${errorMsg}\n建议稍后再试或检查 AI 余额（如果您使用的是 DeepSeek/智谱等付费接口）。`);
+                            break; // Stop the whole loop
+                        }
+                        continue // Skip other batch failures
                     }
 
                     const { results } = await res.json()
 
                     const updates = results.map((r: any, idx: number) => {
                         const q = batch[idx]
-                        // ... (keep existing mapping logic)
                         const newTags = new Set(q.tags || [])
                         if (r.topic) newTags.add(`Topic:${r.topic}`)
                         if (r.key_point) newTags.add(`Point:${r.key_point}`)
@@ -194,8 +224,8 @@ export default function QuestionBankPage() {
                     console.error(`Batch ${Math.floor(i / batchSize) + 1} exception:`, batchErr)
                 }
 
-                // Add delay to avoid rate limiting
-                await new Promise(resolve => setTimeout(resolve, 1000))
+                // Add delay between batches
+                await new Promise(resolve => setTimeout(resolve, 800))
             }
 
             setStatusMessage("分析完成")
@@ -381,7 +411,7 @@ export default function QuestionBankPage() {
                                 <input
                                     type="checkbox"
                                     onChange={handleSelectAll}
-                                    checked={questions.length > 0 && selectedIds.size >= questions.length} // Simple check
+                                    checked={questions.length > 0 && questions.every(q => selectedIds.has(q.id))}
                                     className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                                 />
                             </th>

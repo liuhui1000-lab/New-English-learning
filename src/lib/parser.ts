@@ -478,10 +478,9 @@ async function extractText(file: File, onProgress?: (msg: string) => void, skipO
                 const items: any[] = textContent.items as any[];
                 const pageText = items.map((item) => item.str).join(" ");
 
-                // Improved OCR Trigger: If text is empty OR very short/garbage (likely scanned with few artifacts)
-                // BUT ONLY IF NOT SKIPPING OCR
-                if (!skipOCR && (/\{#\{.*?\}#\}/.test(pageText) || pageText.trim().length < 50)) { // Reduced threshold slightly
-                    console.warn(`Page ${i} text length ${pageText.trim().length}, switching to OCR...`);
+                // Improved OCR Trigger Check
+                if (!skipOCR && isGarbageText(pageText)) {
+                    console.warn(`Page ${i}: Native text deemed unusable (empty/garbage/short). Switching to OCR...`);
                     useOCR = true;
                     fullText = "";
                     break;
@@ -490,9 +489,16 @@ async function extractText(file: File, onProgress?: (msg: string) => void, skipO
             }
 
             if (useOCR && !skipOCR) {
-                if (onProgress) onProgress(`检测到扫描件，切换至 OCR 模式 (较慢)...`);
+                if (onProgress) onProgress(`检测到扫描件，切换至 OCR Mode (需排队处理)...`);
                 for (let i = 1; i <= totalPages; i++) {
-                    if (onProgress) onProgress(`正在 OCR 识别第 ${i}/${totalPages} 页 (此步骤最耗时)...`);
+                    if (onProgress) onProgress(`正在 OCR 识别第 ${i}/${totalPages} 页...`);
+
+                    // Rate Limit Protection: Wait 1.5s before processing each page
+                    // This ensures we never exceed 1 QPS even if the API responds instantly
+                    if (i > 1) {
+                        await new Promise(r => setTimeout(r, 1500));
+                    }
+
                     const page = await pdf.getPage(i);
                     try {
                         const ocrText = await ocrPdfPage(page);
@@ -744,26 +750,104 @@ async function extractPageText(page: any, scale: number, quality: number): Promi
     }
 
     const image = base64Image.replace(/^data:image\/\w+;base64,/, "");
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 50000);
 
-    try {
-        const response = await fetch('/api/ocr', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image }),
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
+    // Retry Logic for Rate Limits (429) & Transient Errors
+    const MAX_RETRIES = 3;
+    let attempt = 0;
 
-        if (!response.ok) throw new Error(`OCR Error: ${response.status}`);
-        const data = await response.json();
-        if (data.error) throw new Error(data.error);
+    while (attempt <= MAX_RETRIES) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s per individual attempt
 
-        return data.text || "";
-    } catch (error: any) {
-        clearTimeout(timeoutId);
-        if (error.name === 'AbortError') throw new Error("OCR Timeout");
-        throw error;
+        try {
+            const response = await fetch('/api/ocr', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image }),
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            if (response.status === 429) {
+                // Rate Limit Hit
+                const retryAfter = response.headers.get("Retry-After");
+                let waitMs = retryAfter ? (parseInt(retryAfter) * 1000) : (Math.pow(2, attempt) * 1000 + Math.random() * 500);
+                // Cap wait time
+                waitMs = Math.min(waitMs, 10000);
+
+                console.warn(`OCR Rate Limit (429) on attempt ${attempt + 1}. Waiting ${waitMs}ms...`);
+
+                if (attempt < MAX_RETRIES) {
+                    await new Promise(r => setTimeout(r, waitMs));
+                    attempt++;
+                    continue;
+                } else {
+                    throw new Error("OCR Rate Limit Exceeded (Max Retries)");
+                }
+            }
+
+            if (!response.ok) {
+                // For 5xx errors, maybe retry once?
+                if (response.status >= 500 && attempt < MAX_RETRIES) {
+                    console.warn(`OCR Server Error (${response.status}). Retrying...`);
+                    await new Promise(r => setTimeout(r, 1000));
+                    attempt++;
+                    continue;
+                }
+                throw new Error(`OCR Error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (data.error) throw new Error(data.error);
+
+            return data.text || "";
+
+        } catch (error: any) {
+            clearTimeout(timeoutId);
+
+            // AbortError -> Timeout
+            if (error.name === 'AbortError') {
+                if (attempt < MAX_RETRIES) {
+                    console.warn(`OCR Timeout on attempt ${attempt + 1}. Retrying...`);
+                    attempt++;
+                    continue;
+                }
+                throw new Error("OCR Timeout (Max Retries)");
+            }
+
+            // Network errors (fetch failed) -> Retry
+            if (attempt < MAX_RETRIES && error.message !== "OCR Rate Limit Exceeded (Max Retries)") {
+                console.warn(`OCR Network Error: ${error.message}. Retrying...`);
+                await new Promise(r => setTimeout(r, 1000));
+                attempt++;
+                continue;
+            }
+
+            throw error;
+        }
     }
+    throw new Error("OCR Failed after retries");
+}
+
+/**
+ * Heuristic to detect if native PDF text is valid or garbage/scanning artifacts.
+ * Returns TRUE if text seems unusable (should trigger OCR).
+ */
+function isGarbageText(text: string): boolean {
+    const trimmed = text.trim();
+    if (trimmed.length < 20) return true; // Too short to be a valid page content
+    if (/\{#\{.*?\}#\}/.test(text)) return true; // Font encoding garbage pattern
+
+    // Check for high density of valid characters
+    // Valid = alphanumeric, chinese, common punctuation
+    const validChars = trimmed.match(/[\u4e00-\u9fa5a-zA-Z0-9\s\.,;!?'"()\[\]]/g)?.length || 0;
+    const ratio = validChars / trimmed.length;
+
+    // If less than 50% of characters are "valid", it's likely encoding garbage (e.g. )
+    if (ratio < 0.5) {
+        console.warn(`Text Quality Check Failed: Valid Ratio ${ratio.toFixed(2)} (< 0.5)`);
+        return true;
+    }
+
+    return false;
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useRef, useState, useImperativeHandle, forwardRef } from 'react'
+import React, { useRef, useState, useImperativeHandle, forwardRef, useEffect } from 'react'
 import HandwritingCanvas, { HandwritingCanvasRef } from './HandwritingCanvas'
 import { Check, Loader2, RefreshCw } from 'lucide-react'
 
@@ -8,36 +8,208 @@ interface HandwritingRecognizerProps {
     onRecognized: (text: string) => void
     height?: number | string
     placeholder?: string
+    enableAutoRecognize?: boolean
 }
 
 export interface HandwritingRecognizerRef {
     clear: () => void
     recognize: () => Promise<string | null>
+    getDataUrl: () => string | null
 }
 
-const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRecognizerProps>(({ onRecognized, height = 150, placeholder }, ref) => {
+const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRecognizerProps>(({ onRecognized, height = 150, placeholder, enableAutoRecognize = false }, ref) => {
     const canvasRef = useRef<HandwritingCanvasRef>(null)
     const [recognizing, setRecognizing] = useState(false)
     const [lastRecognized, setLastRecognized] = useState<string | null>(null)
+    const isDirty = useRef(false)
+    const strokeVersion = useRef(0)
+    const lastRecognizedRef = useRef<string | null>(null)
+    const [isAutoRecognizing, setIsAutoRecognizing] = useState(false)
 
-    const performRecognition = async (): Promise<string | null> => {
+    // Sync state to ref
+    useEffect(() => { lastRecognizedRef.current = lastRecognized }, [lastRecognized])
+
+    // Helper to compress image (with Auto-Crop)
+    const compressImage = (dataUrl: string, maxWidth = 1000, quality = 0.95): Promise<string | null> => {
+        return new Promise((resolve, reject) => {
+            const img = new Image()
+            img.src = dataUrl
+            img.onload = () => {
+                // 1. Create temp canvas to read pixels
+                const tempCanvas = document.createElement('canvas')
+                tempCanvas.width = img.width
+                tempCanvas.height = img.height
+                const tempCtx = tempCanvas.getContext('2d')
+                if (!tempCtx) {
+                    reject(new Error("Failed to get temp canvas context"))
+                    return
+                }
+
+                // Fill white first (handle transparency)
+                tempCtx.fillStyle = '#FFFFFF'
+                tempCtx.fillRect(0, 0, img.width, img.height)
+                tempCtx.drawImage(img, 0, 0)
+
+                // 2. Scan for bounding box AND Binarize in one pass
+                const imageData = tempCtx.getImageData(0, 0, img.width, img.height)
+                const data = imageData.data
+                let minX = img.width, minY = img.height, maxX = 0, maxY = 0
+                let foundAny = false
+
+                for (let i = 0; i < data.length; i += 4) {
+                    const r = data[i]
+                    const g = data[i + 1]
+                    const b = data[i + 2]
+
+                    // BOUNDS DETECTION ONLY (Don't binarize)
+                    // If pixel is NOT white (detect ink)
+                    if (r < 250 || g < 250 || b < 250) {
+                        // Found ink
+
+                        // Update bounds
+                        const x = (i / 4) % img.width
+                        const y = Math.floor((i / 4) / img.width)
+
+                        if (!foundAny) {
+                            minX = x; minY = y; maxX = x; maxY = y;
+                            foundAny = true
+                        } else {
+                            minX = Math.min(minX, x)
+                            minY = Math.min(minY, y)
+                            maxX = Math.max(maxX, x)
+                            maxY = Math.max(maxY, y)
+                        }
+                    }
+                }
+
+                // No need to putImageData back because we didn't modify pixels
+                // We want the NATURAL anti-aliased strokes.
+
+                if (!foundAny) {
+                    console.warn("Auto-Crop finding NO content (Blank Canvas)");
+                    resolve(null); // Return null to signal empty content
+                    return;
+                }
+
+                // 3. Determine Cutout
+                let cutX = 0, cutY = 0, cutW = img.width, cutH = img.height
+
+                if (foundAny) {
+                    const cutPadding = 10
+                    cutX = Math.max(0, minX - cutPadding)
+                    cutY = Math.max(0, minY - cutPadding)
+                    cutW = Math.min(img.width, maxX + cutPadding) - cutX
+                    cutH = Math.min(img.height, maxY + cutPadding) - cutY
+                } else {
+                    cutW = 0; cutH = 0;
+                }
+
+                // 4. Create Final Canvas (Fit to content)
+                const padding = 50 // Increased padding for context
+                const targetHeight = 300 // Target a LARGER height (300px) typical for OCR. 100px is too small.
+
+                let scale = 1
+                if (cutH > 0) {
+                    scale = targetHeight / cutH
+                    // Allow upscaling up to 5x to reach 300px
+                    scale = Math.min(scale, 5)
+                }
+
+                const finalW = cutW * scale
+                const finalH = cutH * scale
+
+                const canvasW = finalW + (padding * 2)
+                const canvasH = finalH + (padding * 2)
+
+                const canvas = document.createElement('canvas')
+                canvas.width = canvasW
+                canvas.height = canvasH
+                const ctx = canvas.getContext('2d')
+
+                if (!ctx) { reject(new Error("Failed")); return; }
+
+                // Fill White Background
+                ctx.fillStyle = '#FFFFFF'
+                ctx.fillRect(0, 0, canvasW, canvasH)
+
+                // Draw the CUTOUT centered
+                if (cutW > 0 && cutH > 0) {
+                    const destX = padding
+                    const destY = padding
+
+                    // Enable Smoothing for Natural Images (Better for OCR model)
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+
+                    // Draw from TEMP CANVAS (which has natural pixels)
+                    ctx.drawImage(
+                        tempCanvas,
+                        cutX, cutY, cutW, cutH, // Source rect
+                        destX, destY, finalW, finalH // Dest rect
+                    )
+                }
+
+                // Use High Quality JPEG (0.95)
+                const base64 = canvas.toDataURL('image/jpeg', 0.95)
+
+                console.log(`Recognizing (v${strokeVersion.current})... Original size: ${dataUrl.length}`)
+
+                resolve(base64)
+            }
+            img.onerror = (e) => reject(e)
+        })
+    }
+
+    // Auto-recognition state
+    const debounceTimer = useRef<NodeJS.Timeout | null>(null)
+
+    const handleStrokeEnd = () => {
+        isDirty.current = true
+        strokeVersion.current += 1
+
+        // Clear existing timer
+        if (debounceTimer.current) clearTimeout(debounceTimer.current)
+
+        // Only start auto-recognition if enabled
+        if (enableAutoRecognize) {
+            // Set new timer (1.5s debounce)
+            debounceTimer.current = setTimeout(() => {
+                performRecognition(true)
+            }, 1500)
+        }
+    }
+
+    const performRecognition = async (isAuto = false): Promise<string | null> => {
+        const currentVersion = strokeVersion.current
         const dataUrl = canvasRef.current?.getDataUrl()
 
         // Check for empty or too short content (blank canvas)
         if (!dataUrl || dataUrl.length < 1000) {
-            // Return empty string to explicitly clear the answer
             return ""
         }
 
-        setRecognizing(true)
-        setLastRecognized(null)
+        if (isAuto) setIsAutoRecognizing(true)
+        else setRecognizing(true)
+
+        // Don't clear lastRecognized immediately on auto to avoid flickering
+        if (!isAuto) setLastRecognized(null)
+
         let resultText = ""
 
         try {
-            // 1. Try Server-side OCR (Paddle/Active Provider)
-            // console.log("Attempting Server-side OCR...")
+            // Compress Image
+            console.log(isAuto ? `Auto-Recognizing (v${currentVersion})...` : `Recognizing (v${currentVersion})...`, "Original size:", dataUrl.length)
+            const compressedDataUrl = await compressImage(dataUrl)
 
-            const base64Image = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+            if (!compressedDataUrl) {
+                console.log("Canvas is blank (auto-crop found nothing). Skipping OCR.");
+                return "";
+            }
+
+            console.log("Compressed size:", compressedDataUrl.length)
+
+            // 1. Try Server-side OCR (Paddle/Active Provider)
+            const base64Image = compressedDataUrl.replace(/^data:image\/\w+;base64,/, "");
             const res = await fetch('/api/ocr', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -46,50 +218,51 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
 
             if (!res.ok) {
                 const errorText = await res.text();
+                // If 429 in auto mode, just warn and stop silently
+                if (res.status === 429 && isAuto) {
+                    console.warn("Auto-OCR rate limited, skipping.")
+                    return null
+                }
                 throw new Error(`Server OCR failed: ${res.status} ${errorText}`);
             }
 
             const data = await res.json()
+
+            // Log Server Debug Info
+            if (data.debug) {
+                console.log("Server Debug Info (Full):", JSON.stringify(data.debug, null, 2));
+
+                // Also log warnings if empty
+                if (!data.text) {
+                    console.warn("Server returned empty text but success status.");
+                }
+            }
+
             if (data.text) {
                 resultText = data.text
             }
 
         } catch (serverError) {
-            console.warn("Server-side OCR failed, falling back to Tesseract...", serverError)
-
-            // 2. Fallback to Client-side Tesseract.js
-            try {
-                if (!(window as any).Tesseract) {
-                    await new Promise((resolve, reject) => {
-                        const script = document.createElement('script')
-                        script.src = 'https://unpkg.com/tesseract.js@5.1.0/dist/tesseract.min.js'
-                        script.onload = resolve
-                        script.onerror = reject
-                        document.head.appendChild(script)
-                    })
-                }
-
-                const Tesseract = (window as any).Tesseract
-                const { data: { text } } = await Tesseract.recognize(dataUrl, 'eng', {
-                    // logger: (m: any) => console.log(m)
-                })
-
-                const cleanText = text.trim()
-                if (cleanText && cleanText.length > 0) {
-                    console.log("Tesseract Success:", cleanText)
-                    resultText = cleanText
-                }
-            } catch (clientError: any) {
-                console.error("Both OCR methods failed", clientError)
-                return null
-            }
+            console.error("Server-side OCR failed", serverError)
+            return null
         } finally {
-            setRecognizing(false)
+            if (isAuto) setIsAutoRecognizing(false)
+            else setRecognizing(false)
         }
 
         if (resultText) {
-            setLastRecognized(resultText)
-            onRecognized(resultText)
+            // Only update cache/clean state if version matches (no new strokes happened)
+            if (strokeVersion.current === currentVersion) {
+                setLastRecognized(resultText)
+                isDirty.current = false // Mark as clean
+                onRecognized(resultText)
+            } else {
+                console.log(`Recognition (v${currentVersion}) finished but new strokes detected (v${strokeVersion.current}). Marking as outdated.`)
+                // We still update the UI with what we got, but we don't mark as clean, 
+                // so subsequent submit will force re-recognition.
+                setLastRecognized(resultText)
+                onRecognized(resultText)
+            }
             return resultText
         }
         return null
@@ -99,9 +272,18 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
         clear: () => {
             canvasRef.current?.clear()
             setLastRecognized(null)
+            isDirty.current = false
         },
         recognize: async () => {
+            // Optimization: If not dirty and has result, return cached
+            if (!isDirty.current && lastRecognizedRef.current) {
+                console.log("Returning cached OCR result")
+                return lastRecognizedRef.current
+            }
             return await performRecognition()
+        },
+        getDataUrl: () => {
+            return canvasRef.current?.getDataUrl() || null
         }
     }))
 
@@ -116,6 +298,7 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 height={height}
                 placeholder={placeholder}
                 className={recognizing ? "opacity-50 pointer-events-none" : ""}
+                onStrokeEnd={handleStrokeEnd}
             />
 
             <div className="absolute bottom-2 right-12 flex space-x-2">
@@ -133,7 +316,14 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 </button>
             </div>
 
-            {lastRecognized && !recognizing && (
+            {/* Auto-Saving Indicator */}
+            {isAutoRecognizing && (
+                <div className="absolute top-2 right-2 bg-indigo-50 text-indigo-600 text-xs px-2 py-1 rounded-full animate-pulse flex items-center">
+                    <RefreshCw className="w-3 h-3 mr-1 animate-spin" /> 自动识别中...
+                </div>
+            )}
+
+            {lastRecognized && !recognizing && !isAutoRecognizing && (
                 <div className="absolute top-2 right-2 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full animate-in fade-in slide-in-from-bottom-2 flex items-center">
                     <Check className="w-3 h-3 mr-1" /> 已填入: {lastRecognized}
                 </div>

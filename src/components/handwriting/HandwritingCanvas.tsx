@@ -9,6 +9,7 @@ interface HandwritingCanvasProps {
     lineWidth?: number;
     className?: string;
     placeholder?: string;
+    onStrokeEnd?: () => void;
 }
 
 export interface HandwritingCanvasRef {
@@ -19,10 +20,11 @@ export interface HandwritingCanvasRef {
 const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProps>(({
     width = "100%",
     height = 200,
-    color = "#3b82f6",
-    lineWidth = 3,
+    color = "#000000",
+    lineWidth = 4,
     className = "",
-    placeholder = "请在此处手写作答..."
+    placeholder = "请在此处手写作答...",
+    onStrokeEnd
 }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
@@ -89,7 +91,10 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
     };
 
     const stopDrawing = () => {
-        setIsDrawing(false);
+        if (isDrawing) {
+            setIsDrawing(false);
+            if (onStrokeEnd) onStrokeEnd();
+        }
     };
 
     const handleClear = () => {
