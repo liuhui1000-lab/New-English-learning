@@ -133,9 +133,9 @@ export default function UserDetailPage() {
         // 1. Quiz Results (Total answered & Accuracy)
         const { data: quizData } = await supabase
             .from('quiz_results')
-            .select('is_correct, created_at')
+            .select('is_correct, attempt_at')
             .eq('user_id', userId)
-            .order('created_at', { ascending: false })
+            .order('attempt_at', { ascending: false })
 
         let total = 0
         let correct = 0
@@ -144,7 +144,7 @@ export default function UserDetailPage() {
         if (quizData && quizData.length > 0) {
             total = quizData.length
             correct = quizData.filter(q => q.is_correct).length
-            lastActive = new Date(quizData[0].created_at).toLocaleString('zh-CN')
+            lastActive = new Date(quizData[0].attempt_at).toLocaleString('zh-CN')
         }
 
         // 2. Study Progress (Mastered words/questions)
@@ -282,15 +282,15 @@ export default function UserDetailPage() {
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <h3 className="text-gray-500 text-sm font-medium">总做题数</h3>
+                    <h3 className="text-gray-500 text-sm font-medium">累计答题次数</h3>
                     <p className="text-3xl font-bold text-indigo-600 mt-2">{stats.totalQuestions}</p>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <h3 className="text-gray-500 text-sm font-medium">正确率</h3>
-                    <p className="text-3xl font-bold text-green-600 mt-2">{stats.correctRate}%</p>
+                    <h3 className="text-gray-500 text-sm font-medium" title="计算逻辑: 累计答对总题数 ÷ 累计答题总次数 × 100%">综合正确率 <span className="text-xs text-gray-400 font-normal cursor-help">(?)</span></h3>
+                    <p className="text-3xl font-bold text-green-600 mt-2" title={`具体数据: 答对 ${Math.round((stats.correctRate / 100) * stats.totalQuestions)} 题 / 共答 ${stats.totalQuestions} 题`}>{stats.correctRate}%</p>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <h3 className="text-gray-500 text-sm font-medium">已掌握 / 学习中</h3>
+                    <h3 className="text-gray-500 text-sm font-medium">掌握进度 (累计掌握 / 正在学习)</h3>
                     <p className="text-3xl font-bold text-blue-600 mt-2">
                         {stats.masteredCount} <span className="text-sm text-gray-400">/ {stats.learningCount}</span>
                     </p>

@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react"
 import { createBrowserClient } from "@supabase/ssr"
-import { FileDown, AlertTriangle, CheckCircle, RefreshCw, Trash } from "lucide-react"
+import { FileDown, AlertTriangle, CheckCircle, RefreshCw, Trash, MoreVertical, ChevronDown } from "lucide-react"
 import SmartTooltip from "@/components/SmartTooltip"
+import { Menu, Transition } from '@headlessui/react'
+import { Fragment } from 'react'
 
 export default function ErrorNotebookPage() {
     const [mistakes, setMistakes] = useState<any[]>([])
@@ -264,14 +266,12 @@ export default function ErrorNotebookPage() {
         let confirmMsg = ''
         if (mode === 'all') {
             if (filter === 'all') {
-                confirmMsg = `⚠️ 高风险操作\n\n确定要清空【所有类型】的错题吗？\n这将同时删除：\n1. 所有单词拼写错题\n2. 所有练习错题\n\n共 ${targets.length} 条记录，删除后无法恢复！`
-            } else if (filter === 'recitation') {
-                confirmMsg = `确定要清空当前显示的【单词拼写】错题吗？\n（不用担心，【练习题】错题不会被删除）`
-            } else if (filter === 'quiz') {
-                confirmMsg = `确定要清空当前显示的【练习题】错题吗？\n（不用担心，【单词拼写】错题不会被删除）`
+                confirmMsg = `⚠️ 高风险操作\n\n确定要清空【所有类型】的错题吗？\n这将同时删除所有练习记录和背诵进度，共 ${targets.length} 条数据。`
+            } else {
+                confirmMsg = `确定要清空当前分类下的 ${targets.length} 条记录吗？`
             }
         } else {
-            confirmMsg = `确定要删除选中的 ${targets.length} 条错题记录吗？`
+            confirmMsg = `确定要删除这 ${targets.length} 条记录吗？\n删除后，对应题目的错误次数将减 1，首页统计也会同步更新。`
         }
 
         if (!confirm(confirmMsg)) return
@@ -321,80 +321,146 @@ export default function ErrorNotebookPage() {
         }
     }
 
+    const handleMastered = async (id: string) => {
+        if (!confirm("确定已完全掌握该题吗？\n这将清空该题【所有】历史错误记录，并标记为已掌握。")) return
+
+        setLoading(true)
+        try {
+            // 1. Deep Cleanup Quiz Results (Delete ALL historical logs for this question)
+            const { error: quizError } = await supabase
+                .from('quiz_results')
+                .delete()
+                .eq('question_id', id)
+
+            if (quizError) throw quizError
+
+            // 2. Mark User Progress as Mastered
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user) {
+                const { error: progressError } = await supabase
+                    .from('user_progress')
+                    .upsert({
+                        user_id: user.id,
+                        question_id: id,
+                        status: 'mastered',
+                        attempts: 0,
+                        last_attempt_at: new Date().toISOString(),
+                        next_review_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+                    })
+
+                if (progressError) throw progressError
+            }
+
+            alert("已标记为掌握，历史错误频率已归零")
+            setSelectedIds(new Set())
+            fetchMistakes()
+
+        } catch (e: any) {
+            console.error(e)
+            alert("操作失败: " + e.message)
+        } finally {
+            setLoading(false)
+        }
+    }
+
     return (
         <div className="space-y-6 max-w-5xl mx-auto">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
-                <h2 className="text-2xl font-bold text-gray-900">我的错题本</h2>
+                <div className="flex items-center gap-3">
+                    <h2 className="text-2xl font-bold text-gray-900">错题本</h2>
+                    <span className="bg-gray-100 text-gray-500 text-xs px-2 py-1 rounded-full font-medium">
+                        共 {mistakes.length} 道题
+                    </span>
+                </div>
 
-                <div className="flex flex-wrap items-center gap-3">
-                    {/* Bulk Actions */}
-                    {selectedIds.size > 0 && (
-                        <div className="flex items-center bg-red-50 px-3 py-1.5 rounded-lg border border-red-100 animate-in fade-in">
-                            <span className="text-sm text-red-700 mr-3 font-medium">已选 {selectedIds.size} 项</span>
-                            <button
-                                onClick={() => handleDelete('selected')}
-                                className="text-xs bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 flex items-center shadow-sm"
-                            >
-                                <Trash className="w-3 h-3 mr-1" /> 删除选中
-                            </button>
-                        </div>
-                    )}
-
-                    <div className="h-6 w-px bg-gray-200 hidden md:block"></div>
-
-                    <SmartTooltip
-                        content={
-                            <div>
-                                <div className="font-bold mb-1 border-b border-gray-700 pb-1">AI 分析逻辑 (Smart Sampling)</div>
-                                <ul className="space-y-1 text-gray-300 list-disc list-inside">
-                                    <li><span className="text-yellow-400 font-medium">最近错题 (Top 10)</span>: 分析当前学习状态</li>
-                                    <li><span className="text-red-400 font-medium">高频顽疾 (Top 10)</span>: 挖掘长期薄弱环节</li>
-                                </ul>
-                            </div>
-                        }
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleAnalyze}
+                        disabled={analyzing}
+                        className="bg-indigo-600 text-white hover:bg-indigo-700 px-4 py-2 rounded-lg flex items-center shadow-sm transition disabled:opacity-50 text-sm font-medium"
                     >
-                        <button
-                            onClick={handleAnalyze}
-                            disabled={analyzing}
-                            className="bg-indigo-600 text-white hover:bg-indigo-700 border border-transparent px-4 py-2 rounded-lg flex items-center shadow-sm transition disabled:opacity-50 text-sm font-medium"
+                        {analyzing ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+                        智能分析
+                    </button>
+
+                    <Menu as="div" className="relative">
+                        <Menu.Button className="bg-white border border-gray-300 text-gray-700 p-2 rounded-lg hover:bg-gray-50 transition">
+                            <MoreVertical className="w-5 h-5" />
+                        </Menu.Button>
+                        <Transition
+                            as={Fragment}
+                            enter="transition ease-out duration-100"
+                            enterFrom="transform opacity-0 scale-95"
+                            enterTo="transform opacity-100 scale-100"
+                            leave="transition ease-in duration-75"
+                            leaveFrom="transform opacity-100 scale-100"
+                            leaveTo="transform opacity-0 scale-95"
                         >
-                            {analyzing ? (
-                                <>
-                                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> 分析中...
-                                </>
-                            ) : (
-                                <>
-                                    <CheckCircle className="w-4 h-4 mr-2" /> 智能分析
-                                </>
-                            )}
-                        </button>
-                    </SmartTooltip>
-
-                    <button
-                        onClick={() => handleDelete('all')}
-                        className="bg-white border border-gray-300 text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg flex items-center shadow-sm transition text-sm"
-                        title={filter === 'all' ? "清空所有错题" : "清空当前分类"}
-                    >
-                        <Trash className="w-4 h-4 mr-1" /> {filter === 'all' ? '清空全部' : filter === 'recitation' ? '清空单词' : '清空题目'}
-                    </button>
-
-                    <button
-                        onClick={fetchMistakes}
-                        className="p-2 text-gray-500 hover:text-gray-900 transition bg-white border border-gray-300 rounded-lg shadow-sm"
-                        title="刷新"
-                    >
-                        <RefreshCw className="w-4 h-4" />
-                    </button>
-
-                    <button
-                        onClick={handlePrint}
-                        className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-3 py-2 rounded-lg flex items-center shadow-sm transition text-sm"
-                        title="打印"
-                    >
-                        <FileDown className="w-4 h-4" />
-                    </button>
+                            <Menu.Items className="absolute right-0 mt-2 w-48 origin-top-right bg-white divide-y divide-gray-100 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-50">
+                                <div className="px-1 py-1">
+                                    <Menu.Item>
+                                        {({ active }) => (
+                                            <button onClick={fetchMistakes} className={`${active ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700'} group flex w-full items-center rounded-md px-2 py-2 text-sm`}>
+                                                <RefreshCw className="mr-2 h-4 w-4" /> 刷新数据
+                                            </button>
+                                        )}
+                                    </Menu.Item>
+                                    <Menu.Item>
+                                        {({ active }) => (
+                                            <button onClick={handlePrint} className={`${active ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700'} group flex w-full items-center rounded-md px-2 py-2 text-sm`}>
+                                                <FileDown className="mr-2 h-4 w-4" /> 导出打印
+                                            </button>
+                                        )}
+                                    </Menu.Item>
+                                </div>
+                                <div className="px-1 py-1">
+                                    <Menu.Item>
+                                        {({ active }) => (
+                                            <button onClick={() => handleDelete('all')} className={`${active ? 'bg-red-50 text-red-600' : 'text-red-500'} group flex w-full items-center rounded-md px-2 py-2 text-sm`}>
+                                                <Trash className="mr-2 h-4 w-4" /> 清空本子
+                                            </button>
+                                        )}
+                                    </Menu.Item>
+                                </div>
+                            </Menu.Items>
+                        </Transition>
+                    </Menu>
                 </div>
             </div>
+
+            {/* Bulk Actions Sticky Bar */}
+            {selectedIds.size > 0 && (
+                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-8">
+                    <div className="bg-gray-900/90 backdrop-blur text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-6 border border-gray-700">
+                        <span className="text-sm font-medium border-r border-gray-700 pr-6">已选 {selectedIds.size} 项</span>
+                        <div className="flex gap-4">
+                            <button
+                                onClick={async () => {
+                                    if (!confirm(`确定要将选中的 ${selectedIds.size} 道题标记为掌握吗？`)) return
+                                    for (const id of Array.from(selectedIds)) {
+                                        await handleMastered(id)
+                                    }
+                                }}
+                                className="text-sm text-green-400 hover:text-green-300 flex items-center font-bold"
+                            >
+                                <CheckCircle className="w-4 h-4 mr-1" /> 批量掌握
+                            </button>
+                            <button
+                                onClick={() => handleDelete('selected')}
+                                className="text-sm text-red-400 hover:text-red-300 flex items-center font-bold"
+                            >
+                                <Trash className="w-4 h-4 mr-1" /> 批量删除
+                            </button>
+                            <button
+                                onClick={() => setSelectedIds(new Set())}
+                                className="text-sm text-gray-400 hover:text-white"
+                            >
+                                取消
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* AI Report Section */}
             {report && (
@@ -539,17 +605,58 @@ export default function ErrorNotebookPage() {
                                 </h4>
                             </div>
 
-                            <div className="pt-3 border-t border-gray-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                                <div className="text-red-600 font-medium text-sm flex items-start">
-                                    <span className="text-gray-400 text-xs mr-2 mt-0.5">Correct:</span>
+                            <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
+                                <div className="text-red-600 font-medium text-sm flex items-start flex-1 truncate mr-4">
+                                    <span className="text-gray-400 text-xs mr-2 mt-0.5">Ans:</span>
                                     <span>{item.answer}</span>
                                 </div>
-                                {item.explanation && (
-                                    <div className="text-sm text-gray-500 italic flex-1 sm:text-right bg-gray-50 p-2 rounded sm:bg-transparent sm:p-0">
-                                        💡 {item.explanation}
-                                    </div>
-                                )}
+                                <div className="flex items-center gap-1 print:hidden">
+                                    <button
+                                        onClick={() => handleMastered(item.id)}
+                                        className="text-xs bg-green-600 text-white hover:bg-green-700 px-4 py-1.5 rounded-full shadow-sm transition font-bold"
+                                    >
+                                        已掌握
+                                    </button>
+
+                                    <Menu as="div" className="relative">
+                                        <Menu.Button className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition">
+                                            <MoreVertical className="w-4 h-4" />
+                                        </Menu.Button>
+                                        <Transition
+                                            as={Fragment}
+                                            enter="transition ease-out duration-100"
+                                            enterFrom="transform opacity-0 scale-95"
+                                            enterTo="transform opacity-100 scale-100"
+                                            leave="transition ease-in duration-75"
+                                            leaveFrom="transform opacity-100 scale-100"
+                                            leaveTo="transform opacity-0 scale-95"
+                                        >
+                                            <Menu.Items className="absolute right-0 bottom-full mb-2 w-40 origin-bottom-right bg-white divide-y divide-gray-100 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
+                                                <div className="px-1 py-1">
+                                                    <Menu.Item>
+                                                        {({ active }) => (
+                                                            <button
+                                                                onClick={() => {
+                                                                    setSelectedIds(new Set([item.id]))
+                                                                    handleDelete('selected')
+                                                                }}
+                                                                className={`${active ? 'bg-red-50 text-red-600' : 'text-gray-700'} group flex w-full items-center rounded-md px-2 py-2 text-xs`}
+                                                            >
+                                                                <Trash className="mr-2 h-3 w-3" /> 删除当前记录
+                                                            </button>
+                                                        )}
+                                                    </Menu.Item>
+                                                </div>
+                                            </Menu.Items>
+                                        </Transition>
+                                    </Menu>
+                                </div>
                             </div>
+                            {item.explanation && (
+                                <div className="mt-2 text-[12px] text-gray-500 italic bg-gray-50 p-2 rounded leading-snug">
+                                    💡 {item.explanation}
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>

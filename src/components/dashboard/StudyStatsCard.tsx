@@ -25,7 +25,7 @@ export default function StudyStatsCard({ stats, loading }: StudyStatsCardProps) 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
             <div className="flex justify-between items-start mb-4">
                 <div>
-                    <h3 className="text-lg font-bold text-gray-800">背诵进度</h3>
+                    <h3 className="text-lg font-bold text-gray-800">知识掌握进度</h3>
                     <p className="text-sm text-gray-500">累计收录单词 {stats.total} 个</p>
                 </div>
                 <div className="bg-indigo-50 p-2 rounded-lg">
@@ -51,17 +51,17 @@ export default function StudyStatsCard({ stats, loading }: StudyStatsCardProps) 
                 <div className="bg-green-50 rounded-lg p-2">
                     <CheckCircle className="w-4 h-4 text-green-500 mx-auto mb-1" />
                     <div className="text-xl font-bold text-gray-800">{stats.mastered}</div>
-                    <div className="text-xs text-gray-500">已掌握</div>
+                    <div className="text-xs text-gray-500">累计已掌握</div>
                 </div>
                 <div className="bg-yellow-50 rounded-lg p-2">
                     <Clock className="w-4 h-4 text-yellow-500 mx-auto mb-1" />
                     <div className="text-xl font-bold text-gray-800">{stats.reviewing}</div>
-                    <div className="text-xs text-gray-500">复习中</div>
+                    <div className="text-xs text-gray-500">正在复习中</div>
                 </div>
                 <div className="bg-blue-50 rounded-lg p-2">
                     <Baby className="w-4 h-4 text-blue-500 mx-auto mb-1" />
                     <div className="text-xl font-bold text-gray-800">{stats.learning}</div>
-                    <div className="text-xs text-gray-500">新学</div>
+                    <div className="text-xs text-gray-500">正在新学中</div>
                 </div>
             </div>
         </div>
