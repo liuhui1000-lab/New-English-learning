@@ -216,7 +216,16 @@ export async function POST(req: NextRequest) {
                 // Standard: prunedResult
                 // Layout: text
                 // Others: words
-                const val = r.prunedResult || r.words || r.text || "";
+                let val = r.prunedResult || r.words || r.text || "";
+
+                // Fix `[object Object]` bug: Sometimes PaddleOCR returns nested objects for words/text
+                if (typeof val === 'object' && val !== null) {
+                    val = val.text || val.word || val.words || "";
+                    if (typeof val === 'object') {
+                        val = JSON.stringify(val); // Final fallback to avoid [object Object]
+                    }
+                }
+
                 return val;
             }).join("\n");
 
