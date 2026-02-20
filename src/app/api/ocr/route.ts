@@ -220,7 +220,12 @@ export async function POST(req: NextRequest) {
 
                 // Fix `[object Object]` bug: Sometimes PaddleOCR returns nested objects for words/text
                 if (typeof val === 'object' && val !== null) {
-                    val = val.text || val.word || val.words || "";
+                    if (Array.isArray(val.rec_texts)) {
+                        val = val.rec_texts.join(" ");
+                    } else {
+                        val = val.text || val.word || val.words || "";
+                    }
+
                     if (typeof val === 'object') {
                         val = JSON.stringify(val); // Final fallback to avoid [object Object]
                     }

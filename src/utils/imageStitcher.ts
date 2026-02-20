@@ -188,7 +188,11 @@ export const parseStitchedOCRResult = (
     const getBlockText = (block: any): string => {
         let val = block.prunedResult || block.text || block.words || block.block_content || "";
         if (typeof val === 'object' && val !== null) {
-            val = val.text || val.word || val.words || "";
+            if (Array.isArray(val.rec_texts)) {
+                val = val.rec_texts.join(" ");
+            } else {
+                val = val.text || val.word || val.words || "";
+            }
             if (typeof val === 'object') {
                 val = JSON.stringify(val); // Final fallback
             }
