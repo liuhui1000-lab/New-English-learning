@@ -118,9 +118,15 @@ export async function POST(req: NextRequest) {
             // Disable layout detection to prefer raw text lines
             use_layout_detection: false,
             useLayoutDetection: false, // Try both casings
+            // Try both casings
             // CRITICAL: Disable block merging to get separate results for close lines
             merge_layout_blocks: false,
-            mergeLayoutBlocks: false
+            mergeLayoutBlocks: false,
+            // Lower detection thresholds for single letters (like 'C') which have low confidence
+            text_det_params: {
+                box_thresh: 0.1,    // Lower from default 0.6
+                thresh: 0.1         // Lower from default 0.3
+            }
         };
 
         // 3. Call External API
