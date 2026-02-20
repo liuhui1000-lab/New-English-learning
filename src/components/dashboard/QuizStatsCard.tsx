@@ -69,7 +69,7 @@ export default function QuizStatsCard({ stats, loading }: QuizStatsCardProps) {
                     <div className="flex justify-between items-center bg-red-50 px-3 py-2 rounded-lg">
                         <div className="flex items-center gap-2">
                             <XCircle className="w-4 h-4 text-red-600" />
-                            <span className="text-sm font-medium text-gray-700">错误</span>
+                            <span className="text-sm font-medium text-gray-700">累计错误次</span>
                         </div>
                         <span className="font-bold text-red-600">{stats.errorCount}</span>
                     </div>

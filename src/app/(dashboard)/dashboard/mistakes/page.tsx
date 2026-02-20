@@ -264,14 +264,12 @@ export default function ErrorNotebookPage() {
         let confirmMsg = ''
         if (mode === 'all') {
             if (filter === 'all') {
-                confirmMsg = `⚠️ 高风险操作\n\n确定要清空【所有类型】的错题吗？\n这将同时删除：\n1. 所有单词拼写错题\n2. 所有练习错题\n\n共 ${targets.length} 条记录，删除后无法恢复！`
-            } else if (filter === 'recitation') {
-                confirmMsg = `确定要清空当前显示的【单词拼写】错题吗？\n（不用担心，【练习题】错题不会被删除）`
-            } else if (filter === 'quiz') {
-                confirmMsg = `确定要清空当前显示的【练习题】错题吗？\n（不用担心，【单词拼写】错题不会被删除）`
+                confirmMsg = `⚠️ 高风险操作\n\n确定要清空【所有类型】的错题吗？\n这将同时删除所有练习记录和背诵进度，共 ${targets.length} 条数据。`
+            } else {
+                confirmMsg = `确定要清空当前分类下的 ${targets.length} 条记录吗？`
             }
         } else {
-            confirmMsg = `确定要删除选中的 ${targets.length} 条错题记录吗？`
+            confirmMsg = `确定要删除这 ${targets.length} 条记录吗？\n删除后，对应题目的错误次数将减 1，首页统计也会同步更新。`
         }
 
         if (!confirm(confirmMsg)) return

@@ -180,9 +180,9 @@ export default function StudentDashboardPage() {
                         <div className="bg-orange-50 p-3 rounded-lg group-hover:bg-orange-100 transition">
                             <AlertCircle className="text-orange-600 h-6 w-6" />
                         </div>
-                        {quizStats.errorCount > 0 && (
+                        {studyStats.learning > 0 && (
                             <span className="text-xs font-bold text-white bg-red-500 px-2 py-1 rounded-full">
-                                {quizStats.errorCount} 题待处理
+                                {studyStats.learning} 题待处理
                             </span>
                         )}
                     </div>
