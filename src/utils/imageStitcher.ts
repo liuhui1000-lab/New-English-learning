@@ -186,7 +186,18 @@ export const parseStitchedOCRResult = (
 
     // Helper: Get text from block
     const getBlockText = (block: any): string => {
-        return block.prunedResult || block.text || block.words || block.block_content || "";
+        let val = block.prunedResult || block.text || block.words || block.block_content || "";
+        if (typeof val === 'object' && val !== null) {
+            if (Array.isArray(val.rec_texts)) {
+                val = val.rec_texts.join(" ");
+            } else {
+                val = val.text || val.word || val.words || "";
+            }
+            if (typeof val === 'object') {
+                val = JSON.stringify(val); // Final fallback
+            }
+        }
+        return val;
     };
 
     // Gather all potential text blocks
