@@ -282,7 +282,7 @@ export default function UserDetailPage() {
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <h3 className="text-gray-500 text-sm font-medium">累计完成题数</h3>
+                    <h3 className="text-gray-500 text-sm font-medium">累计答题次数</h3>
                     <p className="text-3xl font-bold text-indigo-600 mt-2">{stats.totalQuestions}</p>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
@@ -290,7 +290,7 @@ export default function UserDetailPage() {
                     <p className="text-3xl font-bold text-green-600 mt-2">{stats.correctRate}%</p>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <h3 className="text-gray-500 text-sm font-medium">掌握进度 (已掌握 / 学习中)</h3>
+                    <h3 className="text-gray-500 text-sm font-medium">掌握进度 (累计掌握 / 正在学习)</h3>
                     <p className="text-3xl font-bold text-blue-600 mt-2">
                         {stats.masteredCount} <span className="text-sm text-gray-400">/ {stats.learningCount}</span>
                     </p>

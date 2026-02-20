@@ -25,8 +25,8 @@ export default function QuizStatsCard({ stats, loading }: QuizStatsCardProps) {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
             <div className="flex justify-between items-start mb-4">
                 <div>
-                    <h3 className="text-lg font-bold text-gray-800">练习战绩</h3>
-                    <p className="text-sm text-gray-500">累计答题 {stats.totalAttempts} 次</p>
+                    <h3 className="text-lg font-bold text-gray-800">累计练习表现</h3>
+                    <p className="text-sm text-gray-500">累计答题次数 {stats.totalAttempts} 次</p>
                 </div>
                 <div className="bg-purple-50 p-2 rounded-lg">
                     <Target className="w-6 h-6 text-purple-600" />
@@ -53,7 +53,7 @@ export default function QuizStatsCard({ stats, loading }: QuizStatsCardProps) {
                     </svg>
                     <div className="absolute flex flex-col items-center">
                         <span className="text-2xl font-bold text-gray-800">{accuracy}%</span>
-                        <span className="text-xs text-gray-400">正确率</span>
+                        <span className="text-xs text-gray-400">综合正确率</span>
                     </div>
                 </div>
 
@@ -62,14 +62,14 @@ export default function QuizStatsCard({ stats, loading }: QuizStatsCardProps) {
                     <div className="flex justify-between items-center bg-green-50 px-3 py-2 rounded-lg">
                         <div className="flex items-center gap-2">
                             <Trophy className="w-4 h-4 text-green-600" />
-                            <span className="text-sm font-medium text-gray-700">正确</span>
+                            <span className="text-sm font-medium text-gray-700">累计正确次数</span>
                         </div>
                         <span className="font-bold text-green-600">{stats.correctCount}</span>
                     </div>
                     <div className="flex justify-between items-center bg-red-50 px-3 py-2 rounded-lg">
                         <div className="flex items-center gap-2">
                             <XCircle className="w-4 h-4 text-red-600" />
-                            <span className="text-sm font-medium text-gray-700">累计错误次</span>
+                            <span className="text-sm font-medium text-gray-700">累计错误次数</span>
                         </div>
                         <span className="font-bold text-red-600">{stats.errorCount}</span>
                     </div>
