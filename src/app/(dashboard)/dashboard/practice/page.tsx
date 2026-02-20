@@ -330,13 +330,35 @@ function PracticeContent() {
         setSubmitted(true)
 
         // Async save to DB
-        const { error } = await supabase
+        // 1. Save results
+        const { error: resultsError } = await supabase
             .from('quiz_results')
             .insert(submissionData)
 
-        if (error) {
-            console.error("Failed to save results:", error)
-            alert("提交失败，成绩未能保存！错误信息：" + error.message)
+        if (resultsError) {
+            console.error("Failed to save results:", resultsError)
+            alert("提交失败，成绩未能保存！错误信息：" + resultsError.message)
+            return
+        }
+
+        // 2. Update user_progress for mastery stats
+        const progressUpdates = submissionData.map(d => ({
+            user_id: d.user_id,
+            question_id: d.question_id,
+            status: d.is_correct ? 'mastered' : 'learning',
+            last_practiced_at: new Date().toISOString(),
+            attempts: 1 // This will be incremented via upsert if we had more complex logic, 
+            // but for now we just mark the status
+        }))
+
+        if (progressUpdates.length > 0) {
+            const { error: progressError } = await supabase
+                .from('user_progress')
+                .upsert(progressUpdates, { onConflict: 'user_id,question_id' })
+
+            if (progressError) {
+                console.error("Failed to update progress:", progressError)
+            }
         }
     }
 
