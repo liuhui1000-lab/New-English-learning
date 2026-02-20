@@ -647,14 +647,16 @@ function classifyQuestion(content: string): ParsedQuestion {
     // 3. Collocation / Vocabulary
     else if (hasBlank && !rootWordMatch && !content.includes('A)') && !content.includes('A.')) {
         // If it has a blank but no options (A/B/C/D) and no root word, likely a collocation fill-in
-        type = 'collocation';
+        type = 'grammar';
+        tags.push('Collocation');
     }
     // 4. Grammar (Default or explicit options)
     // If it mentions A) B) C) etc, it's definitely grammar.
     // BUT we want to distinguish Collocation (Prepositions/Phrases) from Pure Grammar.
     else if (/[A-D][\)\.]/.test(content)) {
         if (isCollocationOptions(content)) {
-            type = 'collocation';
+            type = 'grammar';
+            tags.push('Collocation');
         } else {
             type = 'grammar';
         }

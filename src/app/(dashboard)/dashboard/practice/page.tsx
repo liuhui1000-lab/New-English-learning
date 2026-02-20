@@ -33,10 +33,13 @@ function PracticeContent() {
             if (!user) return
 
             // 1. Fetch ALL Question IDs for this type
-            const { data: allQuestions } = await supabase
-                .from('questions')
-                .select('id')
-                .eq('type', type)
+            const questionQuery = supabase.from('questions').select('id');
+            if (type === 'grammar') {
+                questionQuery.in('type', ['grammar', 'collocation']);
+            } else {
+                questionQuery.eq('type', type);
+            }
+            const { data: allQuestions } = await questionQuery;
 
             if (!allQuestions || allQuestions.length === 0) {
                 setQuestions([])
@@ -45,12 +48,18 @@ function PracticeContent() {
             }
 
             // 2. Fetch User History for this type
-            const { data: userHistory } = await supabase
+            const historyQuery = supabase
                 .from('quiz_results')
                 .select('question_id, is_correct, attempt_at')
                 .eq('user_id', user.id)
-                .eq('question_type', type)
-                .order('attempt_at', { ascending: false }) // Latest first
+                .order('attempt_at', { ascending: false }); // Latest first
+
+            if (type === 'grammar') {
+                historyQuery.in('question_type', ['grammar', 'collocation']);
+            } else {
+                historyQuery.eq('question_type', type);
+            }
+            const { data: userHistory } = await historyQuery;
 
             // 3. Process & Categorize
             const processedIds = new Set<string>()
