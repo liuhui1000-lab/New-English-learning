@@ -386,6 +386,13 @@ function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
     const parsedAndFilteredQuestions = rawItems
         .map((item) => classifyQuestion(item))
         .filter(q => {
+            // 0. BYPASS strict filters for explicitly identified transformation questions
+            // Sentence transformations often don't have blanks or options (e.g. "He is a boy (改为复数)")
+            // Word transformations might have lost their underscores during OCR but retain the (root word)
+            if (q.type === 'sentence_transformation' || q.type === 'word_transformation') {
+                return true;
+            }
+
             // 1. Must have a blank, options, OR be a sentence reordering question
             const hasBlank = /_+|\(\s{3,}\)|\[\s{3,}\]/.test(q.content);
             const hasOptions = /[A-D][\)\.].*[A-D][\)\.]/.test(q.content);
@@ -637,8 +644,9 @@ function classifyQuestion(content: string): ParsedQuestion {
         type = 'sentence_transformation';
     }
     // 2. Word Transformation
-    // Pattern: "_____ ... (word)"
-    else if (rootWordMatch && hasBlank) {
+    // Pattern: "_____ ... (word)" or even without blank if OCR failed but (root) is clear at end
+    else if (rootWordMatch) {
+        // Safe to assume it's word transform if it has a root word at the end, even if blank is missing due to OCR
         type = 'word_transformation';
         if (rootWordMatch[1]) {
             tags.push(`Root:${rootWordMatch[1].trim()}`);
