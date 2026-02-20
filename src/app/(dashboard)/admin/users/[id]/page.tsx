@@ -286,8 +286,8 @@ export default function UserDetailPage() {
                     <p className="text-3xl font-bold text-indigo-600 mt-2">{stats.totalQuestions}</p>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <h3 className="text-gray-500 text-sm font-medium">综合正确率</h3>
-                    <p className="text-3xl font-bold text-green-600 mt-2">{stats.correctRate}%</p>
+                    <h3 className="text-gray-500 text-sm font-medium" title="计算逻辑: 累计答对总题数 ÷ 累计答题总次数 × 100%">综合正确率 <span className="text-xs text-gray-400 font-normal cursor-help">(?)</span></h3>
+                    <p className="text-3xl font-bold text-green-600 mt-2" title={`具体数据: 答对 ${Math.round((stats.correctRate / 100) * stats.totalQuestions)} 题 / 共答 ${stats.totalQuestions} 题`}>{stats.correctRate}%</p>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                     <h3 className="text-gray-500 text-sm font-medium">掌握进度 (累计掌握 / 正在学习)</h3>
