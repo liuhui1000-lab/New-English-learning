@@ -319,6 +319,48 @@ export default function ErrorNotebookPage() {
         }
     }
 
+    const handleMastered = async (id: string) => {
+        if (!confirm("确定已完全掌握该题吗？\n这将清空该题【所有】历史错误记录，并标记为已掌握。")) return
+
+        setLoading(true)
+        try {
+            // 1. Deep Cleanup Quiz Results (Delete ALL historical logs for this question)
+            const { error: quizError } = await supabase
+                .from('quiz_results')
+                .delete()
+                .eq('question_id', id)
+
+            if (quizError) throw quizError
+
+            // 2. Mark User Progress as Mastered
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user) {
+                const { error: progressError } = await supabase
+                    .from('user_progress')
+                    .upsert({
+                        user_id: user.id,
+                        question_id: id,
+                        status: 'mastered',
+                        attempts: 0,
+                        last_attempt_at: new Date().toISOString(),
+                        next_review_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+                    })
+
+                if (progressError) throw progressError
+            }
+
+            alert("已标记为掌握，历史错误频率已归零")
+            setSelectedIds(new Set())
+            fetchMistakes()
+
+        } catch (e: any) {
+            console.error(e)
+            alert("操作失败: " + e.message)
+        } finally {
+            setLoading(false)
+        }
+    }
+
     return (
         <div className="space-y-6 max-w-5xl mx-auto">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
@@ -538,16 +580,35 @@ export default function ErrorNotebookPage() {
                             </div>
 
                             <div className="pt-3 border-t border-gray-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                                <div className="text-red-600 font-medium text-sm flex items-start">
+                                <div className="text-red-600 font-medium text-sm flex items-start flex-1">
                                     <span className="text-gray-400 text-xs mr-2 mt-0.5">Correct:</span>
                                     <span>{item.answer}</span>
                                 </div>
-                                {item.explanation && (
-                                    <div className="text-sm text-gray-500 italic flex-1 sm:text-right bg-gray-50 p-2 rounded sm:bg-transparent sm:p-0">
-                                        💡 {item.explanation}
-                                    </div>
-                                )}
+                                <div className="flex items-center gap-2 print:hidden">
+                                    <button
+                                        onClick={() => handleMastered(item.id)}
+                                        className="text-xs bg-green-50 text-green-700 hover:bg-green-100 px-2 py-1 rounded border border-green-200 transition flex items-center"
+                                        title="清空所有记录并标记为掌握"
+                                    >
+                                        <CheckCircle className="w-3 h-3 mr-1" /> 已掌握
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setSelectedIds(new Set([item.id]))
+                                            handleDelete('selected')
+                                        }}
+                                        className="text-xs bg-gray-50 text-gray-600 hover:bg-red-50 hover:text-red-600 px-2 py-1 rounded border border-gray-200 hover:border-red-200 transition flex items-center"
+                                        title="仅删除当前这条错误记录"
+                                    >
+                                        <Trash className="w-3 h-3 mr-1" /> 删除(频率-1)
+                                    </button>
+                                </div>
                             </div>
+                            {item.explanation && (
+                                <div className="mt-2 text-sm text-gray-500 italic bg-gray-50 p-2 rounded">
+                                    💡 {item.explanation}
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>
