@@ -77,7 +77,7 @@ export default function StudyPage() {
                 .eq('user_id', user.id)
                 .lte('next_review_at', new Date().toISOString())
                 .neq('status', 'mastered')
-                .limit(6)
+                .limit(2)
 
             if (rError) throw rError
 
@@ -85,8 +85,8 @@ export default function StudyPage() {
             addLog(`Found ${candidates.length} reviews`)
 
             // 2. Fill with New Words
-            if (candidates.length < 5) {
-                const limit = 6 - candidates.length
+            if (candidates.length < 2) {
+                const limit = 2 - candidates.length
 
                 // Exclude existing progress items
                 const { data: progress } = await supabase
