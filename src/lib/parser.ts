@@ -427,9 +427,30 @@ function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
             return true;
         });
 
+    // 4. Truncation Strategy (User Request)
+    // The "Sentence Reordering" (连词成句) is ALWAYS the final question of the Grammar/Vocabulary block.
+    // Anything parsed after it (e.g. Reading Comprehension, Writing) should be discarded.
+    let cutoffIndex = -1;
+    for (let i = 0; i < parsedAndFilteredQuestions.length; i++) {
+        const q = parsedAndFilteredQuestions[i];
+        const isSentenceReordering = /连词成句|reorder|rearrange/i.test(q.content) ||
+            (/,\s*\w+,\s*\w+,\s*\w+/.test(q.content) && /\(.*\)/.test(q.content));
 
-    console.log(`Mock Paper Mode: Filtered ${rawItems.length} items down to ${parsedAndFilteredQuestions.length}`);
-    return parsedAndFilteredQuestions;
+        if (isSentenceReordering) {
+            cutoffIndex = i;
+            break; // Stop at the first sentence reordering question found
+        }
+    }
+
+    let finalQuestions = parsedAndFilteredQuestions;
+    if (cutoffIndex !== -1) {
+        console.log(`Truncating mock paper after question at index ${cutoffIndex} (Sentence Reordering detected)`);
+        // Keep everything UP TO AND INCLUDING the sentence reordering question
+        finalQuestions = parsedAndFilteredQuestions.slice(0, cutoffIndex + 1);
+    }
+
+    console.log(`Mock Paper Mode: Filtered ${rawItems.length} items down to ${finalQuestions.length}`);
+    return finalQuestions;
 }
 
 // ... Shared Helpers ...
