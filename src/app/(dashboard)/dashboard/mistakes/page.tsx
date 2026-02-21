@@ -44,12 +44,18 @@ export default function ErrorNotebookPage() {
 
         if (recitationData) {
             recitationData.forEach((record: any) => {
+                const qType = record.questions?.type
+                const isSpelling = qType === 'vocabulary' || qType === 'word_transformation'
+
                 allMistakes.push({
                     id: record.questions.id,
                     content: record.questions.content,
                     answer: record.questions.answer,
-                    type: 'recitation',
-                    note: 'Spelling / Memory',
+                    type: isSpelling ? 'recitation' : 'quiz',
+                    note: qType === 'word_transformation' ? '词汇变形' :
+                        qType === 'vocabulary' ? '单词拼写' :
+                            qType === 'grammar' ? '语法' :
+                                qType === 'sentence_transformation' ? '句型转换' : '词组搭配',
                     count: record.attempts // Approximation of struggles
                 })
             })
@@ -75,12 +81,18 @@ export default function ErrorNotebookPage() {
                 const qId = record.questions?.id
                 if (!qId) return
                 if (!grouped.has(qId)) {
+                    const qType = record.questions.type
+                    const isSpelling = qType === 'vocabulary' || qType === 'word_transformation'
+
                     grouped.set(qId, {
                         id: qId,
                         content: record.questions.content,
                         answer: record.questions.answer,
-                        type: 'quiz',
-                        note: record.questions.type === 'grammar' ? 'Grammar' : 'Collocation',
+                        type: isSpelling ? 'recitation' : 'quiz',
+                        note: qType === 'word_transformation' ? '词汇变形' :
+                            qType === 'vocabulary' ? '单词拼写' :
+                                qType === 'grammar' ? '语法' :
+                                    qType === 'sentence_transformation' ? '句型转换' : '词组搭配',
                         explanation: record.questions.explanation,
                         tags: record.questions.tags,
                         lastAttempt: record.attempt_at,
@@ -640,7 +652,7 @@ export default function ErrorNotebookPage() {
                             className={`px-4 py-1.5 rounded-md text-sm font-medium transition capitalize ${filter === t ? 'bg-white shadow text-indigo-600' : 'text-gray-500 hover:text-gray-700'
                                 }`}
                         >
-                            {t === 'all' ? `全部 (${mistakes.length})` : t === 'recitation' ? '单词拼写' : '练习题'}
+                            {t === 'all' ? `全部 (${mistakes.length})` : t === 'recitation' ? '背诵回顾' : '练习题'}
                         </button>
                     ))}
                 </div>
