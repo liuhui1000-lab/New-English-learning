@@ -386,6 +386,13 @@ function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
     const parsedAndFilteredQuestions = rawItems
         .map((item) => classifyQuestion(item))
         .filter(q => {
+            // 0. BYPASS strict filters for explicitly identified transformation questions
+            // Sentence transformations often don't have blanks or options (e.g. "He is a boy (改为复数)")
+            // Word transformations might have lost their underscores during OCR but retain the (root word)
+            if (q.type === 'sentence_transformation' || q.type === 'word_transformation') {
+                return true;
+            }
+
             // 1. Must have a blank, options, OR be a sentence reordering question
             const hasBlank = /_+|\(\s{3,}\)|\[\s{3,}\]/.test(q.content);
             const hasOptions = /[A-D][\)\.].*[A-D][\)\.]/.test(q.content);
@@ -420,9 +427,30 @@ function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
             return true;
         });
 
+    // 4. Truncation Strategy (User Request)
+    // The "Sentence Reordering" (连词成句) is ALWAYS the final question of the Grammar/Vocabulary block.
+    // Anything parsed after it (e.g. Reading Comprehension, Writing) should be discarded.
+    let cutoffIndex = -1;
+    for (let i = 0; i < parsedAndFilteredQuestions.length; i++) {
+        const q = parsedAndFilteredQuestions[i];
+        const isSentenceReordering = /连词成句|reorder|rearrange/i.test(q.content) ||
+            (/,\s*\w+,\s*\w+,\s*\w+/.test(q.content) && /\(.*\)/.test(q.content));
 
-    console.log(`Mock Paper Mode: Filtered ${rawItems.length} items down to ${parsedAndFilteredQuestions.length}`);
-    return parsedAndFilteredQuestions;
+        if (isSentenceReordering) {
+            cutoffIndex = i;
+            break; // Stop at the first sentence reordering question found
+        }
+    }
+
+    let finalQuestions = parsedAndFilteredQuestions;
+    if (cutoffIndex !== -1) {
+        console.log(`Truncating mock paper after question at index ${cutoffIndex} (Sentence Reordering detected)`);
+        // Keep everything UP TO AND INCLUDING the sentence reordering question
+        finalQuestions = parsedAndFilteredQuestions.slice(0, cutoffIndex + 1);
+    }
+
+    console.log(`Mock Paper Mode: Filtered ${rawItems.length} items down to ${finalQuestions.length}`);
+    return finalQuestions;
 }
 
 // ... Shared Helpers ...
@@ -637,8 +665,9 @@ function classifyQuestion(content: string): ParsedQuestion {
         type = 'sentence_transformation';
     }
     // 2. Word Transformation
-    // Pattern: "_____ ... (word)"
-    else if (rootWordMatch && hasBlank) {
+    // Pattern: "_____ ... (word)" or even without blank if OCR failed but (root) is clear at end
+    else if (rootWordMatch) {
+        // Safe to assume it's word transform if it has a root word at the end, even if blank is missing due to OCR
         type = 'word_transformation';
         if (rootWordMatch[1]) {
             tags.push(`Root:${rootWordMatch[1].trim()}`);
