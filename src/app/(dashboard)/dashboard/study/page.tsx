@@ -142,14 +142,14 @@ export default function StudyPage() {
             addLog(`Families: ${Array.from(familyTags).join(', ')}`)
 
             if (familyTags.size > 0) {
-                // Query by Tag
+                // Query by Tag - only vocabulary type
                 const tagQueries = Array.from(familyTags).map(tag =>
-                    supabase.from('questions').select('*').contains('tags', [tag])
+                    supabase.from('questions').select('*').eq('type', 'vocabulary').contains('tags', [tag])
                 )
 
-                // Query by Content (Fallback: 'accept%')
+                // Query by Content (Fallback: 'accept%') - only vocabulary type
                 const contentQueries = Array.from(familyRoots).map(root =>
-                    supabase.from('questions').select('*').ilike('content', `${root}%`)
+                    supabase.from('questions').select('*').eq('type', 'vocabulary').ilike('content', `${root}%`)
                 )
 
                 const allQueries = [...tagQueries, ...contentQueries]
