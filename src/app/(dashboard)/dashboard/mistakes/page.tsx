@@ -154,6 +154,133 @@ export default function ErrorNotebookPage() {
         window.print()
     }
 
+    const handleExportPDF = async () => {
+        if (filteredMistakes.length === 0) {
+            alert('当前没有错题可导出')
+            return
+        }
+        alert('正在生成 PDF，请稍候...')
+
+        const [{ jsPDF }, html2canvas] = await Promise.all([
+            import('jspdf'),
+            import('html2canvas').then(m => m.default)
+        ])
+
+        // Build an off-screen div with the full content
+        const container = document.createElement('div')
+        container.style.cssText = `
+            position: fixed; left: -9999px; top: 0;
+            width: 794px; padding: 40px;
+            font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+            font-size: 14px; color: #111; background: #fff; line-height: 1.6;
+        `
+        // Title
+        const title = document.createElement('div')
+        title.innerHTML = `
+            <h1 style="font-size:22px;font-weight:bold;margin:0 0 4px">错题本</h1>
+            <p style="font-size:11px;color:#888;margin:0 0 24px">
+                导出时间: ${new Date().toLocaleString('zh-CN')} &nbsp;|&nbsp; 共 ${filteredMistakes.length} 道题
+            </p>
+        `
+        container.appendChild(title)
+
+        filteredMistakes.forEach((item, idx) => {
+            const card = document.createElement('div')
+            card.style.cssText = 'margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid #e5e7eb;'
+
+            // Header
+            const meta = document.createElement('div')
+            meta.style.cssText = 'font-size:10px; color:#6366f1; font-weight:bold; margin-bottom:4px;'
+            meta.textContent = `#${idx + 1}  ${item.note || item.type}${item.count > 1 ? `  ×${item.count} 次出错` : ''}`
+            card.appendChild(meta)
+
+            // Question
+            const q = document.createElement('div')
+            q.style.cssText = 'font-size:14px; font-weight:600; margin-bottom:8px; color:#111;'
+            q.textContent = item.content
+            card.appendChild(q)
+
+            // Wrong attempts
+            if (item.wrongAttempts && item.wrongAttempts.length > 0) {
+                item.wrongAttempts.forEach((attempt: any) => {
+                    const row = document.createElement('div')
+                    row.style.cssText = `
+                        display:flex; gap:8px; align-items:baseline;
+                        background:#fef2f2; border:1px solid #fecaca;
+                        border-radius:6px; padding:4px 10px; margin-bottom:4px;
+                        font-size:12px;
+                    `
+                    const date = new Date(attempt.attempt_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    row.innerHTML = `
+                        <span style="color:#9ca3af;white-space:nowrap">${date}</span>
+                        <span style="color:#dc2626;text-decoration:line-through">${attempt.answer || '（未作答）'}</span>
+                    `
+                    card.appendChild(row)
+                })
+            }
+
+            // Correct answer
+            const ans = document.createElement('div')
+            ans.style.cssText = 'font-size:13px; color:#16a34a; font-weight:600; margin-top:6px;'
+            ans.textContent = `✓  ${item.answer}`
+            card.appendChild(ans)
+
+            // Explanation
+            if (item.explanation) {
+                const exp = document.createElement('div')
+                exp.style.cssText = 'font-size:11px; color:#6b7280; font-style:italic; margin-top:4px; padding-left:8px;'
+                exp.textContent = `💡 ${item.explanation}`
+                card.appendChild(exp)
+            }
+
+            container.appendChild(card)
+        })
+
+        document.body.appendChild(container)
+
+        try {
+            const canvas = await html2canvas(container, { scale: 2, useCORS: true, backgroundColor: '#ffffff' })
+            document.body.removeChild(container)
+
+            const imgW = 210 // A4 mm width
+            const pageH = 297 // A4 mm height
+            const margin = 10
+            const contentW = imgW - margin * 2
+            const imgRatio = canvas.height / canvas.width
+            const fullH = contentW * imgRatio // total rendered height in mm
+
+            const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+            const contentPageH = pageH - margin * 2
+            let sliceY = 0 // in mm
+
+            while (sliceY < fullH) {
+                if (sliceY > 0) doc.addPage()
+
+                // Convert mm slice to canvas pixel coordinates
+                const pixPerMm = canvas.width / contentW
+                const sliceYpx = sliceY * pixPerMm
+                const sliceHpx = Math.min(contentPageH * pixPerMm, canvas.height - sliceYpx)
+
+                // Crop canvas slice
+                const sliceCanvas = document.createElement('canvas')
+                sliceCanvas.width = canvas.width
+                sliceCanvas.height = sliceHpx
+                const ctx = sliceCanvas.getContext('2d')!
+                ctx.drawImage(canvas, 0, sliceYpx, canvas.width, sliceHpx, 0, 0, canvas.width, sliceHpx)
+
+                const sliceImg = sliceCanvas.toDataURL('image/jpeg', 0.92)
+                const sliceHmm = sliceHpx / pixPerMm
+                doc.addImage(sliceImg, 'JPEG', margin, margin, contentW, sliceHmm)
+                sliceY += contentPageH
+            }
+
+            doc.save(`error-notebook-${new Date().toISOString().slice(0, 10)}.pdf`)
+        } catch (err: any) {
+            if (document.body.contains(container)) document.body.removeChild(container)
+            alert('PDF 生成失败: ' + err.message)
+        }
+    }
+
     const handleAnalyze = async () => {
         if (filteredMistakes.length === 0) {
             alert("请先筛选出需要分析的错题")
@@ -422,7 +549,14 @@ export default function ErrorNotebookPage() {
                                     <Menu.Item>
                                         {({ active }) => (
                                             <button onClick={handlePrint} className={`${active ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700'} group flex w-full items-center rounded-md px-2 py-2 text-sm`}>
-                                                <FileDown className="mr-2 h-4 w-4" /> 导出打印
+                                                <FileDown className="mr-2 h-4 w-4" /> 打印
+                                            </button>
+                                        )}
+                                    </Menu.Item>
+                                    <Menu.Item>
+                                        {({ active }) => (
+                                            <button onClick={handleExportPDF} className={`${active ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700'} group flex w-full items-center rounded-md px-2 py-2 text-sm`}>
+                                                <FileDown className="mr-2 h-4 w-4" /> 导出 PDF
                                             </button>
                                         )}
                                     </Menu.Item>
