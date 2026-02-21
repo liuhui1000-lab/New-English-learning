@@ -55,52 +55,51 @@ export default function ErrorNotebookPage() {
             })
         }
 
-        // 2. Fetch Quiz Mistakes with True Frequency
-        // First, get ALL error question_ids to calculate frequency
-        const { data: allErrors } = await supabase
-            .from('quiz_results')
-            .select('question_id')
-            .eq('is_correct', false)
-
-        const errorCounts = new Map<string, number>()
-        if (allErrors) {
-            allErrors.forEach((r: any) => {
-                const count = errorCounts.get(r.question_id) || 0
-                errorCounts.set(r.question_id, count + 1)
-            })
-        }
-
-        // Then get details for the specific mistakes (deduplicated by query or logic)
-        // We'll fetch the latest error for each unique question to show details
+        // 2. Fetch Quiz Mistakes - all wrong attempts per question
         const { data: quizData } = await supabase
             .from('quiz_results')
             .select(`
-                *,
+                id, answer, attempt_at, question_id,
                 questions (
                     id, content, answer, type, explanation, tags
                 )
             `)
             .eq('is_correct', false)
-            .order('attempt_at', { ascending: false })
-            .limit(100) // Fetch more to ensure we cover recent variance
+            .order('attempt_at', { ascending: true }) // oldest first for timeline
+            .limit(200)
 
         if (quizData) {
+            // Group attempts by question_id
+            const grouped = new Map<string, any>()
             quizData.forEach((record: any) => {
-                // Deduplicate
-                if (!allMistakes.find(m => m.id === record.questions.id)) {
-                    allMistakes.push({
-                        id: record.questions.id,
-                        row_id: record.id,
+                const qId = record.questions?.id
+                if (!qId) return
+                if (!grouped.has(qId)) {
+                    grouped.set(qId, {
+                        id: qId,
                         content: record.questions.content,
                         answer: record.questions.answer,
                         type: 'quiz',
                         note: record.questions.type === 'grammar' ? 'Grammar' : 'Collocation',
-                        count: errorCounts.get(record.questions.id) || 1, // Use calculated count
                         explanation: record.questions.explanation,
+                        tags: record.questions.tags,
                         lastAttempt: record.attempt_at,
-                        tags: record.questions.tags // Pass tags for filtering
+                        wrongAttempts: []
                     })
                 }
+                const item = grouped.get(qId)
+                item.wrongAttempts.push({
+                    id: record.id,       // quiz_results.id for targeted deletion
+                    answer: record.answer,
+                    attempt_at: record.attempt_at
+                })
+                // Track latest attempt time for sorting
+                if (record.attempt_at > item.lastAttempt) item.lastAttempt = record.attempt_at
+            })
+
+            grouped.forEach(item => {
+                item.count = item.wrongAttempts.length
+                allMistakes.push(item)
             })
         }
 
@@ -257,6 +256,21 @@ export default function ErrorNotebookPage() {
         if (newSet.has(id)) newSet.delete(id)
         else newSet.add(id)
         setSelectedIds(newSet)
+    }
+
+    // Delete a single wrong attempt entry by its quiz_results.id
+    const handleDeleteAttempt = async (attemptId: string, questionId: string) => {
+        if (!confirm('删除这条错误记录？')) return
+        setLoading(true)
+        try {
+            const { error } = await supabase.from('quiz_results').delete().eq('id', attemptId)
+            if (error) throw error
+            fetchMistakes()
+        } catch (e: any) {
+            alert('删除失败: ' + e.message)
+        } finally {
+            setLoading(false)
+        }
     }
 
     const handleDelete = async (mode: 'selected' | 'all') => {
@@ -599,64 +613,58 @@ export default function ErrorNotebookPage() {
                                 </span>
                             </div>
 
+                            {/* Question content */}
                             <div className="mb-3 pr-8">
                                 <h4 className="font-serif text-lg text-gray-900 leading-relaxed font-medium">
                                     {item.content}
                                 </h4>
                             </div>
 
-                            <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
-                                <div className="text-red-600 font-medium text-sm flex items-start flex-1 truncate mr-4">
-                                    <span className="text-gray-400 text-xs mr-2 mt-0.5">Ans:</span>
-                                    <span>{item.answer}</span>
+                            {/* Wrong attempt history - only for quiz type */}
+                            {item.type === 'quiz' && item.wrongAttempts && item.wrongAttempts.length > 0 && (
+                                <div className="mb-3 space-y-1.5">
+                                    {item.wrongAttempts.map((attempt: any) => (
+                                        <div key={attempt.id} className="flex items-start justify-between gap-2 bg-red-50 border border-red-100 rounded-lg px-3 py-2 group/attempt">
+                                            <div className="flex-1 min-w-0">
+                                                <span className="text-[10px] text-gray-400 block mb-0.5">
+                                                    {new Date(attempt.attempt_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                                <span className="text-sm text-red-600 font-medium line-through decoration-red-300">
+                                                    {attempt.answer || '（未作答）'}
+                                                </span>
+                                            </div>
+                                            <button
+                                                onClick={() => handleDeleteAttempt(attempt.id, item.id)}
+                                                className="opacity-0 group-hover/attempt:opacity-100 transition text-red-300 hover:text-red-500 p-0.5 shrink-0 print:hidden"
+                                                title="删除这条记录"
+                                            >
+                                                <Trash className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    ))}
                                 </div>
-                                <div className="flex items-center gap-1 print:hidden">
+                            )}
+
+                            {/* Correct answer + explanation */}
+                            <div className="pt-3 border-t border-gray-100">
+                                <div className="flex items-start justify-between">
+                                    <div className="text-green-700 font-medium text-sm flex items-start flex-1 mr-4">
+                                        <span className="text-gray-400 text-xs mr-2 mt-0.5 shrink-0">✓</span>
+                                        <span>{item.answer}</span>
+                                    </div>
                                     <button
                                         onClick={() => handleMastered(item.id)}
-                                        className="text-xs bg-green-600 text-white hover:bg-green-700 px-4 py-1.5 rounded-full shadow-sm transition font-bold"
+                                        className="text-xs bg-green-600 text-white hover:bg-green-700 px-4 py-1.5 rounded-full shadow-sm transition font-bold shrink-0 print:hidden"
                                     >
                                         已掌握
                                     </button>
-
-                                    <Menu as="div" className="relative">
-                                        <Menu.Button className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition">
-                                            <MoreVertical className="w-4 h-4" />
-                                        </Menu.Button>
-                                        <Transition
-                                            as={Fragment}
-                                            enter="transition ease-out duration-100"
-                                            enterFrom="transform opacity-0 scale-95"
-                                            enterTo="transform opacity-100 scale-100"
-                                            leave="transition ease-in duration-75"
-                                            leaveFrom="transform opacity-100 scale-100"
-                                            leaveTo="transform opacity-0 scale-95"
-                                        >
-                                            <Menu.Items className="absolute right-0 bottom-full mb-2 w-40 origin-bottom-right bg-white divide-y divide-gray-100 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
-                                                <div className="px-1 py-1">
-                                                    <Menu.Item>
-                                                        {({ active }) => (
-                                                            <button
-                                                                onClick={() => {
-                                                                    setSelectedIds(new Set([item.id]))
-                                                                    handleDelete('selected')
-                                                                }}
-                                                                className={`${active ? 'bg-red-50 text-red-600' : 'text-gray-700'} group flex w-full items-center rounded-md px-2 py-2 text-xs`}
-                                                            >
-                                                                <Trash className="mr-2 h-3 w-3" /> 删除当前记录
-                                                            </button>
-                                                        )}
-                                                    </Menu.Item>
-                                                </div>
-                                            </Menu.Items>
-                                        </Transition>
-                                    </Menu>
                                 </div>
+                                {item.explanation && (
+                                    <div className="mt-2 text-[12px] text-gray-500 italic bg-gray-50 p-2 rounded leading-snug">
+                                        💡 {item.explanation}
+                                    </div>
+                                )}
                             </div>
-                            {item.explanation && (
-                                <div className="mt-2 text-[12px] text-gray-500 italic bg-gray-50 p-2 rounded leading-snug">
-                                    💡 {item.explanation}
-                                </div>
-                            )}
                         </div>
                     ))}
                 </div>
