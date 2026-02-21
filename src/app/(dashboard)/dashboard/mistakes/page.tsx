@@ -155,6 +155,108 @@ export default function ErrorNotebookPage() {
         window.print()
     }
 
+    const handleExportPDF = async () => {
+        if (filteredMistakes.length === 0) {
+            alert('当前没有错题可导出')
+            return
+        }
+        // Dynamically import to avoid SSR issues
+        const { jsPDF } = await import('jspdf')
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+
+        const pageW = doc.internal.pageSize.getWidth()
+        const pageH = doc.internal.pageSize.getHeight()
+        const margin = 15
+        const maxLineW = pageW - margin * 2
+        let y = 20
+
+        const checkPageBreak = (needed: number) => {
+            if (y + needed > pageH - 15) {
+                doc.addPage()
+                y = 20
+            }
+        }
+
+        // Title
+        doc.setFontSize(18)
+        doc.setFont('helvetica', 'bold')
+        doc.text('Error Notebook', margin, y)
+        y += 6
+        doc.setFontSize(9)
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(120)
+        doc.text(`Generated ${new Date().toLocaleString('zh-CN')}  |  ${filteredMistakes.length} questions`, margin, y)
+        doc.setTextColor(0)
+        y += 10
+
+        filteredMistakes.forEach((item, idx) => {
+            checkPageBreak(25)
+
+            // Question number + tag
+            doc.setFontSize(9)
+            doc.setFont('helvetica', 'bold')
+            doc.setTextColor(99, 102, 241) // indigo
+            doc.text(`#${idx + 1}  ${item.note || item.type}   ${item.count > 1 ? `x${item.count} errors` : ''}`, margin, y)
+            doc.setTextColor(0)
+            y += 5
+
+            // Question content (may wrap)
+            doc.setFontSize(11)
+            doc.setFont('helvetica', 'normal')
+            const contentLines = doc.splitTextToSize(item.content || '', maxLineW)
+            checkPageBreak(contentLines.length * 5 + 4)
+            doc.text(contentLines, margin, y)
+            y += contentLines.length * 5 + 2
+
+            // Wrong attempts
+            if (item.wrongAttempts && item.wrongAttempts.length > 0) {
+                item.wrongAttempts.forEach((attempt: any) => {
+                    checkPageBreak(7)
+                    doc.setFontSize(9)
+                    doc.setFont('helvetica', 'italic')
+                    doc.setTextColor(180, 50, 50)
+                    const dateStr = new Date(attempt.attempt_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    const wrongText = `  x  ${dateStr}  ${attempt.answer || '(no answer)'}`
+                    const wLines = doc.splitTextToSize(wrongText, maxLineW - 4)
+                    doc.text(wLines, margin + 2, y)
+                    y += wLines.length * 4.5
+                })
+                doc.setTextColor(0)
+            }
+
+            // Correct answer
+            checkPageBreak(7)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'bold')
+            doc.setTextColor(22, 163, 74) // green
+            const ansLines = doc.splitTextToSize(`✓  ${item.answer || ''}`, maxLineW)
+            doc.text(ansLines, margin, y)
+            y += ansLines.length * 5
+            doc.setTextColor(0)
+
+            // Explanation
+            if (item.explanation) {
+                checkPageBreak(7)
+                doc.setFontSize(8.5)
+                doc.setFont('helvetica', 'italic')
+                doc.setTextColor(100)
+                const expLines = doc.splitTextToSize(`  ${item.explanation}`, maxLineW - 4)
+                doc.text(expLines, margin + 2, y)
+                y += expLines.length * 4.5
+                doc.setTextColor(0)
+            }
+
+            // Divider
+            y += 3
+            doc.setDrawColor(220)
+            doc.setLineWidth(0.2)
+            doc.line(margin, y, pageW - margin, y)
+            y += 5
+        })
+
+        doc.save(`error-notebook-${new Date().toISOString().slice(0, 10)}.pdf`)
+    }
+
     const handleAnalyze = async () => {
         if (filteredMistakes.length === 0) {
             alert("请先筛选出需要分析的错题")
@@ -408,7 +510,14 @@ export default function ErrorNotebookPage() {
                                     <Menu.Item>
                                         {({ active }) => (
                                             <button onClick={handlePrint} className={`${active ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700'} group flex w-full items-center rounded-md px-2 py-2 text-sm`}>
-                                                <FileDown className="mr-2 h-4 w-4" /> 导出打印
+                                                <FileDown className="mr-2 h-4 w-4" /> 打印
+                                            </button>
+                                        )}
+                                    </Menu.Item>
+                                    <Menu.Item>
+                                        {({ active }) => (
+                                            <button onClick={handleExportPDF} className={`${active ? 'bg-indigo-50 text-indigo-600' : 'text-gray-700'} group flex w-full items-center rounded-md px-2 py-2 text-sm`}>
+                                                <FileDown className="mr-2 h-4 w-4" /> 导出 PDF
                                             </button>
                                         )}
                                     </Menu.Item>
