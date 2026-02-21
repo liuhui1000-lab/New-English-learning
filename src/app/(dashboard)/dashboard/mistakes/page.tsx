@@ -45,13 +45,12 @@ export default function ErrorNotebookPage() {
         if (recitationData) {
             recitationData.forEach((record: any) => {
                 const qType = record.questions?.type
-                const isSpelling = qType === 'vocabulary' || qType === 'word_transformation'
 
                 allMistakes.push({
                     id: record.questions.id,
                     content: record.questions.content,
                     answer: record.questions.answer,
-                    type: isSpelling ? 'recitation' : 'quiz',
+                    type: 'recitation',
                     note: qType === 'word_transformation' ? '词汇变形' :
                         qType === 'vocabulary' ? '单词拼写' :
                             qType === 'grammar' ? '语法' :
@@ -82,13 +81,12 @@ export default function ErrorNotebookPage() {
                 if (!qId) return
                 if (!grouped.has(qId)) {
                     const qType = record.questions.type
-                    const isSpelling = qType === 'vocabulary' || qType === 'word_transformation'
 
                     grouped.set(qId, {
                         id: qId,
                         content: record.questions.content,
                         answer: record.questions.answer,
-                        type: isSpelling ? 'recitation' : 'quiz',
+                        type: 'quiz',
                         note: qType === 'word_transformation' ? '词汇变形' :
                             qType === 'vocabulary' ? '单词拼写' :
                                 qType === 'grammar' ? '语法' :
