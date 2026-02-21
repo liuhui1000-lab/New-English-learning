@@ -53,7 +53,7 @@ export default function StudyPage() {
         const projectRef = url?.split('//')[1]?.split('.')[0] || 'unknown'
 
         // Reset logs but START with DB info
-        setDebugLogs([`App v5.0-SharedClient | DB: ...${projectRef.slice(-4)}`])
+        setDebugLogs([`App v5.1-SharedClient | DB: ...${projectRef.slice(-4)}`])
 
         try {
             const { data: { user }, error: uError } = await supabase.auth.getUser()
@@ -71,10 +71,12 @@ export default function StudyPage() {
 
             addLog("Fetching initial candidates...")
             // 1. Get Initial Candidates (Due Reviews)
+            // Filter by vocabulary type to ensure only word-families/recitation items are shown
             const { data: reviews, error: rError } = await supabase
                 .from('user_progress')
-                .select('question_id, questions(*)')
+                .select('question_id, questions!inner(*)') // Use !inner to allow filtering on joined record
                 .eq('user_id', user.id)
+                .eq('questions.type', 'vocabulary')
                 .lte('next_review_at', new Date().toISOString())
                 .neq('status', 'mastered')
                 .limit(2)
