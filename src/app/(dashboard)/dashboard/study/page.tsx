@@ -18,19 +18,19 @@ export default function StudyPage() {
 
     // Check for saved session on mount
     useEffect(() => {
-        // v4 cache key for debug session
-        const savedBatch = sessionStorage.getItem('current_study_session_v4')
+        // v5 cache key for debug session
+        const savedBatch = sessionStorage.getItem('current_study_session_v5')
         if (savedBatch) {
             try {
                 const parsed = JSON.parse(savedBatch)
                 if (Array.isArray(parsed) && parsed.length > 0) {
-                    setDebugLogs(["Refreshed from Cache (v4)"])
+                    setDebugLogs(["Refreshed from Cache (v5)"])
                     setBatch(parsed)
                     setLoading(false)
                     return
                 }
             } catch (e) {
-                sessionStorage.removeItem('current_study_session_v4')
+                sessionStorage.removeItem('current_study_session_v5')
             }
         }
 
@@ -42,7 +42,7 @@ export default function StudyPage() {
     // Save session whenever batch changes (and isn't empty)
     useEffect(() => {
         if (batch.length > 0 && !sessionComplete) {
-            sessionStorage.setItem('current_study_session_v4', JSON.stringify(batch))
+            sessionStorage.setItem('current_study_session_v5', JSON.stringify(batch))
         }
     }, [batch, sessionComplete])
 
@@ -53,7 +53,7 @@ export default function StudyPage() {
         const projectRef = url?.split('//')[1]?.split('.')[0] || 'unknown'
 
         // Reset logs but START with DB info
-        setDebugLogs([`App v4.7-SharedClient | DB: ...${projectRef.slice(-4)}`])
+        setDebugLogs([`App v5.0-SharedClient | DB: ...${projectRef.slice(-4)}`])
 
         try {
             const { data: { user }, error: uError } = await supabase.auth.getUser()
@@ -209,7 +209,7 @@ export default function StudyPage() {
             if (error) throw error
 
             // Clear session storage only on success
-            sessionStorage.removeItem('current_study_session_v4')
+            sessionStorage.removeItem('current_study_session_v5')
             setSessionComplete(true)
 
         } catch (error: any) {
@@ -269,7 +269,7 @@ export default function StudyPage() {
                 </div>
                 <button
                     onClick={() => {
-                        sessionStorage.removeItem('current_study_session_v4') // Cleanup just in case
+                        sessionStorage.removeItem('current_study_session_v5') // Cleanup just in case
                         window.location.href = '/dashboard'
                     }}
                     className="mt-6 px-6 py-2 bg-indigo-600 text-white rounded-full"
