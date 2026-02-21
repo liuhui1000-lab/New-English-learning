@@ -120,34 +120,33 @@ export default function StudyPage() {
                 }
             }
 
-            if (candidates.length === 0) {
-                setBatch([])
-                return
-            }
+            addLog(`Candidates: ${candidates.length}`)
 
-            // 3. FETCH SIBLINGS
+            // 3. SELECTION & SIBLING FETCHING
             const familyTags = new Set<string>()
             const familyRoots = new Set<string>()
 
-            candidates.forEach(q => {
+            // Find first 2 unique families from candidates
+            for (const q of candidates) {
                 const tag = q.tags?.find(t => t.startsWith('Family:'))
                 if (tag) {
-                    familyTags.add(tag)
-                    // Extract root: "Family:accept" -> "accept"
-                    const root = tag.split(':')[1]?.trim()
-                    if (root && root.length > 2) familyRoots.add(root)
+                    const familyId = tag.replace('Family:', '').trim()
+                    if (familyId && (familyTags.has(tag) || familyTags.size < 2)) {
+                        familyTags.add(tag)
+                        if (familyId.length > 2) familyRoots.add(familyId)
+                    }
                 }
-            })
+                if (familyTags.size >= 2) break
+            }
 
-            addLog(`Families: ${Array.from(familyTags).join(', ')}`)
+            addLog(`Selected Families: ${Array.from(familyTags).join(', ') || 'None'}`)
 
             if (familyTags.size > 0) {
-                // Query by Tag - only vocabulary type
+                // Fetch ALL members of the selected 2 families
                 const tagQueries = Array.from(familyTags).map(tag =>
                     supabase.from('questions').select('*').eq('type', 'vocabulary').contains('tags', [tag])
                 )
 
-                // Query by Content (Fallback: 'accept%') - only vocabulary type
                 const contentQueries = Array.from(familyRoots).map(root =>
                     supabase.from('questions').select('*').eq('type', 'vocabulary').ilike('content', `${root}%`)
                 )
@@ -156,27 +155,20 @@ export default function StudyPage() {
                 const results = await Promise.all(allQueries)
 
                 const finalMap = new Map<string, Question>()
-                candidates.forEach(c => finalMap.set(c.id, c))
 
-                let foundSiblings = 0
-                results.forEach((res, index) => {
-                    if (res.error) {
-                        addLog(`Err Q${index}: ${res.error.message}`)
-                    }
+                results.forEach((res) => {
                     if (res.data) {
                         res.data.forEach((q: Question) => {
-                            if (!finalMap.has(q.id)) {
-                                finalMap.set(q.id, q)
-                                foundSiblings++
-                            }
+                            finalMap.set(q.id, q)
                         })
                     }
                 })
 
-                addLog(`Merged ${foundSiblings} siblings. Total: ${finalMap.size}`)
+                addLog(`Total Batch Size: ${finalMap.size} (${familyTags.size} families)`)
                 setBatch(Array.from(finalMap.values()))
             } else {
-                setBatch(candidates)
+                // Fallback: If no families found, just use the candidates (limited to first 6)
+                setBatch(candidates.slice(0, 6))
             }
 
         } catch (error: any) {
