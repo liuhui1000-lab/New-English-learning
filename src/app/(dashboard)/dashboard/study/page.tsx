@@ -69,7 +69,7 @@ export default function StudyPage() {
                 .neq('status', 'mastered')
                 .limit(40)
 
-            const allDue: Question[] = reviews?.map((r: any) => r.questions).filter(q => q && !/[A-D][\)\.]/.test(q.content)) || []
+            const allDue: Question[] = reviews?.map((r: any) => r.questions).filter((q: Question) => q && !/[A-D][\)\.]/.test(q.content)) || []
             addLog(`Due items: ${allDue.length}`)
 
             // 2. Identify potential families
@@ -77,7 +77,7 @@ export default function StudyPage() {
 
             // First pass: look in due items
             for (const q of allDue) {
-                const tag = q.tags?.find(t => t.startsWith('Family:'))
+                const tag = q.tags?.find((t: string) => t.startsWith('Family:'))
                 if (tag) familyTags.add(tag)
                 if (familyTags.size >= 2) break
             }
@@ -96,10 +96,10 @@ export default function StudyPage() {
                 if (progressIds.length > 0) newQuery = newQuery.not('id', 'in', `(${progressIds.join(',')})`)
 
                 const { data: potentialNew } = await newQuery
-                const cleanNew = (potentialNew || []).filter(q => !/[A-D][\)\.]/.test(q.content))
+                const cleanNew = (potentialNew || []).filter((q: Question) => !/[A-D][\)\.]/.test(q.content))
 
                 for (const q of cleanNew) {
-                    const tag = q.tags?.find(t => t.startsWith('Family:'))
+                    const tag = q.tags?.find((t: string) => t.startsWith('Family:'))
                     if (tag) {
                         familyTags.add(tag)
                     }
