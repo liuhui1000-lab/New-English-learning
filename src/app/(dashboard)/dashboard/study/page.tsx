@@ -46,7 +46,7 @@ export default function StudyPage() {
         setLoading(true)
         const url = process.env.NEXT_PUBLIC_SUPABASE_URL
         const projectRef = url?.split('//')[1]?.split('.')[0] || 'unknown'
-        setDebugLogs([`App v5.3-StrictRecitation | DB: ...${projectRef.slice(-4)}`])
+        setDebugLogs([`App v5.4-TagOnly | DB: ...${projectRef.slice(-4)}`])
 
         try {
             const { data: { user }, error: uError } = await supabase.auth.getUser()
@@ -55,7 +55,7 @@ export default function StudyPage() {
                 return
             }
 
-            addLog("Fetching candidates...")
+            addLog("Fetching recitation candidates...")
             // 1. Get Initial Candidates (Due Reviews)
             const { data: reviews } = await supabase
                 .from('user_progress')
@@ -92,33 +92,28 @@ export default function StudyPage() {
                 return
             }
 
-            // 3. SELECTION & SIBLING FETCHING
+            // 3. SELECTION & TAG-ONLY FETCHING (Strictly 2 families)
             const familyTags = new Set<string>()
-            const familyRoots = new Set<string>()
 
             for (const q of recitationPool) {
                 const tag = q.tags?.find(t => t.startsWith('Family:'))
                 if (tag) {
-                    const familyId = tag.replace('Family:', '').trim()
-                    if (familyId && (familyTags.has(tag) || familyTags.size < 2)) {
+                    if (familyTags.has(tag) || familyTags.size < 2) {
                         familyTags.add(tag)
-                        if (familyId.length > 2) familyRoots.add(familyId)
                     }
                 }
                 if (familyTags.size >= 2) break
             }
 
-            addLog(`Families Found: ${familyTags.size}`)
+            addLog(`Families: ${familyTags.size}`)
 
             if (familyTags.size > 0) {
+                // Fetch ALL members of the selected exactly-2 tags
                 const tagQueries = Array.from(familyTags).map(tag =>
                     supabase.from('questions').select('*').in('type', ['vocabulary', 'word_transformation']).contains('tags', [tag])
                 )
-                const contentQueries = Array.from(familyRoots).map(root =>
-                    supabase.from('questions').select('*').in('type', ['vocabulary', 'word_transformation']).ilike('content', `${root}%`)
-                )
 
-                const results = await Promise.all([...tagQueries, ...contentQueries])
+                const results = await Promise.all(tagQueries)
                 const finalMap = new Map<string, Question>()
                 results.forEach(res => res.data?.forEach((q: Question) => finalMap.set(q.id, q)))
 
@@ -173,7 +168,7 @@ export default function StudyPage() {
         return (
             <div className="flex h-screen items-center justify-center">
                 <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-                <span className="ml-2 text-gray-500">正在生成背诵任务 (智能调度中)...</span>
+                <span className="ml-2 text-gray-500">正在生成词转背诵任务 (智能调度中)...</span>
             </div>
         )
     }
@@ -182,7 +177,7 @@ export default function StudyPage() {
         return (
             <div className="flex flex-col items-center justify-center h-screen bg-indigo-50 p-4">
                 <Trophy className="w-24 h-24 text-yellow-400 mb-6 drop-shadow-lg" />
-                <h1 className="text-4xl font-bold text-indigo-900 mb-2 font-comic text-center">太棒了! 任务完成!</h1>
+                <h1 className="text-4xl font-bold text-indigo-900 mb-2 font-comic text-center">太棒了! 词转背诵完成!</h1>
                 <p className="text-gray-600 mb-8 max-w-md text-center">进度已永久保存到云端。</p>
                 <div className="flex space-x-4">
                     <button onClick={() => window.location.href = '/dashboard'} className="px-6 py-3 rounded-full border-2 border-indigo-200 text-indigo-600 font-bold hover:bg-indigo-50">返回主页</button>
