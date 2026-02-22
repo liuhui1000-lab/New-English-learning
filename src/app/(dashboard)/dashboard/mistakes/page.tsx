@@ -44,7 +44,8 @@ export default function ErrorNotebookPage() {
 
         if (recitationData) {
             recitationData.forEach((record: any) => {
-                const qType = record.questions?.type
+                if (!record.questions) return
+                const qType = record.questions.type
 
                 allMistakes.push({
                     id: record.questions.id,
@@ -76,6 +77,7 @@ export default function ErrorNotebookPage() {
             quizData.forEach((record: any) => {
                 const qId = record.questions?.id
                 if (!qId) return
+
                 if (!grouped.has(qId)) {
                     const qType = record.questions.type
                     grouped.set(qId, {
