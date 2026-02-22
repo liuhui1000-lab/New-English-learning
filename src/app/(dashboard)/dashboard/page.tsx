@@ -123,12 +123,12 @@ export default function StudentDashboardPage() {
                             推荐
                         </span>
                     </div>
-                    <h3 className="text-lg font-bold text-gray-900 mb-1">背诵模式</h3>
+                    <h3 className="text-lg font-bold text-gray-900 mb-1">词转背诵</h3>
                     <p className="text-gray-500 text-sm mb-4">
-                        智能记忆算法，词汇/搭配/语法一网打尽。
+                        智能记忆算法，词汇及词汇变形一网打尽。
                     </p>
                     <Link href="/dashboard/study" className="text-blue-600 font-semibold hover:underline text-sm flex items-center">
-                        进入背诵 <TrendingUp className="w-4 h-4 ml-1" />
+                        进入词转背诵 <TrendingUp className="w-4 h-4 ml-1" />
                     </Link>
                 </div>
 

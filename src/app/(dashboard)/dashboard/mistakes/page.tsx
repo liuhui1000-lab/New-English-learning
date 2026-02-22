@@ -28,9 +28,8 @@ export default function ErrorNotebookPage() {
         setLoading(true)
         const allMistakes: any[] = []
 
-        // 1. Fetch Recitation Mistakes (Learning status implies not mastered)
-        // Or better: fetch items with HIGH attempt count but low success?
-        // Let's use current simple logic: status = 'learning' AND attempts > 0
+        // 1. Fetch Recitation Mistakes (ONLY from Word Transformation Recitation flow)
+        // Only include vocabulary and word_transformation recorded in user_progress
         const { data: recitationData } = await supabase
             .from('user_progress')
             .select(`
@@ -39,6 +38,7 @@ export default function ErrorNotebookPage() {
                     id, content, answer, type, tags
                 )
             `)
+            .in('questions.type', ['vocabulary', 'word_transformation'])
             .eq('status', 'learning')
             .gt('attempts', 0)
 
@@ -50,17 +50,15 @@ export default function ErrorNotebookPage() {
                     id: record.questions.id,
                     content: record.questions.content,
                     answer: record.questions.answer,
-                    type: 'recitation',
-                    note: qType === 'word_transformation' ? '词汇变形' :
-                        qType === 'vocabulary' ? '单词拼写' :
-                            qType === 'grammar' ? '语法' :
-                                qType === 'sentence_transformation' ? '句型转换' : '词组搭配',
-                    count: record.attempts // Approximation of struggles
+                    type: 'recitation', // Strictly source-based
+                    note: qType === 'word_transformation' ? '词汇变形' : '单词拼写',
+                    count: record.attempts,
+                    tags: record.questions.tags || []
                 })
             })
         }
 
-        // 2. Fetch Quiz Mistakes - all wrong attempts per question
+        // 2. Fetch Quiz Mistakes (ONLY from Practice/Mock paper source)
         const { data: quizData } = await supabase
             .from('quiz_results')
             .select(`
@@ -70,23 +68,21 @@ export default function ErrorNotebookPage() {
                 )
             `)
             .eq('is_correct', false)
-            .order('attempt_at', { ascending: true }) // oldest first for timeline
+            .order('attempt_at', { ascending: true })
             .limit(200)
 
         if (quizData) {
-            // Group attempts by question_id
             const grouped = new Map<string, any>()
             quizData.forEach((record: any) => {
                 const qId = record.questions?.id
                 if (!qId) return
                 if (!grouped.has(qId)) {
                     const qType = record.questions.type
-
                     grouped.set(qId, {
                         id: qId,
                         content: record.questions.content,
                         answer: record.questions.answer,
-                        type: 'quiz',
+                        type: 'quiz', // Strictly source-based
                         note: qType === 'word_transformation' ? '词汇变形' :
                             qType === 'vocabulary' ? '单词拼写' :
                                 qType === 'grammar' ? '语法' :
@@ -99,11 +95,10 @@ export default function ErrorNotebookPage() {
                 }
                 const item = grouped.get(qId)
                 item.wrongAttempts.push({
-                    id: record.id,       // quiz_results.id for targeted deletion
+                    id: record.id,
                     answer: record.answer,
                     attempt_at: record.attempt_at
                 })
-                // Track latest attempt time for sorting
                 if (record.attempt_at > item.lastAttempt) item.lastAttempt = record.attempt_at
             })
 
@@ -650,7 +645,7 @@ export default function ErrorNotebookPage() {
                             className={`px-4 py-1.5 rounded-md text-sm font-medium transition capitalize ${filter === t ? 'bg-white shadow text-indigo-600' : 'text-gray-500 hover:text-gray-700'
                                 }`}
                         >
-                            {t === 'all' ? `全部 (${mistakes.length})` : t === 'recitation' ? '背诵回顾' : '练习题'}
+                            {t === 'all' ? `全部 (${mistakes.length})` : t === 'recitation' ? '词转背诵回顾' : '练习/错题库'}
                         </button>
                     ))}
                 </div>
