@@ -29,26 +29,78 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
             windowHeight: element.scrollHeight,
             // Optimization: Remove modern CSS colors that html2canvas cannot parse (lab, oklch)
             onclone: (clonedDoc) => {
+                // 1. Remove all existing styles that might contain lab() or oklch()
+                const styles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
+                styles.forEach(s => s.remove());
+
+                // 2. Inject a clean, Hex-only CSS for the PDF export
                 const style = clonedDoc.createElement('style');
                 style.innerHTML = `
                     * { 
-                        color: inherit !important; 
+                        box-sizing: border-box !important;
+                        -webkit-print-color-adjust: exact !important;
+                    }
+                    body, div, span, p, h1, h2, h3, h4 {
+                        font-family: sans-serif !important;
                         background-color: transparent !important;
+                        color: #1f2937 !important; /* Gray-800 fallback */
                     }
-                    div, span, button, h1, h2, h3, h4, p {
-                         border-color: #e5e7eb !important;
+                    #mistakes-list-container {
+                        padding: 20px !important;
+                        background-color: #ffffff !important;
+                        display: block !important;
                     }
-                    .bg-indigo-600 { background-color: #4f46e5 !important; }
+                    /* Layout */
+                    .flex { display: flex !important; }
+                    .flex-col { flex-direction: column !important; }
+                    .gap-4 { gap: 1rem !important; }
+                    .gap-2 { gap: 0.5rem !important; }
+                    .flex-1 { flex: 1 1 0% !important; }
+                    .items-start { align-items: flex-start !important; }
+                    
+                    /* Spacing */
+                    .space-y-4 > * + * { margin-top: 1rem !important; }
+                    .mt-1 { margin-top: 0.25rem !important; }
+                    .mt-3 { margin-top: 0.75rem !important; }
+                    .mt-4 { margin-top: 1rem !important; }
+                    .mb-1 { margin-bottom: 0.25rem !important; }
+                    .mb-2 { margin-bottom: 0.5rem !important; }
+                    
+                    /* Card Styles */
+                    .bg-white { background-color: #ffffff !important; }
+                    .rounded-xl { border-radius: 0.75rem !important; }
+                    .rounded-lg { border-radius: 0.5rem !important; }
+                    .rounded { border-radius: 0.25rem !important; }
+                    .border { border: 1px solid #e5e7eb !important; }
+                    .p-5 { padding: 1.25rem !important; }
+                    .p-3 { padding: 0.75rem !important; }
+                    
+                    /* Tags and Colors (HEX ONLY) */
+                    .bg-indigo-50 { background-color: #eef2ff !important; }
                     .text-indigo-600 { color: #4f46e5 !important; }
                     .bg-green-50 { background-color: #f0fdf4 !important; }
                     .text-green-600 { color: #16a34a !important; }
                     .bg-red-50 { background-color: #fef2f2 !important; }
                     .text-red-600 { color: #dc2626 !important; }
-                    .bg-indigo-50 { background-color: #eef2ff !important; }
                     .bg-gray-50 { background-color: #f9fafb !important; }
                     .text-gray-900 { color: #111827 !important; }
                     .text-gray-500 { color: #6b7280 !important; }
-                    .border-gray-200 { border-color: #e5e7eb !important; }
+                    .text-gray-400 { color: #9ca3af !important; }
+                    
+                    /* Typography */
+                    .text-lg { font-size: 1.125rem !important; line-height: 1.75rem !important; }
+                    .text-sm { font-size: 0.875rem !important; line-height: 1.25rem !important; }
+                    .text-xs { font-size: 0.75rem !important; line-height: 1rem !important; }
+                    .font-bold { font-weight: 700 !important; }
+                    .font-medium { font-weight: 500 !important; }
+                    .italic { font-style: italic !important; }
+                    .uppercase { text-transform: uppercase !important; }
+                    .tracking-wider { letter-spacing: 0.05em !important; }
+                    .leading-relaxed { line-height: 1.625 !important; }
+                    
+                    /* Visibility */
+                    .print\\:hidden, button, input { display: none !important; }
+                    .hidden { display: none !important; }
                 `;
                 clonedDoc.head.appendChild(style);
             }
