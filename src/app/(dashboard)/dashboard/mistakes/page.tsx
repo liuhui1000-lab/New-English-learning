@@ -331,7 +331,7 @@ export default function ErrorNotebookPage() {
             )}
 
             {/* List */}
-            <div id="mistakes-list-container">
+            <div id="mistakes-list-container" className="export-pdf-safe">
                 {filteredMistakes.length === 0 ? (
                     <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
                         <div className="mx-auto w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">

@@ -26,7 +26,32 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
             backgroundColor: '#ffffff',
             // Ensure we capture the full scroll height if it's a long list
             windowWidth: element.scrollWidth,
-            windowHeight: element.scrollHeight
+            windowHeight: element.scrollHeight,
+            // Optimization: Remove modern CSS colors that html2canvas cannot parse (lab, oklch)
+            onclone: (clonedDoc) => {
+                const style = clonedDoc.createElement('style');
+                style.innerHTML = `
+                    * { 
+                        color: inherit !important; 
+                        background-color: transparent !important;
+                    }
+                    div, span, button, h1, h2, h3, h4, p {
+                         border-color: #e5e7eb !important;
+                    }
+                    .bg-indigo-600 { background-color: #4f46e5 !important; }
+                    .text-indigo-600 { color: #4f46e5 !important; }
+                    .bg-green-50 { background-color: #f0fdf4 !important; }
+                    .text-green-600 { color: #16a34a !important; }
+                    .bg-red-50 { background-color: #fef2f2 !important; }
+                    .text-red-600 { color: #dc2626 !important; }
+                    .bg-indigo-50 { background-color: #eef2ff !important; }
+                    .bg-gray-50 { background-color: #f9fafb !important; }
+                    .text-gray-900 { color: #111827 !important; }
+                    .text-gray-500 { color: #6b7280 !important; }
+                    .border-gray-200 { border-color: #e5e7eb !important; }
+                `;
+                clonedDoc.head.appendChild(style);
+            }
         });
 
         // 2. Convert canvas to image data
