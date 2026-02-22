@@ -109,20 +109,32 @@ export default function StudyPage() {
 
             if (familyTags.size > 0) {
                 // Fetch ALL members of the selected exactly-2 tags
+                // Use .filter for jsonb compatibility since Supabase .contains can default to array syntax {}
                 const tagQueries = Array.from(familyTags).map(tag =>
-                    supabase.from('questions').select('*').in('type', ['vocabulary', 'word_transformation']).contains('tags', [tag])
+                    supabase.from('questions')
+                        .select('*')
+                        .in('type', ['vocabulary', 'word_transformation'])
+                        .filter('tags', 'cs', JSON.stringify([tag]))
                 )
 
                 const results = await Promise.all(tagQueries)
                 const finalMap = new Map<string, Question>()
-                results.forEach(res => res.data?.forEach((q: Question) => finalMap.set(q.id, q)))
+                results.forEach(res => {
+                    if (res.error) console.error("Tag Fetch Error:", res.error)
+                    res.data?.forEach((q: Question) => finalMap.set(q.id, q))
+                })
 
-                addLog(`Batch Ready: ${finalMap.size} questions`)
-                setBatch(Array.from(finalMap.values()))
-            } else {
-                addLog("Fallback to mixed recitation")
-                setBatch(recitationPool.slice(0, 6))
+                if (finalMap.size > 0) {
+                    addLog(`Batch Ready: ${finalMap.size} questions`)
+                    setBatch(Array.from(finalMap.values()))
+                    return // Success
+                }
             }
+
+            // Fallback: If no families found OR tag queries failed/returned nothing
+            addLog("Using fallback pool (Mixed)")
+            setBatch(recitationPool.slice(0, 8))
+
         } catch (error: any) {
             console.error(error)
             addLog(`Fatal: ${error.message}`)
