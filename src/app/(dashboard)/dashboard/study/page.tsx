@@ -11,6 +11,8 @@ export default function StudyPage() {
     const [batch, setBatch] = useState<Question[]>([])
     const [sessionComplete, setSessionComplete] = useState(false)
 
+    const [fetchWarning, setFetchWarning] = useState<string | null>(null)
+
     // State for debug logs
     const [debugLogs, setDebugLogs] = useState<string[]>([])
     const addLog = (msg: string) => setDebugLogs(prev => [...prev.slice(-4), msg])
@@ -44,9 +46,10 @@ export default function StudyPage() {
 
     const fetchStudyBatch = async () => {
         setLoading(true)
+        setFetchWarning(null)
         const url = process.env.NEXT_PUBLIC_SUPABASE_URL
         const projectRef = url?.split('//')[1]?.split('.')[0] || 'unknown'
-        setDebugLogs([`App v5.4-TagOnly | DB: ...${projectRef.slice(-4)}`])
+        setDebugLogs([`App v5.7-StrictFamily | DB: ...${projectRef.slice(-4)}`])
 
         try {
             const { data: { user }, error: uError } = await supabase.auth.getUser()
@@ -55,8 +58,8 @@ export default function StudyPage() {
                 return
             }
 
-            addLog("Fetching recitation candidates...")
-            // 1. Get Initial Candidates (Due Reviews)
+            addLog("Checking for due reviews...")
+            // 1. Get Due Reviews (Already in progress)
             const { data: reviews } = await supabase
                 .from('user_progress')
                 .select('question_id, questions!inner(*)')
@@ -66,50 +69,48 @@ export default function StudyPage() {
                 .neq('status', 'mastered')
                 .limit(40)
 
-            let pool: Question[] = reviews?.map((r: any) => r.questions).filter(q => q) || []
+            const allDue: Question[] = reviews?.map((r: any) => r.questions).filter(q => q && !/[A-D][\)\.]/.test(q.content)) || []
+            addLog(`Due items: ${allDue.length}`)
 
-            // Step 2. Fill with New Words if needed
-            if (pool.length < 10) {
-                const fillLimit = 20
-                const progressIds = (await supabase.from('user_progress').select('question_id').eq('user_id', user.id)).data?.map((p: any) => p.question_id) || []
-                const currentIds = pool.map(c => c.id)
-                const allIgnore = [...progressIds, ...currentIds]
-
-                let query = supabase.from('questions').select('*').in('type', ['vocabulary', 'word_transformation']).limit(fillLimit)
-                if (allIgnore.length > 0) query = query.not('id', 'in', `(${allIgnore.join(',')})`)
-
-                const { data: newWords } = await query
-                if (newWords) pool = [...pool, ...newWords]
-            }
-
-            // Exclude anything that looks like Multiple Choice
-            const recitationPool = pool.filter(q => !/[A-D][\)\.]/.test(q.content))
-            addLog(`Recitation Pool: ${recitationPool.length}`)
-
-            if (recitationPool.length === 0) {
-                setBatch([])
-                setLoading(false)
-                return
-            }
-
-            // 3. SELECTION & TAG-ONLY FETCHING (Strictly 2 families)
+            // 2. Identify potential families
             const familyTags = new Set<string>()
 
-            for (const q of recitationPool) {
+            // First pass: look in due items
+            for (const q of allDue) {
                 const tag = q.tags?.find(t => t.startsWith('Family:'))
-                if (tag) {
-                    if (familyTags.has(tag) || familyTags.size < 2) {
-                        familyTags.add(tag)
-                    }
-                }
+                if (tag) familyTags.add(tag)
                 if (familyTags.size >= 2) break
             }
 
-            addLog(`Families: ${familyTags.size}`)
+            // Second pass: if < 2 families, look for NEW words that belong to families
+            if (familyTags.size < 2) {
+                addLog("Checking new words for families...")
+                const progressIds = (await supabase.from('user_progress').select('question_id').eq('user_id', user.id)).data?.map((p: any) => p.question_id) || []
 
+                // Fetch a broad pool of recent questions to find new families
+                let newQuery = supabase.from('questions')
+                    .select('*')
+                    .in('type', ['vocabulary', 'word_transformation'])
+                    .limit(200)
+
+                if (progressIds.length > 0) newQuery = newQuery.not('id', 'in', `(${progressIds.join(',')})`)
+
+                const { data: potentialNew } = await newQuery
+                const cleanNew = (potentialNew || []).filter(q => !/[A-D][\)\.]/.test(q.content))
+
+                for (const q of cleanNew) {
+                    const tag = q.tags?.find(t => t.startsWith('Family:'))
+                    if (tag) {
+                        familyTags.add(tag)
+                    }
+                    if (familyTags.size >= 2) break
+                }
+            }
+
+            addLog(`Selected Families: ${familyTags.size}`)
+
+            // 3. EFFECTIVE BATCHING
             if (familyTags.size > 0) {
-                // Fetch ALL members of the selected exactly-2 tags
-                // Use .filter for jsonb compatibility since Supabase .contains can default to array syntax {}
                 const tagQueries = Array.from(familyTags).map(tag =>
                     supabase.from('questions')
                         .select('*')
@@ -120,20 +121,27 @@ export default function StudyPage() {
                 const results = await Promise.all(tagQueries)
                 const finalMap = new Map<string, Question>()
                 results.forEach(res => {
-                    if (res.error) console.error("Tag Fetch Error:", res.error)
-                    res.data?.forEach((q: Question) => finalMap.set(q.id, q))
+                    res.data?.forEach((q: Question) => {
+                        if (!/[A-D][\)\.]/.test(q.content)) finalMap.set(q.id, q)
+                    })
                 })
 
                 if (finalMap.size > 0) {
                     addLog(`Batch Ready: ${finalMap.size} questions`)
                     setBatch(Array.from(finalMap.values()))
-                    return // Success
+                    return // SUCCESS
                 }
             }
 
-            // Fallback: If no families found OR tag queries failed/returned nothing
-            addLog("Using fallback pool (Mixed)")
-            setBatch(recitationPool.slice(0, 8))
+            // 4. FALLBACK (If no families can be formed)
+            if (allDue.length > 0) {
+                addLog("Strict Family failed. Falling back to reviews.")
+                setFetchWarning("无法自动锁定词族。当前正在为您推送待复习的独立单词，请联系管理员完善题目标签。")
+                setBatch(allDue.slice(0, 10))
+            } else {
+                addLog("Empty Batch (No families, no due)")
+                setBatch([])
+            }
 
         } catch (error: any) {
             console.error(error)
@@ -203,16 +211,29 @@ export default function StudyPage() {
         return (
             <div className="flex flex-col items-center justify-center h-[60vh]">
                 <h2 className="text-2xl font-bold text-gray-700 mb-2">🎉 全部完成!</h2>
-                <p className="text-gray-500 text-center">今日没有待复习的内容，也没有新单词了。</p>
+                <div className="max-w-md text-center space-y-2">
+                    <p className="text-gray-500">今日没有待复习的内容，暂无词族可供背诵。</p>
+                    <p className="text-xs text-gray-400 bg-gray-50 p-2 rounded border border-dashed">
+                        诊断：如果词库中有题但无法生成，可能是由于题目未标记 `Family:xxx` 标签。请联系管理员修正。
+                    </p>
+                </div>
                 <button onClick={() => window.location.href = '/dashboard'} className="mt-6 px-6 py-2 bg-indigo-600 text-white rounded-full">返回主页</button>
             </div>
         )
     }
 
     return (
-        <RecitationSession
-            batch={batch}
-            onComplete={handleSessionComplete}
-        />
+        <div className="relative min-h-screen bg-white">
+            {fetchWarning && (
+                <div className="bg-amber-50 border-b border-amber-100 p-3 text-sm text-amber-700 flex items-center justify-center gap-2">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span>{fetchWarning}</span>
+                </div>
+            )}
+            <RecitationSession
+                batch={batch}
+                onComplete={handleSessionComplete}
+            />
+        </div>
     )
 }
