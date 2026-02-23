@@ -630,8 +630,8 @@ function classifyQuestion(content: string): ParsedQuestion {
 
     // Check for blanks: at least 2 consecutive underscores, or [] / () indicating a blank
     const hasBlank = /_{2,}|\[\s*\]|\(\s*\)/.test(content);
-    // Check for root word at the end: (word) followed by optional punctuation or spaces
-    const rootWordMatch = content.match(/\(([a-zA-Z\s]+)\)[^\)]*$/);
+    // Check for root word at the end: (word) or （word） followed by optional punctuation or spaces
+    const rootWordMatch = content.match(/[\(\（]([a-zA-Z\s]+)[\)\）][^\)\）]*$/);
 
     // 1. Sentence Transformation (Rewrite)
     // Keywords: "rewrite", "homonymous", "passive voice", "plural", "question", or Chinese prompts

@@ -292,9 +292,12 @@ export async function POST(req: NextRequest) {
                             debugLogs.push(`[OCR Layout] Same Line: "${currentLineStr}" -> "${b.text}". Gap: ${gap.toFixed(1)}, AvgChar: ${avgCharWidth.toFixed(1)}`);
                         }
 
+                        const isOptionBlock = /^[A-G][\.\)）]/.test(b.text.trim()) || /^[A-G]\s/.test(b.text.trim());
+
                         // If gap is unusually large (e.g. > 2.5 average characters), assume an underline was stripped
                         // We also enforce an absolute threshold of 15px to avoid triggering on standard spaces in some fonts
-                        if (gap > avgCharWidth * 2.5 && gap > 15) {
+                        // CRITICAL: Do NOT inject a blank if the gap is just the natural spacing before a multiple choice option (e.g. A), B))
+                        if (gap > avgCharWidth * 2.5 && gap > 15 && !isOptionBlock) {
                             currentLineStr += ` ____ ${b.text}`;
                             if (index < 30) debugLogs.push(`[OCR Layout] 🚨 INJECTED BLANK HERE!`);
                         } else {
