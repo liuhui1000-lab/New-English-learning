@@ -702,7 +702,7 @@ function classifyQuestion(content: string): ParsedQuestion {
         // we must ensure AT LEAST ONE blank exists for the UI to render the gap, otherwise the question looks broken.
         // We will safely inject a blank right before the 'A)' or 'A.' option block.
         if (!hasBlank) {
-            const firstOptionMatch = content.match(/\s+[Aa][\)\.]\s+/);
+            const firstOptionMatch = content.match(/\s+[Aa][\)\.]/);
             if (firstOptionMatch) {
                 const index = firstOptionMatch.index;
                 if (index !== undefined) {
@@ -895,13 +895,13 @@ function isGarbageText(text: string): boolean {
     if (/\{#\{.*?\}#\}/.test(text)) return true; // Font encoding garbage pattern
 
     // Check for high density of valid characters
-    // Valid = alphanumeric, chinese, common punctuation
-    const validChars = trimmed.match(/[\u4e00-\u9fa5a-zA-Z0-9\s\.,;!?'"()\[\]]/g)?.length || 0;
+    // Valid = alphanumeric, chinese, common punctuation, including underscores and hyphens used for blanks
+    const validChars = trimmed.match(/[\u4e00-\u9fa5a-zA-Z0-9\s\.,;!?'"()\[\]_\-\/:\|]/g)?.length || 0;
     const ratio = validChars / trimmed.length;
 
-    // If less than 50% of characters are "valid", it's likely encoding garbage (e.g. )
-    if (ratio < 0.5) {
-        console.warn(`Text Quality Check Failed: Valid Ratio ${ratio.toFixed(2)} (< 0.5)`);
+    // If less than 40% of characters are "valid", it's likely encoding garbage
+    if (ratio < 0.4) {
+        console.warn(`Text Quality Check Failed: Valid Ratio ${ratio.toFixed(2)} (< 0.4). Sample: ${trimmed.substring(0, 50)}`);
         return true;
     }
 
