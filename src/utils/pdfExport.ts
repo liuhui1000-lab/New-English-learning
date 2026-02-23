@@ -156,7 +156,6 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
                 break; // Reached the end
             }
 
-            // Find the card that crosses nextOffset
             let breakOffset = nextOffset;
             let foundBreak = false;
 
@@ -165,26 +164,27 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
                 const cardTop = rect.top - containerRect.top;
                 const cardBottom = rect.bottom - containerRect.top;
 
-                // If the card crosses the page boundary
+                // Check if this card crosses the next page boundary
                 if (cardTop < nextOffset && cardBottom > nextOffset) {
-                    // Check if we can safely push it to the next page
-                    // We want to avoid empty pages, so ensure there's at least 60px of content before breaking
-                    if (cardTop > currentOffset + 60) {
-                        breakOffset = cardTop - 15; // 15px DOM buffering gap above card
+                    // It crosses. Can we safely break before it?
+                    // Ensure the card isn't taller than the whole page itself and that we aren't breaking too early (at least some content exists)
+                    if (cardTop > currentOffset + 20) {
+                        // Break slightly above the card
+                        breakOffset = cardTop - 10;
                         foundBreak = true;
                     }
-                    // If card takes up the entire page, let it be cut in the middle (break inside).
-                    break;
+                    break; // Stop checking further cards for this page
                 }
             }
 
-            // Failsafe: always advance by at least a page size if no break point is found or card is huge
             if (!foundBreak) {
-                breakOffset = currentOffset + pageHeightDOM;
+                // If no card crossed the boundary (or the card is taller than a page), just break at the page limit
+                breakOffset = nextOffset;
             }
-            // Ensure we are strictly moving forward
+
+            // Failsafe: ensure we're always moving forward by at least something
             if (breakOffset <= currentOffset) {
-                breakOffset = currentOffset + pageHeightDOM;
+                breakOffset = nextOffset;
             }
 
             currentOffset = breakOffset;
@@ -192,7 +192,10 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
 
         // 6. Draw PDF pages
         const imgWidthMM = contentWidthMM;
-        const imgHeightMM = canvas.height * (imgWidthMM / canvas.width); // Total scaled image height
+
+        // The canvas is scaled by 2, so its pixel height doesn't map 1:1 to mm using the unscaled element width.
+        // We calculate the total image height in MM based on the true DOM ratio:
+        const imgHeightMM = totalHeightDOM * pxToMm;
 
         for (let i = 0; i < pageOffsets.length; i++) {
             if (i > 0) pdf.addPage();
@@ -201,19 +204,22 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
             const nextOffsetDOM = (i < pageOffsets.length - 1) ? pageOffsets[i + 1] : totalHeightDOM;
 
             // Draw the full image shifted up by offsetDOM
+            // This pulls the section of the image we want to see up into the A4 viewport
+            const shiftYMM = offsetDOM * pxToMm;
+
             pdf.addImage(
                 imgData,
                 'JPEG',
                 marginMM,
-                marginMM - (offsetDOM * pxToMm),
+                marginMM - shiftYMM,
                 imgWidthMM,
                 imgHeightMM
             );
 
-            // Calculate how much content we actually printed from this offset
+            // Calculate how much content we actually PRINTED on this specific page
             const printedHeightMM = (nextOffsetDOM - offsetDOM) * pxToMm;
 
-            // Mask the bottom overflow if we broke early (to avoid duplicating card pieces)
+            // Mask the bottom overflow if we broke early (to avoid duplicating card pieces on this page)
             if (printedHeightMM < contentHeightMM) {
                 pdf.setFillColor(255, 255, 255);
                 pdf.rect(
