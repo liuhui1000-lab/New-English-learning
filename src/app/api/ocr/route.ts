@@ -104,8 +104,8 @@ export async function POST(req: NextRequest) {
 
         // 2. Prepare Payload
         // Force generic OCR if source is specifically request as 'practice' (e.g. handwriting grading)
-        // Otherwise, allow layout parsing if URL contains 'layout'
-        const isLayoutEndpoint = source === 'practice' ? false : apiUrl.includes('layout');
+        // Otherwise, ALWAYS enforce layout parsing for Mock Paper mode (import)
+        const isLayoutEndpoint = source !== 'practice';
         const payload: any = {
             file: cleanImage,
             fileType: 1,
