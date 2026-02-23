@@ -28,95 +28,66 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
             windowWidth: element.scrollWidth,
             windowHeight: element.scrollHeight,
             // Optimization: Remove modern CSS colors that html2canvas cannot parse (lab, oklch)
-            onclone: (clonedDoc) => {
-                // 1. Remove all existing styles that might contain lab() or oklch() in style tags
-                const styles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
-                styles.forEach(s => s.remove());
+            onclone: async (clonedDoc) => {
+                // 1. Remove elements that shouldn't be printed
+                const hiddenElements = clonedDoc.querySelectorAll('.print\\:hidden, .hidden');
+                hiddenElements.forEach(el => el.remove());
 
-                // 2. Scan all elements for problematic inline styles
+                // 2. Safely replace oklch/lab in all <style> tags without destroying layout
+                const styleTags = clonedDoc.querySelectorAll('style');
+                styleTags.forEach(style => {
+                    if (style.innerHTML) {
+                        // Fallback all oklch/lab colors to a generic gray or primary color to prevent html2canvas crash
+                        style.innerHTML = style.innerHTML.replace(/(oklch|lab)\([^)]+\)/g, '#6b7280');
+                    }
+                });
+
+                // 3. Fetch remote stylesheets, scrub them of oklch/lab, and inject them as safe <style> tags
+                const linkTags = clonedDoc.querySelectorAll('link[rel="stylesheet"]');
+                for (let i = 0; i < linkTags.length; i++) {
+                    const link = linkTags[i] as HTMLLinkElement;
+                    try {
+                        const href = link.href;
+                        if (href) {
+                            const res = await fetch(href);
+                            let cssText = await res.text();
+                            cssText = cssText.replace(/(oklch|lab)\([^)]+\)/g, '#6b7280');
+
+                            const newStyle = clonedDoc.createElement('style');
+                            newStyle.innerHTML = cssText;
+                            clonedDoc.head.appendChild(newStyle);
+                        }
+                    } catch (e) {
+                        console.warn('Failed to fetch stylesheet:', link.href, e);
+                    }
+                    link.remove(); // Remove the original remote link to prevent html2canvas from re-fetching and crashing
+                }
+
+                // 4. Scan all elements for problematic inline styles
                 const allElements = clonedDoc.getElementsByTagName("*");
                 for (let i = 0; i < allElements.length; i++) {
                     const el = allElements[i] as HTMLElement;
                     if (el.style) {
-                        // If inline style contains problematic color functions, clear it
                         const styleText = el.getAttribute('style') || '';
                         if (styleText.includes('lab(') || styleText.includes('oklch(')) {
-                            // Strip only the problematic properties or just clear the whole style attribute for safety
                             el.removeAttribute('style');
                         }
                     }
                 }
 
-                // 3. Inject a clean, Hex-only CSS for the PDF export
-                const style = clonedDoc.createElement('style');
-                style.innerHTML = `
+                // 5. Inject final print fixes
+                const printStyle = clonedDoc.createElement('style');
+                printStyle.innerHTML = `
                     * { 
-                        box-sizing: border-box !important;
                         -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
                     }
-                    body, div, span, p, h1, h2, h3, h4 {
-                        font-family: sans-serif !important;
-                        background-color: transparent !important;
-                        color: #1f2937 !important; /* Gray-800 fallback */
+                    .mistake-card {
+                        page-break-inside: avoid;
+                        break-inside: avoid;
                     }
-                    #mistakes-list-container {
-                        padding: 20px !important;
-                        background-color: #ffffff !important;
-                        display: block !important;
-                    }
-                    /* Layout */
-                    .flex { display: flex !important; }
-                    .flex-col { flex-direction: column !important; }
-                    .gap-4 { gap: 1rem !important; }
-                    .gap-2 { gap: 0.5rem !important; }
-                    .flex-1 { flex: 1 1 0% !important; }
-                    .items-start { align-items: flex-start !important; }
-                    
-                    /* Spacing */
-                    .space-y-4 > * + * { margin-top: 1rem !important; }
-                    .mt-1 { margin-top: 0.25rem !important; }
-                    .mt-3 { margin-top: 0.75rem !important; }
-                    .mt-4 { margin-top: 1rem !important; }
-                    .mb-1 { margin-bottom: 0.25rem !important; }
-                    .mb-2 { margin-bottom: 0.5rem !important; }
-                    
-                    /* Card Styles */
-                    .bg-white { background-color: #ffffff !important; }
-                    .rounded-xl { border-radius: 0.75rem !important; }
-                    .rounded-lg { border-radius: 0.5rem !important; }
-                    .rounded { border-radius: 0.25rem !important; }
-                    .border { border: 1px solid #e5e7eb !important; }
-                    .p-5 { padding: 1.25rem !important; }
-                    .p-3 { padding: 0.75rem !important; }
-                    
-                    /* Tags and Colors (HEX ONLY) */
-                    .bg-indigo-50 { background-color: #eef2ff !important; }
-                    .text-indigo-600 { color: #4f46e5 !important; }
-                    .bg-green-50 { background-color: #f0fdf4 !important; }
-                    .text-green-600 { color: #16a34a !important; }
-                    .bg-red-50 { background-color: #fef2f2 !important; }
-                    .text-red-600 { color: #dc2626 !important; }
-                    .bg-gray-50 { background-color: #f9fafb !important; }
-                    .text-gray-900 { color: #111827 !important; }
-                    .text-gray-500 { color: #6b7280 !important; }
-                    .text-gray-400 { color: #9ca3af !important; }
-                    
-                    /* Typography */
-                    .text-lg { font-size: 1.125rem !important; line-height: 1.75rem !important; }
-                    .text-sm { font-size: 0.875rem !important; line-height: 1.25rem !important; }
-                    .text-xs { font-size: 0.75rem !important; line-height: 1rem !important; }
-                    .font-bold { font-weight: 700 !important; }
-                    .font-medium { font-weight: 500 !important; }
-                    .italic { font-style: italic !important; }
-                    .uppercase { text-transform: uppercase !important; }
-                    .tracking-wider { letter-spacing: 0.05em !important; }
-                    .leading-relaxed { line-height: 1.625 !important; }
-                    
-                    /* Visibility */
-                    .print\\:hidden, button, input { display: none !important; }
-                    .hidden { display: none !important; }
                 `;
-                clonedDoc.head.appendChild(style);
+                clonedDoc.head.appendChild(printStyle);
             }
         });
 
