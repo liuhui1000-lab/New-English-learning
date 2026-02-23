@@ -84,9 +84,26 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
                         -webkit-print-color-adjust: exact !important;
                         print-color-adjust: exact !important;
                     }
+                    /* Compact Layout for PDF */
                     .mistake-card {
                         page-break-inside: avoid;
                         break-inside: avoid;
+                        margin-bottom: 0.5rem !important;
+                    }
+                    .space-y-4 > :not([hidden]) ~ :not([hidden]) {
+                        margin-top: 0.5rem !important;
+                    }
+                    .p-5 {
+                        padding: 0.75rem !important;
+                    }
+                    .gap-4 {
+                        gap: 0.5rem !important;
+                    }
+                    .mt-4 {
+                        margin-top: 0.5rem !important;
+                    }
+                    .mb-2 {
+                        margin-bottom: 0.25rem !important;
                     }
                 `;
                 clonedDoc.head.appendChild(printStyle);
@@ -190,11 +207,11 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
 
             const printedHeightMM = (nextOffsetPx - offsetPx) * canvasPxToMm;
             if (printedHeightMM < contentHeightMM) {
-                pdf.setFillColor(255, 255, 255);
+                pdf.setFillColor(255, 255, 255); // White mask for the card area
                 pdf.rect(0, marginMM + printedHeightMM, pdfWidthMM, pdfHeightMM - (marginMM + printedHeightMM), 'F');
             }
 
-            pdf.setFillColor(255, 255, 255);
+            pdf.setFillColor(255, 255, 255); // White mask for margins
             pdf.rect(0, 0, pdfWidthMM, marginMM, 'F');
             pdf.rect(0, pdfHeightMM - marginMM, pdfWidthMM, marginMM, 'F');
         }
