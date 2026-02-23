@@ -203,7 +203,14 @@ export default function ErrorNotebookPage() {
     }
 
     const handleExportPDF = async () => {
-        window.print()
+        setExporting(true)
+        try {
+            await exportToPDF('mistakes-list-container', `mistakes-notebook-${new Date().toISOString().split('T')[0]}.pdf`)
+        } catch (error) {
+            alert('导出失败，请重试')
+        } finally {
+            setExporting(false)
+        }
     }
 
     if (loading) {
