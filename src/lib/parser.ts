@@ -769,6 +769,78 @@ async function ocrPdfPage(page: any): Promise<string> {
     }
 }
 
+// Preprocessing Pipeline for Import Mode
+// Purpose: PaddleOCR Layout Parsing will reject generating Markdown with \underline{} if it detects large vertical
+// gaps, classifying the sparse page snippet as an 'Image/Figure' rather than a 'Text Block'.
+// This violently slices out all blank vertical rows and restitches the segments tightly, forcing the layout engine
+// to treat it as a contiguous paragraph.
+function removeVerticalWhitespace(canvas: HTMLCanvasElement): HTMLCanvasElement {
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return canvas;
+    const width = canvas.width;
+    const height = canvas.height;
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const data = imgData.data;
+
+    const rowHasInk = new Array(height).fill(false);
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const i = (y * width + x) * 4;
+            // Check if pixel is dark enough (threshold < 240)
+            if (data[i] < 240 || data[i + 1] < 240 || data[i + 2] < 240) {
+                rowHasInk[y] = true;
+                break;
+            }
+        }
+    }
+
+    const padding = 10;
+    let newHeight = 0;
+    const segments: { start: number, end: number }[] = [];
+    let currentSegment: { start: number, end: number } | null = null;
+
+    for (let y = 0; y < height; y++) {
+        if (rowHasInk[y]) {
+            if (!currentSegment) {
+                currentSegment = { start: Math.max(0, y - padding), end: y };
+            }
+            currentSegment.end = y;
+        } else {
+            if (currentSegment && y - currentSegment.end > padding) {
+                currentSegment.end = Math.min(height - 1, currentSegment.end + padding);
+                segments.push(currentSegment);
+                newHeight += (currentSegment.end - currentSegment.start + 1);
+                currentSegment = null;
+            }
+        }
+    }
+    if (currentSegment) {
+        currentSegment.end = Math.min(height - 1, currentSegment.end + padding);
+        segments.push(currentSegment);
+        newHeight += (currentSegment.end - currentSegment.start + 1);
+    }
+
+    if (segments.length === 0) return canvas;
+
+    const newCanvas = document.createElement('canvas');
+    newCanvas.width = width;
+    newCanvas.height = newHeight;
+    const newCtx = newCanvas.getContext('2d');
+    if (!newCtx) return canvas;
+
+    newCtx.fillStyle = '#FFFFFF';
+    newCtx.fillRect(0, 0, width, newHeight);
+
+    let currentY = 0;
+    for (const seg of segments) {
+        const segHeight = seg.end - seg.start + 1;
+        newCtx.drawImage(canvas, 0, seg.start, width, segHeight, 0, currentY, width, segHeight);
+        currentY += segHeight;
+    }
+
+    return newCanvas;
+}
+
 async function extractPageText(page: any, scale: number, quality: number): Promise<string> {
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement('canvas');
@@ -780,13 +852,16 @@ async function extractPageText(page: any, scale: number, quality: number): Promi
 
     await page.render({ canvasContext: context, viewport: viewport }).promise;
 
+    // Apply strict vertical whitespace slicing pipeline to guarantee Markdown generation
+    const processedCanvas = removeVerticalWhitespace(canvas);
+
     let currentQuality = quality;
-    let base64Image = canvas.toDataURL('image/jpeg', currentQuality);
+    let base64Image = processedCanvas.toDataURL('image/jpeg', currentQuality);
     const MAX_BASE64_LENGTH = 3 * 1024 * 1024;
 
     while (base64Image.length > MAX_BASE64_LENGTH && currentQuality > 0.1) {
         currentQuality -= 0.2;
-        base64Image = canvas.toDataURL('image/jpeg', currentQuality);
+        base64Image = processedCanvas.toDataURL('image/jpeg', currentQuality);
     }
 
     if (base64Image.length > MAX_BASE64_LENGTH) {
@@ -807,7 +882,7 @@ async function extractPageText(page: any, scale: number, quality: number): Promi
             const response = await fetch('/api/ocr', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image }),
+                body: JSON.stringify({ image, source: 'import' }),
                 signal: controller.signal
             });
             clearTimeout(timeoutId);

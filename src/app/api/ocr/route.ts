@@ -97,14 +97,16 @@ export async function POST(req: NextRequest) {
             console.log("Using Env 'PADDLE_OCR_TOKEN'");
         }
 
-
+        const { image, source } = await req.json(); // Base64 image
         if (!image) return NextResponse.json({ error: "No image provided" }, { status: 400 });
 
         // Ensure clean base64 (strip data:image/...;base64, prefix if present)
         const cleanImage = image.replace(/^data:image\/\w+;base64,/, "");
 
         // 2. Prepare Payload
-        const isLayoutEndpoint = apiUrl.includes('layout');
+        // Force generic OCR if source is specifically request as 'practice' (e.g. handwriting grading)
+        // Otherwise, allow layout parsing if URL contains 'layout'
+        const isLayoutEndpoint = source === 'practice' ? false : apiUrl.includes('layout');
         const payload: any = {
             file: cleanImage,
             fileType: 1,
@@ -205,11 +207,11 @@ export async function POST(req: NextRequest) {
             console.log("CLEANED TEXT LENGTH:", cleanedText.length);
             console.log("----------------------------\n");
 
-            // Only return if we actually found text. 
-            if (cleanedText && cleanedText.length > 5) {
+            // Only return if we actually found text and it wasn't a practice source where we WANT raw coordinates
+            if (cleanedText && cleanedText.length > 5 && source !== 'practice') {
                 return NextResponse.json({ text: cleanedText, debug: result });
             }
-            console.log("Layout Parsing returned empty or too short. Falling back to Raw OCR Priority 3...");
+            console.log("Layout Parsing returned empty or bypassed. Falling back to Raw OCR Priority 3...");
         }
 
         // Priority 3: Standard OCR (Plain Text) from 'ocrResults'
