@@ -262,6 +262,9 @@ export async function POST(req: NextRequest) {
                     return a.y - b.y; // different lines, sort top to bottom
                 });
 
+                // Find global left margin to detect leading blanks
+                const minX = Math.min(...blocks.map((b: any) => b.x));
+
                 // Reconstruct lines with gap detection
                 let currentLineStr = "";
                 let currentLineY = -1;
@@ -269,23 +272,32 @@ export async function POST(req: NextRequest) {
                 let lastBlockRight = -1;
 
                 let debugLogs: string[] = [];
-                debugLogs.push(`[OCR Layout] Total blocks: ${blocks.length}. First 3: ${JSON.stringify(blocks.slice(0, 3))}`);
+                debugLogs.push(`[OCR Layout] Total blocks: ${blocks.length}. Margin X: ${minX}. First 3: ${JSON.stringify(blocks.slice(0, 3))}`);
 
                 blocks.forEach((b: any, index: number) => {
                     // Check if it's a new line
                     const overlapY = currentLineY === -1 ? 0 : Math.max(0, Math.min(b.bottom, currentLineY + currentLineHeight) - Math.max(b.y, currentLineY));
                     const isSameLine = currentLineY !== -1 && overlapY > Math.min(b.height, currentLineHeight) * 0.5;
+                    const avgCharWidth = Math.max(1, b.width / Math.max(1, b.text.length));
 
                     if (!isSameLine) {
                         if (currentLineStr) processedLines.push(currentLineStr);
-                        currentLineStr = b.text;
+
+                        // Check for leading blank at the start of a new line
+                        const leadingGap = b.x - minX;
+                        // Avoid triggering on standard paragraph indents (usually ~2 chars) but catch large gaps
+                        if (leadingGap > avgCharWidth * 3.5 && leadingGap > 25 && !/^[A-G][\.\)）]/.test(b.text.trim())) {
+                            currentLineStr = `____ ${b.text}`;
+                            if (index < 30) debugLogs.push(`[OCR Layout] 🚨 INJECTED LEADING BLANK! Gap: ${leadingGap.toFixed(1)}`);
+                        } else {
+                            currentLineStr = b.text;
+                        }
+
                         currentLineY = b.y;
                         currentLineHeight = b.height;
                         lastBlockRight = b.right;
                     } else {
                         // Same line! Check distance between blocks.
-                        // Calculate average char width of current block as heuristic
-                        const avgCharWidth = b.width / Math.max(1, b.text.length);
                         const gap = b.x - lastBlockRight;
 
                         if (index < 30) {
@@ -298,8 +310,15 @@ export async function POST(req: NextRequest) {
                         // We also enforce an absolute threshold of 15px to avoid triggering on standard spaces in some fonts
                         // CRITICAL: Do NOT inject a blank if the gap is just the natural spacing before a multiple choice option (e.g. A), B))
                         if (gap > avgCharWidth * 2.5 && gap > 15 && !isOptionBlock) {
-                            currentLineStr += ` ____ ${b.text}`;
-                            if (index < 30) debugLogs.push(`[OCR Layout] 🚨 INJECTED BLANK HERE!`);
+                            // Calculate proportional blanks for consecutively stripped underlines
+                            let numBlanks = Math.floor(gap / (avgCharWidth * 2.5));
+                            // Cap at 3 purely to avoid crazy OCR noise artifacts
+                            numBlanks = Math.max(1, Math.min(3, numBlanks));
+
+                            const blankInject = Array(numBlanks).fill('____').join(' ');
+
+                            currentLineStr += ` ${blankInject} ${b.text}`;
+                            if (index < 30) debugLogs.push(`[OCR Layout] 🚨 INJECTED ${numBlanks} BLANK(S) HERE!`);
                         } else {
                             // Standard space
                             currentLineStr += ` ${b.text}`;
