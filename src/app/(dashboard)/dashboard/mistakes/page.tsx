@@ -47,6 +47,7 @@ export default function ErrorNotebookPage() {
             if (rError) console.error("Recitation Fetch Error:", rError)
 
             if (recitationData) {
+                console.log(`Fetched ${recitationData.length} recitation records from user_progress`)
                 recitationData.forEach((record: any) => {
                     // !inner guarantees record.questions exists
                     const qType = record.questions.type
@@ -79,6 +80,7 @@ export default function ErrorNotebookPage() {
             if (qError) console.error("Quiz Fetch Error:", qError)
 
             if (quizData) {
+                console.log(`Fetched ${quizData.length} quiz records from quiz_results`)
                 const grouped = new Map<string, any>()
                 quizData.forEach((record: any) => {
                     const qId = record.questions.id // !inner guarantees this
@@ -114,6 +116,7 @@ export default function ErrorNotebookPage() {
                 })
             }
 
+            console.log(`Total mistakes in notebook: ${allMistakes.length}`)
             setMistakes(allMistakes)
         } catch (e) {
             console.error("Fatal fetch error:", e)
@@ -263,7 +266,7 @@ export default function ErrorNotebookPage() {
                             className={`px-6 py-2 rounded-md text-sm font-medium transition ${filter === t ? 'bg-white shadow text-indigo-600' : 'text-gray-500 hover:text-gray-700'
                                 }`}
                         >
-                            {t === 'all' ? '全部' : t === 'recitation' ? '词转背诵回顾' : '练习/错题库'}
+                            {t === 'all' ? '全部' : t === 'recitation' ? '背诵回顾' : '练习/错题库'}
                         </button>
                     ))}
                 </div>

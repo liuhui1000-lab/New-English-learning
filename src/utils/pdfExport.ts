@@ -29,11 +29,25 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
             windowHeight: element.scrollHeight,
             // Optimization: Remove modern CSS colors that html2canvas cannot parse (lab, oklch)
             onclone: (clonedDoc) => {
-                // 1. Remove all existing styles that might contain lab() or oklch()
+                // 1. Remove all existing styles that might contain lab() or oklch() in style tags
                 const styles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
                 styles.forEach(s => s.remove());
 
-                // 2. Inject a clean, Hex-only CSS for the PDF export
+                // 2. Scan all elements for problematic inline styles
+                const allElements = clonedDoc.getElementsByTagName("*");
+                for (let i = 0; i < allElements.length; i++) {
+                    const el = allElements[i] as HTMLElement;
+                    if (el.style) {
+                        // If inline style contains problematic color functions, clear it
+                        const styleText = el.getAttribute('style') || '';
+                        if (styleText.includes('lab(') || styleText.includes('oklch(')) {
+                            // Strip only the problematic properties or just clear the whole style attribute for safety
+                            el.removeAttribute('style');
+                        }
+                    }
+                }
+
+                // 3. Inject a clean, Hex-only CSS for the PDF export
                 const style = clonedDoc.createElement('style');
                 style.innerHTML = `
                     * { 
@@ -139,8 +153,9 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
 
         // 5. Save the PDF
         pdf.save(fileName);
-    } catch (error) {
+    } catch (error: any) {
         console.error('PDF Export Error:', error);
+        alert('导出失败: ' + (error.message || '未知错误'));
         throw error;
     }
 }
