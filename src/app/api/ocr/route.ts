@@ -196,14 +196,20 @@ export async function POST(req: NextRequest) {
                 }
             }
 
+            console.log("\n--- LAYOUT PARSING DEBUG ---");
+            console.log("RAW MARKDOWN LENGTH:", fullMarkdown.length);
+            console.log("RAW MARKDOWN START (first 800 chars):", fullMarkdown.substring(0, 800));
+
             // Clean OCR artifacts
             const cleanedText = cleanOCRText(fullMarkdown);
+            console.log("CLEANED TEXT LENGTH:", cleanedText.length);
+            console.log("----------------------------\n");
 
             // Only return if we actually found text. 
-            if (cleanedText && cleanedText.length > 0) {
+            if (cleanedText && cleanedText.length > 5) {
                 return NextResponse.json({ text: cleanedText, debug: result });
             }
-            console.log("Layout Parsing returned empty. Falling back to Raw OCR...");
+            console.log("Layout Parsing returned empty or too short. Falling back to Raw OCR Priority 3...");
         }
 
         // Priority 3: Standard OCR (Plain Text) from 'ocrResults'
@@ -312,22 +318,16 @@ export async function POST(req: NextRequest) {
                             debugLogs.push(`[OCR Layout] Same Line: "${currentLineStr}" -> "${b.text}". Gap: ${gap.toFixed(1)}, AvgChar: ${avgCharWidth.toFixed(1)}`);
                         }
 
-                        const isOptionBlock = /^[A-G][\.\)）]/.test(b.text.trim()) || /^[A-G]\s/.test(b.text.trim());
+                        // Relax option block regex to catch standalone letters A-G if OCR stripped the punctuation
+                        const isOptionBlock = /^[A-G]([\.\)）]\s*)?$/.test(b.text.trim()) || /^[A-G]\s/.test(b.text.trim()) || b.text.trim() === "A" || b.text.trim() === "B" || b.text.trim() === "C" || b.text.trim() === "D";
 
                         // If gap is unusually large (e.g. > 2.5 average characters), assume an underline was stripped
                         // We also enforce an absolute threshold of 15px to avoid triggering on standard spaces in some fonts
-                        // CRITICAL: Do NOT inject a blank if the gap is just the natural spacing before a multiple choice option (e.g. A), B))
+                        // CRITICAL: Do NOT inject a blank if the gap is just the natural spacing before a multiple choice option
                         if (gap > avgCharWidth * 2.5 && gap > 15 && !isOptionBlock) {
-                            // Calculate proportional blanks for consecutively stripped underlines
-                            // Standard single blank is roughly 2-3 chars wide. We divide by 4.0 chars to require a much larger gap to trigger multiple blanks
-                            let numBlanks = Math.floor(gap / (avgCharWidth * 4.0));
-                            // Cap at 3 purely to avoid crazy OCR noise artifacts
-                            numBlanks = Math.max(1, Math.min(3, numBlanks));
-
-                            const blankInject = Array(numBlanks).fill('____').join(' ');
-
-                            currentLineStr += ` ${blankInject} ${b.text}`;
-                            if (index < 30) debugLogs.push(`[OCR Layout] 🚨 INJECTED ${numBlanks} BLANK(S) HERE!`);
+                            // User request: always inject exactly ONE line regardless of physical space width
+                            currentLineStr += ` ____ ${b.text}`;
+                            if (index < 30) debugLogs.push(`[OCR Layout] 🚨 INJECTED 1 BLANK(S) HERE!`);
                         } else {
                             // Standard space
                             currentLineStr += ` ${b.text}`;
