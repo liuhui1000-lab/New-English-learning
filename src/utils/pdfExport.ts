@@ -16,6 +16,8 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
     }
 
     try {
+        let cloneMetrics: any = null;
+
         // 1. Capture the element as a canvas
         // We use a higher scale (2 or 3) for better resolution in the PDF
         const canvas = await html2canvas(element, {
@@ -88,8 +90,37 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
                     }
                 `;
                 clonedDoc.head.appendChild(printStyle);
+
+                // Wait for layout browser reflow
+                await new Promise(resolve => setTimeout(resolve, 150));
+
+                const cloneEl = clonedDoc.getElementById(elementId);
+                if (cloneEl) {
+                    const cRect = cloneEl.getBoundingClientRect();
+                    const cCards = Array.from(cloneEl.querySelectorAll('.mistake-card'));
+                    cloneMetrics = {
+                        height: cRect.height,
+                        cards: cCards.map(c => {
+                            const r = c.getBoundingClientRect();
+                            return { top: r.top - cRect.top, bottom: r.bottom - cRect.top };
+                        })
+                    };
+                }
             }
         });
+
+        // Fallback to live DOM if clone measurement fails
+        if (!cloneMetrics) {
+            const containerRect = element.getBoundingClientRect();
+            const cards = Array.from(element.querySelectorAll('.mistake-card'));
+            cloneMetrics = {
+                height: containerRect.height,
+                cards: cards.map(c => {
+                    const r = c.getBoundingClientRect();
+                    return { top: r.top - containerRect.top, bottom: r.bottom - containerRect.top };
+                })
+            };
+        }
 
         // 2. Convert canvas to image data
         const imgData = canvas.toDataURL('image/jpeg', 0.95);
@@ -104,159 +135,72 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
         const contentWidthMM = pdfWidthMM - (marginMM * 2);
         const contentHeightMM = pdfHeightMM - (marginMM * 2);
 
-        // Ratio of PDF mm to DOM px
-        const pxToMm = contentWidthMM / element.scrollWidth;
-        const pageHeightDOM = contentHeightMM / pxToMm;
+        // Unified Coordinate System: Map everything to Canvas Pixels
+        const canvasPxToMm = contentWidthMM / canvas.width;
+        const pageHeightCanvasPx = contentHeightMM / canvasPxToMm;
 
-        // The canvas height represents the true rendered height * scale (which is 2).
-        const totalHeightDOM = element.scrollHeight;
+        // Scale clone DOM dimensions up to canvas pixel dimensions
+        const domToCanvasScale = canvas.height / cloneMetrics.height;
+        const cardsInCanvas = cloneMetrics.cards.map((c: any) => ({
+            top: c.top * domToCanvasScale,
+            bottom: c.bottom * domToCanvasScale
+        }));
 
-        const debugData: any = {
-            elementScrollHeight: element.scrollHeight,
-            elementOffsetHeight: element.offsetHeight,
-            canvasWidth: canvas.width,
-            canvasHeight: canvas.height,
-            pxToMm: pxToMm,
-            pageHeightDOM: pageHeightDOM,
-            cardsCrossings: [] as any[],
-            pageOffsets: [] as any[]
-        };
+        let currentOffsetPx = 0;
+        const pageOffsetsPx = [];
+        const maxCanvasHeight = canvas.height;
 
-        // 5. Smart Pagination: Find safe split points
-        const cards = Array.from(element.querySelectorAll('.mistake-card'));
-        const containerRect = element.getBoundingClientRect();
+        while (currentOffsetPx < maxCanvasHeight) {
+            pageOffsetsPx.push(currentOffsetPx);
+            let nextOffsetPx = currentOffsetPx + pageHeightCanvasPx;
 
-        debugData.cardsCount = cards.length;
-        debugData.containerRect = { top: containerRect.top, height: containerRect.height };
+            if (nextOffsetPx >= maxCanvasHeight) break;
 
-        let currentOffset = 0;
-        const pageOffsets = [];
-
-        while (currentOffset < totalHeightDOM) {
-            pageOffsets.push(currentOffset);
-            let nextOffset = currentOffset + pageHeightDOM;
-
-            if (nextOffset >= totalHeightDOM) {
-                break; // Reached the end
-            }
-
-            let breakOffset = nextOffset;
+            let breakOffsetPx = nextOffsetPx;
             let foundBreak = false;
 
-            for (let i = 0; i < cards.length; i++) {
-                const rect = cards[i].getBoundingClientRect();
-                const cardTop = rect.top - containerRect.top;
-                const cardBottom = rect.bottom - containerRect.top;
-
-                // Check if this card crosses the next page boundary
-                if (cardTop < nextOffset && cardBottom > nextOffset) {
-                    debugData.cardsCrossings.push({
-                        idx: i,
-                        cardTop,
-                        cardBottom,
-                        nextOffset,
-                        currentOffset
-                    });
-
-                    // It crosses. Can we safely break before it?
-                    // Ensure the card isn't taller than the whole page itself and that we aren't breaking too early (at least some content exists)
-                    if (cardTop > currentOffset + 20) {
-                        // Break slightly above the card
-                        breakOffset = cardTop - 10;
+            for (const card of cardsInCanvas) {
+                if (card.top < nextOffsetPx && card.bottom > nextOffsetPx) {
+                    if (card.top > currentOffsetPx + (60 * domToCanvasScale)) {
+                        breakOffsetPx = card.top - (15 * domToCanvasScale);
                         foundBreak = true;
                     }
-                    break; // Stop checking further cards for this page
+                    break;
                 }
             }
 
-            if (!foundBreak) {
-                // If no card crossed the boundary (or the card is taller than a page), just break at the page limit
-                breakOffset = nextOffset;
-            }
-
-            // Failsafe: ensure we're always moving forward by at least something
-            if (breakOffset <= currentOffset) {
-                breakOffset = nextOffset;
-            }
-
-            currentOffset = breakOffset;
+            if (!foundBreak) breakOffsetPx = nextOffsetPx;
+            if (breakOffsetPx <= currentOffsetPx) breakOffsetPx = nextOffsetPx;
+            currentOffsetPx = breakOffsetPx;
         }
-
-        debugData.pageOffsets = pageOffsets;
 
         // 6. Draw PDF pages
         const imgWidthMM = contentWidthMM;
-
-        // Since the canvas is scaled (e.g., scale: 2), its pixel dimensions are larger than the DOM.
-        // We find the ratio of the output PDF width (in mm) to the actual canvas pixel width.
-        const canvasPxToMm = imgWidthMM / canvas.width;
-
-        // The total image height in mm is the canvas pixel height * this new ratio.
         const imgHeightMM = canvas.height * canvasPxToMm;
 
-        // We need a separate ratio to map DOM pixel offsets to PDF mm offsets.
-        const domPxToMm = imgWidthMM / element.scrollWidth;
-
-        for (let i = 0; i < pageOffsets.length; i++) {
+        for (let i = 0; i < pageOffsetsPx.length; i++) {
             if (i > 0) pdf.addPage();
 
-            const offsetDOM = pageOffsets[i];
-            const nextOffsetDOM = (i < pageOffsets.length - 1) ? pageOffsets[i + 1] : totalHeightDOM;
+            const offsetPx = pageOffsetsPx[i];
+            const nextOffsetPx = (i < pageOffsetsPx.length - 1) ? pageOffsetsPx[i + 1] : maxCanvasHeight;
 
-            // Shift the image up based on the DOM offset mapped to MM
-            const shiftYMM = offsetDOM * domPxToMm;
+            const shiftYMM = offsetPx * canvasPxToMm;
 
-            pdf.addImage(
-                imgData,
-                'JPEG',
-                marginMM,
-                marginMM - shiftYMM,
-                imgWidthMM,
-                imgHeightMM
-            );
+            pdf.addImage(imgData, 'JPEG', marginMM, marginMM - shiftYMM, imgWidthMM, imgHeightMM);
 
-            // Calculate how much content we actually PRINTED on this specific page based on DOM offsets
-            const printedHeightMM = (nextOffsetDOM - offsetDOM) * domPxToMm;
-
-            // Mask the bottom overflow if we broke early (to avoid duplicating card pieces on this page)
+            const printedHeightMM = (nextOffsetPx - offsetPx) * canvasPxToMm;
             if (printedHeightMM < contentHeightMM) {
                 pdf.setFillColor(255, 255, 255);
-                pdf.rect(
-                    0,
-                    marginMM + printedHeightMM,
-                    pdfWidthMM,
-                    pdfHeightMM - (marginMM + printedHeightMM),
-                    'F'
-                );
+                pdf.rect(0, marginMM + printedHeightMM, pdfWidthMM, pdfHeightMM - (marginMM + printedHeightMM), 'F');
             }
 
-            // Always mask the top and bottom margins to keep them clean
             pdf.setFillColor(255, 255, 255);
-            pdf.rect(0, 0, pdfWidthMM, marginMM, 'F'); // Top margin
-            pdf.rect(0, pdfHeightMM - marginMM, pdfWidthMM, marginMM, 'F'); // Bottom margin
+            pdf.rect(0, 0, pdfWidthMM, marginMM, 'F');
+            pdf.rect(0, pdfHeightMM - marginMM, pdfWidthMM, marginMM, 'F');
         }
 
         // 7. Save the PDF
         pdf.save(fileName);
-
-        // Inject debug overlay so user can send logs
-        const debugDiv = document.createElement('div');
-        debugDiv.style.position = 'fixed';
-        debugDiv.style.top = '0';
-        debugDiv.style.left = '0';
-        debugDiv.style.width = '100vw';
-        debugDiv.style.height = '100vh';
-        debugDiv.style.backgroundColor = 'rgba(0,0,0,0.9)';
-        debugDiv.style.color = '#0f0';
-        debugDiv.style.zIndex = '999999';
-        debugDiv.style.overflow = 'auto';
-        debugDiv.style.padding = '20px';
-        debugDiv.innerHTML = `
-            <button onclick="this.parentElement.remove()" style="padding:10px 20px; background:white; color:black; font-weight:bold; margin-bottom: 20px; border-radius: 8px;">关闭诊断日志</button>
-            <h3 style="color:white; margin-bottom: 10px;">请将以下数据截图发给开发人员：</h3>
-            <pre style="white-space: pre-wrap; word-wrap: break-word; font-size: 14px;">${JSON.stringify(debugData, null, 2)}</pre>
-        `;
-        document.body.appendChild(debugDiv);
 
     } catch (error: any) {
         console.error('PDF Export Error:', error);
