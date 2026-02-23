@@ -206,18 +206,34 @@ export async function POST(req: NextRequest) {
             let processedLines: string[] = [];
 
             // Try spatial reconstruction first if any kind of geometric data is robust
-            const hasGeometry = ocrResults.length > 0 && (ocrResults[0].textRegion || ocrResults[0].text_region || ocrResults[0].box || Array.isArray(ocrResults[0].poly) || Array.isArray(ocrResults[0].points) || ocrResults[0].location);
+            const hasGeometry = ocrResults.length > 0 && (ocrResults[0].textRegion || ocrResults[0].text_region || ocrResults[0].box || Array.isArray(ocrResults[0].poly) || Array.isArray(ocrResults[0].points) || ocrResults[0].location || (ocrResults[0].prunedResult && Array.isArray(ocrResults[0].prunedResult.dt_polys)));
 
             if (hasGeometry) {
+                let rawBlocks: any[] = [];
+
+                // Handle PaddleOCR v2.6+ flat array format (prunedResult with parallel arrays)
+                if (ocrResults.length === 1 && ocrResults[0].prunedResult && Array.isArray(ocrResults[0].prunedResult.dt_polys) && Array.isArray(ocrResults[0].prunedResult.rec_texts)) {
+                    const polys = ocrResults[0].prunedResult.dt_polys;
+                    const texts = ocrResults[0].prunedResult.rec_texts;
+                    for (let i = 0; i < Math.min(polys.length, texts.length); i++) {
+                        rawBlocks.push({ text: texts[i], region: polys[i] });
+                    }
+                } else {
+                    rawBlocks = ocrResults;
+                }
+
                 // Map to simpler geometric objects
-                const blocks = ocrResults.map((r: any) => {
-                    let text = r.prunedResult || r.words || r.text || "";
-                    if (typeof text === 'object' && text !== null) {
-                        text = Array.isArray(text.rec_texts) ? text.rec_texts.join(" ") : (text.text || text.word || text.words || "");
-                        if (typeof text === 'object') text = JSON.stringify(text); // Fallback
+                const blocks = rawBlocks.map((r: any) => {
+                    let text = r.text;
+                    if (text === undefined) {
+                        text = r.prunedResult || r.words || r.text || "";
+                        if (typeof text === 'object' && text !== null) {
+                            text = Array.isArray(text.rec_texts) ? text.rec_texts.join(" ") : (text.text || text.word || text.words || "");
+                            if (typeof text === 'object') text = JSON.stringify(text); // Fallback
+                        }
                     }
 
-                    const region = r.textRegion || r.text_region || r.box || r.poly || r.points || r.location;
+                    const region = r.region || r.textRegion || r.text_region || r.box || r.poly || r.points || r.location;
 
                     let x = 0, y = 0, width = 0, height = 0;
                     if (Array.isArray(region) && region.length === 4 && Array.isArray(region[0])) {
@@ -233,7 +249,7 @@ export async function POST(req: NextRequest) {
                     }
 
                     return { text, x, y, width: Math.abs(width), height: Math.abs(height), bottom: y + Math.abs(height), right: x + Math.abs(width) };
-                }).filter((b: any) => b.text.trim() !== "");
+                }).filter((b: any) => typeof b.text === 'string' && b.text.trim() !== "");
 
                 // Sort blocks strictly vertically, then horizontally
                 blocks.sort((a: any, b: any) => {
