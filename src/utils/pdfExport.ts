@@ -136,7 +136,10 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
         // Ratio of PDF mm to DOM px
         const pxToMm = contentWidthMM / element.scrollWidth;
         const pageHeightDOM = contentHeightMM / pxToMm;
-        const totalHeightDOM = Math.max(element.scrollHeight, canvas.height / 2); // Fallback to canvas height
+
+        // The canvas height represents the true rendered height * scale (which is 2).
+        // Let's use the element's actual scrollHeight as the source of truth for the loop
+        const totalHeightDOM = element.scrollHeight;
 
         // 5. Smart Pagination: Find safe split points
         const cards = Array.from(element.querySelectorAll('.mistake-card'));
@@ -155,6 +158,8 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
 
             // Find the card that crosses nextOffset
             let breakOffset = nextOffset;
+            let foundBreak = false;
+
             for (let i = 0; i < cards.length; i++) {
                 const rect = cards[i].getBoundingClientRect();
                 const cardTop = rect.top - containerRect.top;
@@ -166,16 +171,22 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
                     // We want to avoid empty pages, so ensure there's at least 60px of content before breaking
                     if (cardTop > currentOffset + 60) {
                         breakOffset = cardTop - 15; // 15px DOM buffering gap above card
+                        foundBreak = true;
                     }
                     // If card takes up the entire page, let it be cut in the middle (break inside).
                     break;
                 }
             }
 
-            // Failsafe: always advance to prevent infinite loops
+            // Failsafe: always advance by at least a page size if no break point is found or card is huge
+            if (!foundBreak) {
+                breakOffset = currentOffset + pageHeightDOM;
+            }
+            // Ensure we are strictly moving forward
             if (breakOffset <= currentOffset) {
                 breakOffset = currentOffset + pageHeightDOM;
             }
+
             currentOffset = breakOffset;
         }
 
