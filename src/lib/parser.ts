@@ -422,35 +422,18 @@ function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
                 const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
                 console.log(`Filtered out ${qNum}: first letter question`);
                 return false;
+                return false;
             }
 
             return true;
         });
 
-    // 4. Truncation Strategy (User Request)
-    // The "Sentence Reordering" (连词成句) is ALWAYS the final question of the Grammar/Vocabulary block.
-    // Anything parsed after it (e.g. Reading Comprehension, Writing) should be discarded.
-    let cutoffIndex = -1;
-    for (let i = 0; i < parsedAndFilteredQuestions.length; i++) {
-        const q = parsedAndFilteredQuestions[i];
-        const isSentenceReordering = /连词成句|reorder|rearrange/i.test(q.content) ||
-            (/,\s*\w+,\s*\w+,\s*\w+/.test(q.content) && /\(.*\)/.test(q.content));
+    // Strategy: We will no longer truncate after sentence reordering, because word
+    // transformations (e.g. Q48-51) might appear later in the paper.
+    // Instead, the strict filtering above is trusted to drop reading comprehension blocks automatically.
 
-        if (isSentenceReordering) {
-            cutoffIndex = i;
-            break; // Stop at the first sentence reordering question found
-        }
-    }
-
-    let finalQuestions = parsedAndFilteredQuestions;
-    if (cutoffIndex !== -1) {
-        console.log(`Truncating mock paper after question at index ${cutoffIndex} (Sentence Reordering detected)`);
-        // Keep everything UP TO AND INCLUDING the sentence reordering question
-        finalQuestions = parsedAndFilteredQuestions.slice(0, cutoffIndex + 1);
-    }
-
-    console.log(`Mock Paper Mode: Filtered ${rawItems.length} items down to ${finalQuestions.length}`);
-    return finalQuestions;
+    console.log(`Mock Paper Mode: Filtered ${rawItems.length} items down to ${parsedAndFilteredQuestions.length}`);
+    return parsedAndFilteredQuestions;
 }
 
 // ... Shared Helpers ...
@@ -676,9 +659,12 @@ function classifyQuestion(content: string): ParsedQuestion {
 
             // --- SMART FALLBACK FOR MILITANT OCR ---
             if (!hasBlank) {
+                // If there's no blank, assume the word before the (root) is the blank, and inject the ____ before it.
+                // Or safely inject it just before the (root) block gracefully.
                 const rootIndex = content.lastIndexOf('(');
                 if (rootIndex !== -1) {
-                    content = content.substring(0, rootIndex) + ' ____ ' + content.substring(rootIndex);
+                    // Try to find the last actual word before the parenthesis to put the blank before the parenthesis
+                    content = content.substring(0, rootIndex).trimEnd() + ' ____ ' + content.substring(rootIndex);
                 }
             }
         }
@@ -705,12 +691,11 @@ function classifyQuestion(content: string): ParsedQuestion {
         // we must ensure AT LEAST ONE blank exists for the UI to render the gap, otherwise the question looks broken.
         // We will safely inject a blank right before the 'A)' or 'A.' option block.
         if (!hasBlank) {
+            // Find exactly where the options block starts (e.g. A) or A.)
             const firstOptionMatch = content.match(/\s+[Aa][\)\.]/);
-            if (firstOptionMatch) {
-                const index = firstOptionMatch.index;
-                if (index !== undefined) {
-                    content = content.substring(0, index) + ' ____ ' + content.substring(index);
-                }
+            if (firstOptionMatch && firstOptionMatch.index !== undefined) {
+                // Inject the blank with proper spacing before the options start
+                content = content.substring(0, firstOptionMatch.index).trimEnd() + ' ____ ' + content.substring(firstOptionMatch.index).trimStart();
             }
         }
     }
