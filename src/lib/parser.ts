@@ -670,6 +670,14 @@ function classifyQuestion(content: string): ParsedQuestion {
         type = 'word_transformation';
         if (rootWordMatch[1]) {
             tags.push(`Root:${rootWordMatch[1].trim()}`);
+
+            // --- SMART FALLBACK FOR MILITANT OCR ---
+            if (!hasBlank) {
+                const rootIndex = content.lastIndexOf('(');
+                if (rootIndex !== -1) {
+                    content = content.substring(0, rootIndex) + ' ____ ' + content.substring(rootIndex);
+                }
+            }
         }
     }
     // 3. Collocation / Vocabulary
@@ -687,6 +695,20 @@ function classifyQuestion(content: string): ParsedQuestion {
             tags.push('Collocation');
         } else {
             type = 'grammar';
+        }
+
+        // --- SMART FALLBACK FOR MILITANT OCR ---
+        // If the OCR completely dropped the underline (Paddle OCR does this often with DBNet),
+        // we must ensure AT LEAST ONE blank exists for the UI to render the gap, otherwise the question looks broken.
+        // We will safely inject a blank right before the 'A)' or 'A.' option block.
+        if (!hasBlank) {
+            const firstOptionMatch = content.match(/\s+[Aa][\)\.]\s+/);
+            if (firstOptionMatch) {
+                const index = firstOptionMatch.index;
+                if (index !== undefined) {
+                    content = content.substring(0, index) + ' ____ ' + content.substring(index);
+                }
+            }
         }
     }
 
