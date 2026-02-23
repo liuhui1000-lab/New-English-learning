@@ -26,12 +26,12 @@ export default function ErrorNotebookPage() {
 
     const fetchMistakes = async () => {
         setLoading(true)
-        console.log("Mistake Notebook v5.5-Stable | Source-Based separation")
+        console.log("Mistake Notebook v5.6-Stable | Classification Fix | Build: 2026-02-23-11:45")
         const allMistakes: any[] = []
 
         try {
-            // 1. Fetch Recitation Mistakes (ONLY from Word Transformation Recitation flow)
-            // Use !inner to strictly filter and ensure questions field is NEVER null
+            // 1. Fetch Recitation Mistakes (ONLY Vocabulary from recitation flow)
+            // Separate word_transformation here to match user expectation: Recitation = Vocab
             const { data: recitationData, error: rError } = await supabase
                 .from('user_progress')
                 .select(`
@@ -40,7 +40,7 @@ export default function ErrorNotebookPage() {
                         id, content, answer, type, tags
                     )
                 `)
-                .in('questions.type', ['vocabulary', 'word_transformation'])
+                .eq('questions.type', 'vocabulary')
                 .eq('status', 'learning')
                 .gt('attempts', 0)
 
