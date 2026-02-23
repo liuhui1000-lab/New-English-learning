@@ -217,7 +217,7 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
             for (const card of cardsInCanvas) {
                 if (card.top < nextOffsetPx && card.bottom > nextOffsetPx) {
                     if (card.top > currentOffsetPx + (60 * domToCanvasScale)) {
-                        breakOffsetPx = card.top - (15 * domToCanvasScale);
+                        breakOffsetPx = card.top - (4 * domToCanvasScale);
                         foundBreak = true;
                     }
                     break;
@@ -245,48 +245,17 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
 
             const printedHeightMM = (nextOffsetPx - offsetPx) * canvasPxToMm;
             if (printedHeightMM < contentHeightMM) {
-                pdf.setFillColor(249, 250, 251); // Gray-50 mask for the card area
+                pdf.setFillColor(255, 255, 255); // White mask for the card area
                 pdf.rect(0, marginMM + printedHeightMM, pdfWidthMM, pdfHeightMM - (marginMM + printedHeightMM), 'F');
             }
 
-            pdf.setFillColor(249, 250, 251); // Gray-50 mask for margins
+            pdf.setFillColor(255, 255, 255); // White mask for margins
             pdf.rect(0, 0, pdfWidthMM, marginMM, 'F');
             pdf.rect(0, pdfHeightMM - marginMM, pdfWidthMM, marginMM, 'F');
         }
 
         // 7. Save the PDF
         pdf.save(fileName);
-
-        // Inject debug overlay so user can send logs
-        const debugData = {
-            elementScrollHeight: element.scrollHeight,
-            elementOffsetHeight: element.offsetHeight,
-            canvasWidth: canvas.width,
-            canvasHeight: canvas.height,
-            pxToMm: canvasPxToMm,
-            pageHeightCanvasPx: pageHeightCanvasPx,
-            pageOffsetsPx,
-            cardsCount: cloneMetrics ? cloneMetrics.cards.length : 0,
-            cloneHeight: cloneMetrics ? cloneMetrics.height : 0
-        };
-
-        const debugDiv = document.createElement('div');
-        debugDiv.style.position = 'fixed';
-        debugDiv.style.top = '0';
-        debugDiv.style.left = '0';
-        debugDiv.style.width = '100vw';
-        debugDiv.style.height = '100vh';
-        debugDiv.style.backgroundColor = 'rgba(0,0,0,0.9)';
-        debugDiv.style.color = '#0f0';
-        debugDiv.style.zIndex = '999999';
-        debugDiv.style.overflow = 'auto';
-        debugDiv.style.padding = '20px';
-        debugDiv.innerHTML = `
-            <button onclick="this.parentElement.remove()" style="padding:10px 20px; background:white; color:black; font-weight:bold; margin-bottom: 20px; border-radius: 8px;">关闭诊断日志</button>
-            <h3 style="color:white; margin-bottom: 10px;">请将以下数据截图发给开发人员：</h3>
-            <pre style="white-space: pre-wrap; word-wrap: break-word; font-size: 14px;">${JSON.stringify(debugData, null, 2)}</pre>
-        `;
-        document.body.appendChild(debugDiv);
 
     } catch (error: any) {
         console.error('PDF Export Error:', error);
