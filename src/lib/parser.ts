@@ -844,6 +844,12 @@ async function extractPageText(page: any, scale: number, quality: number): Promi
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
+            if (data.layoutMetrics && Array.isArray(data.layoutMetrics)) {
+                console.log("\n====== OCR SPATIAL LOGS ======");
+                data.layoutMetrics.forEach((log: string) => console.log(log));
+                console.log("==============================\n");
+            }
+
             return data.text || "";
 
         } catch (error: any) {

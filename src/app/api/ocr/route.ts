@@ -203,11 +203,12 @@ export async function POST(req: NextRequest) {
             const ocrResults = result.result.ocrResults;
 
             // Advanced Algorithm: Reconstruct blanks from Layout Bounding Boxes
-            // PaddleOCR often returns textRegion array: [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
             let processedLines: string[] = [];
 
-            // Try spatial reconstruction first if textRegion data is robust
-            if (ocrResults.length > 0 && ocrResults[0].textRegion) {
+            // Try spatial reconstruction first if any kind of geometric data is robust
+            const hasGeometry = ocrResults.length > 0 && (ocrResults[0].textRegion || ocrResults[0].text_region || ocrResults[0].box || Array.isArray(ocrResults[0].poly) || Array.isArray(ocrResults[0].points) || ocrResults[0].location);
+
+            if (hasGeometry) {
                 // Map to simpler geometric objects
                 const blocks = ocrResults.map((r: any) => {
                     let text = r.prunedResult || r.words || r.text || "";
@@ -216,20 +217,22 @@ export async function POST(req: NextRequest) {
                         if (typeof text === 'object') text = JSON.stringify(text); // Fallback
                     }
 
-                    const region = r.textRegion;
-                    // region[0] is top-left [x, y], region[2] is bottom-right [x, y] OR region is [x, y, w, h] depending on API output.
-                    // Assuming typical 4-point array: [[x1,y1], [x2,y1], [x3,y2], [x4,y2]]
+                    const region = r.textRegion || r.text_region || r.box || r.poly || r.points || r.location;
+
                     let x = 0, y = 0, width = 0, height = 0;
                     if (Array.isArray(region) && region.length === 4 && Array.isArray(region[0])) {
                         x = region[0][0];
                         y = region[0][1];
                         width = region[1][0] - region[0][0];
-                        height = region[2][1] - region[1][1];
+                        height = region[2][1] - region[0][1]; // sometimes [2] is bottom-right, sometimes [3] is bottom-left
+                        if (height < 0) height = region[3][1] - region[0][1]; // adjustment if order differs
                     } else if (Array.isArray(region) && region.length === 4 && !Array.isArray(region[0])) {
                         x = region[0]; y = region[1]; width = region[2]; height = region[3];
+                    } else if (typeof region === 'object' && region.left !== undefined) {
+                        x = region.left; y = region.top; width = region.width; height = region.height;
                     }
 
-                    return { text, x, y, width, height, bottom: y + height, right: x + width };
+                    return { text, x, y, width: Math.abs(width), height: Math.abs(height), bottom: y + Math.abs(height), right: x + Math.abs(width) };
                 }).filter((b: any) => b.text.trim() !== "");
 
                 // Sort blocks strictly vertically, then horizontally
@@ -249,7 +252,8 @@ export async function POST(req: NextRequest) {
                 let currentLineHeight = -1;
                 let lastBlockRight = -1;
 
-                console.log(`[OCR Layout Debug] Total blocks to process: ${blocks.length}. First 3:`, JSON.stringify(blocks.slice(0, 3)));
+                let debugLogs: string[] = [];
+                debugLogs.push(`[OCR Layout] Total blocks: ${blocks.length}. First 3: ${JSON.stringify(blocks.slice(0, 3))}`);
 
                 blocks.forEach((b: any, index: number) => {
                     // Check if it's a new line
@@ -269,14 +273,14 @@ export async function POST(req: NextRequest) {
                         const gap = b.x - lastBlockRight;
 
                         if (index < 30) {
-                            console.log(`[OCR Layout Debug] Same Line: "${currentLineStr}" -> "${b.text}". Gap: ${gap.toFixed(1)}, AvgChar: ${avgCharWidth.toFixed(1)}`);
+                            debugLogs.push(`[OCR Layout] Same Line: "${currentLineStr}" -> "${b.text}". Gap: ${gap.toFixed(1)}, AvgChar: ${avgCharWidth.toFixed(1)}`);
                         }
 
                         // If gap is unusually large (e.g. > 2.5 average characters), assume an underline was stripped
                         // We also enforce an absolute threshold of 15px to avoid triggering on standard spaces in some fonts
                         if (gap > avgCharWidth * 2.5 && gap > 15) {
                             currentLineStr += ` ____ ${b.text}`;
-                            if (index < 30) console.log(`[OCR Layout Debug] 🚨 INJECTED BLANK HERE!`);
+                            if (index < 30) debugLogs.push(`[OCR Layout] 🚨 INJECTED BLANK HERE!`);
                         } else {
                             // Standard space
                             currentLineStr += ` ${b.text}`;
@@ -289,6 +293,15 @@ export async function POST(req: NextRequest) {
                 });
                 if (currentLineStr) processedLines.push(currentLineStr);
 
+                const text = processedLines.join("\n");
+                const cleanedText = cleanOCRText(text);
+
+                return NextResponse.json({
+                    text: cleanedText,
+                    debug: result,
+                    layoutMetrics: debugLogs
+                });
+
             } else {
                 // VERY Fallback if no geometry data
                 processedLines = ocrResults.map((r: any) => {
@@ -300,14 +313,14 @@ export async function POST(req: NextRequest) {
                     }
                     return val;
                 });
+
+                const text = processedLines.join("\n");
+                const cleanedText = cleanOCRText(text);
+
+                // Return debug info in the response so client can see it
+                return NextResponse.json({ text: cleanedText, debug: result });
             }
 
-            const text = processedLines.join("\n");
-
-            const cleanedText = cleanOCRText(text);
-
-            // Return debug info in the response so client can see it
-            return NextResponse.json({ text: cleanedText, debug: result });
         }
 
         // Priority 4: Handle "No Content Found" gracefully
