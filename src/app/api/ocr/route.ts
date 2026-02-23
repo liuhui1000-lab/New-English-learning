@@ -115,9 +115,9 @@ export async function POST(req: NextRequest) {
             // Force OCR on content incorrectly detected as "image"
             use_ocr_for_image_block: true,
             useOcrForImageBlock: true, // Try both casings
-            // Disable layout detection to prefer raw text lines
-            use_layout_detection: false,
-            useLayoutDetection: false, // Try both casings
+            // Enable layout detection to extract LaTeX underlines and structural markdown
+            use_layout_detection: true,
+            useLayoutDetection: true, // Try both casings
             // Try both casings
             // CRITICAL: Disable block merging to get separate results for close lines
             merge_layout_blocks: false,
