@@ -465,9 +465,8 @@ async function extractText(file: File, onProgress?: (msg: string) => void, skipO
         try {
             if (onProgress) onProgress("正在加载 PDF 核心组件...");
             const pdfjsLib = await import("pdfjs-dist");
-            // Ensure worker points to the correct version. 
-            // Ideally, we should copy the worker from node_modules during build, but for now assuming public/ is correct.
-            pdfjsLib.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`;
+            // Ensure worker points to the correct version, using CDN to prevent Vercel public routing / caching misses.
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
             if (onProgress) onProgress("正在读取文件数据...");
             const arrayBuffer = await file.arrayBuffer();
@@ -475,10 +474,10 @@ async function extractText(file: File, onProgress?: (msg: string) => void, skipO
             if (onProgress) onProgress(`文件大小: ${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)} MB. 正在解析 PDF 结构...`);
 
             // Add Timeout Race for getDocument
-            // User requested to not cut off easily. Extending to 5 minutes (300s) to accommodate slow networks/files.
+            // Use CDN for CMaps to guarantee bulletproof font loading (solves missing underscores during rendering).
             const loadTask = pdfjsLib.getDocument({
                 data: arrayBuffer,
-                cMapUrl: '/cmaps/',
+                cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
                 cMapPacked: true,
             });
 
@@ -745,11 +744,15 @@ function isCollocationOptions(content: string): boolean {
 
 async function ocrPdfPage(page: any): Promise<string> {
     try {
-        return await extractPageText(page, 1.5, 0.8);
+        const text = await extractPageText(page, 1.5, 0.8);
+        console.log("OCR Success (Scale 1.5):", text.substring(0, 100));
+        return text;
     } catch (e: any) {
-        console.warn("OCR Attempt 1 failed, retrying...", e);
+        console.warn("OCR Attempt 1 failed (Likely Payload Too Large or 500 error), retrying with lower quality...", e);
         try {
-            return await extractPageText(page, 1.0, 0.5);
+            const text = await extractPageText(page, 1.0, 0.5);
+            console.log("OCR Success (Scale 1.0):", text.substring(0, 100));
+            return text;
         } catch (retryError: any) {
             throw new Error(retryError.message || "OCR Failed");
         }

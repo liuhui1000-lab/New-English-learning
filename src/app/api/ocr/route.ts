@@ -31,7 +31,7 @@ function cleanOCRText(text: string): string {
         // Remove HTML tags (div, img, figure, table, tr, td, etc.)
         .replace(/<\/?(?:div|img|figure|span|p|table|tbody|thead|tr|td|th)[^>]*>/gi, ' ')
         // Remove known table artifact strings that might remain
-        .replace(/(?:\||___){3,}/g, ' ')
+        .replace(/\|{3,}/g, ' ')
         .trim();
 }
 
