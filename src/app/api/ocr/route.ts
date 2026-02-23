@@ -103,16 +103,24 @@ export async function POST(req: NextRequest) {
         // Ensure clean base64 (strip data:image/...;base64, prefix if present)
         const cleanImage = image.replace(/^data:image\/\w+;base64,/, "");
 
-        // 2. Prepare Payload (Match Official Spec)
-        // For images, fileType should be 1
-        const payload = {
+        // 2. Prepare Payload
+        const isLayoutEndpoint = apiUrl.includes('layout');
+        const payload: any = {
             file: cleanImage,
             fileType: 1,
-            // Official API Params (Minimal Set)
             useDocOrientationClassify: false,
             useDocUnwarping: false,
-            useTextlineOrientation: false
+            useChartRecognition: false
         };
+
+        if (isLayoutEndpoint) {
+            console.log("Detected Layout Parsing Endpoint - Injecting specific payload parameters...");
+            payload.use_layout_detection = true;
+            payload.useLayoutDetection = true;
+            payload.merge_layout_blocks = false;
+            payload.mergeLayoutBlocks = false;
+            payload.use_ocr_for_image_block = true;
+        }
 
         // 3. Call External API
         console.log("Calling OCR API:", apiUrl);
