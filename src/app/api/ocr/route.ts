@@ -55,7 +55,6 @@ export async function POST(req: NextRequest) {
 
         // 1. Get Settings from DB
         const body = await req.json();
-        const { image } = body;
 
         // Allow explicit config override for testing
         let token = body.token || process.env.PADDLE_OCR_TOKEN || process.env.BAIDU_OCR_API_KEY;
