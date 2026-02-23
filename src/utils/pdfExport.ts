@@ -193,9 +193,15 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
         // 6. Draw PDF pages
         const imgWidthMM = contentWidthMM;
 
-        // The canvas is scaled by 2, so its pixel height doesn't map 1:1 to mm using the unscaled element width.
-        // We calculate the total image height in MM based on the true DOM ratio:
-        const imgHeightMM = totalHeightDOM * pxToMm;
+        // Since the canvas is scaled (e.g., scale: 2), its pixel dimensions are larger than the DOM.
+        // We find the ratio of the output PDF width (in mm) to the actual canvas pixel width.
+        const canvasPxToMm = imgWidthMM / canvas.width;
+
+        // The total image height in mm is the canvas pixel height * this new ratio.
+        const imgHeightMM = canvas.height * canvasPxToMm;
+
+        // We need a separate ratio to map DOM pixel offsets to PDF mm offsets.
+        const domPxToMm = imgWidthMM / element.scrollWidth;
 
         for (let i = 0; i < pageOffsets.length; i++) {
             if (i > 0) pdf.addPage();
@@ -203,9 +209,8 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
             const offsetDOM = pageOffsets[i];
             const nextOffsetDOM = (i < pageOffsets.length - 1) ? pageOffsets[i + 1] : totalHeightDOM;
 
-            // Draw the full image shifted up by offsetDOM
-            // This pulls the section of the image we want to see up into the A4 viewport
-            const shiftYMM = offsetDOM * pxToMm;
+            // Shift the image up based on the DOM offset mapped to MM
+            const shiftYMM = offsetDOM * domPxToMm;
 
             pdf.addImage(
                 imgData,
@@ -216,8 +221,8 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
                 imgHeightMM
             );
 
-            // Calculate how much content we actually PRINTED on this specific page
-            const printedHeightMM = (nextOffsetDOM - offsetDOM) * pxToMm;
+            // Calculate how much content we actually PRINTED on this specific page based on DOM offsets
+            const printedHeightMM = (nextOffsetDOM - offsetDOM) * domPxToMm;
 
             // Mask the bottom overflow if we broke early (to avoid duplicating card pieces on this page)
             if (printedHeightMM < contentHeightMM) {
