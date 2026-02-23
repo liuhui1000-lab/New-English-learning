@@ -311,7 +311,8 @@ export async function POST(req: NextRequest) {
                         // CRITICAL: Do NOT inject a blank if the gap is just the natural spacing before a multiple choice option (e.g. A), B))
                         if (gap > avgCharWidth * 2.5 && gap > 15 && !isOptionBlock) {
                             // Calculate proportional blanks for consecutively stripped underlines
-                            let numBlanks = Math.floor(gap / (avgCharWidth * 2.5));
+                            // Standard single blank is roughly 2-3 chars wide. We divide by 4.0 chars to require a much larger gap to trigger multiple blanks
+                            let numBlanks = Math.floor(gap / (avgCharWidth * 4.0));
                             // Cap at 3 purely to avoid crazy OCR noise artifacts
                             numBlanks = Math.max(1, Math.min(3, numBlanks));
 
