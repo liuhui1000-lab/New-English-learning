@@ -347,10 +347,22 @@ export default function AdminSettingsPage() {
                     {OCR_PROVIDERS.map(provider => {
                         const config = ocrProviderConfigs[provider.id] || { apiUrl: '', token: '' }
                         const isConfigured = !!config.apiUrl || !!config.token
-                        const isActive = activeOcrProvider === provider.id
+
+                        let statusBadge = null;
+                        if (isConfigured) {
+                            if (provider.id === 'paddle') {
+                                statusBadge = <span className="bg-indigo-100 text-indigo-700 text-xs px-2 py-1 rounded-full font-bold flex items-center"><Check className="w-3 h-3 mr-1" /> 自动启用 (手写模式)</span>
+                            } else if (provider.id === 'paddle_layout') {
+                                statusBadge = <span className="bg-indigo-100 text-indigo-700 text-xs px-2 py-1 rounded-full font-bold flex items-center"><Check className="w-3 h-3 mr-1" /> 自动启用 (导入模式)</span>
+                            } else {
+                                statusBadge = <span className="bg-green-50 text-green-700 text-xs px-2 py-1 rounded-full font-medium">已配置</span>
+                            }
+                        } else {
+                            statusBadge = <span className="bg-gray-100 text-gray-400 text-xs px-2 py-1 rounded-full">未配置</span>
+                        }
 
                         return (
-                            <div key={provider.id} className={`relative p-5 rounded-xl border-2 transition-all ${isActive
+                            <div key={provider.id} className={`relative p-5 rounded-xl border-2 transition-all ${isConfigured
                                 ? 'border-indigo-500 bg-indigo-50/30'
                                 : 'border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm'
                                 }`}>
@@ -361,21 +373,7 @@ export default function AdminSettingsPage() {
                                         <p className="text-xs text-gray-500 mt-1">{provider.description}</p>
                                     </div>
                                     <div className="flex flex-col items-end space-y-2">
-                                        {isActive && (
-                                            <span className="bg-indigo-100 text-indigo-700 text-xs px-2 py-1 rounded-full font-bold flex items-center">
-                                                <Check className="w-3 h-3 mr-1" /> 当前使用
-                                            </span>
-                                        )}
-                                        {!isActive && isConfigured && (
-                                            <span className="bg-green-50 text-green-700 text-xs px-2 py-1 rounded-full font-medium">
-                                                已配置
-                                            </span>
-                                        )}
-                                        {!isConfigured && (
-                                            <span className="bg-gray-100 text-gray-400 text-xs px-2 py-1 rounded-full">
-                                                未配置
-                                            </span>
-                                        )}
+                                        {statusBadge}
                                     </div>
                                 </div>
 
@@ -395,16 +393,6 @@ export default function AdminSettingsPage() {
                                     >
                                         <Edit2 className="w-3 h-3 mr-1" /> 配置
                                     </button>
-
-                                    {isConfigured && !isActive && (
-                                        <button
-                                            onClick={() => handleActivateOcrProvider(provider.id)}
-                                            disabled={saving}
-                                            className="flex-1 bg-indigo-600 text-white py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition disabled:opacity-50"
-                                        >
-                                            启用
-                                        </button>
-                                    )}
                                 </div>
                             </div>
                         )
