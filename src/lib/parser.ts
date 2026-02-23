@@ -456,6 +456,9 @@ function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
 // ... Shared Helpers ...
 
 async function extractText(file: File, onProgress?: (msg: string) => void, skipOCR: boolean = false): Promise<string> {
+    console.log("=== PARSER VERSION: 2026-02-23 v3-main ===");
+    console.log(`Starting extraction for ${file.name} (${file.type}) - skipOCR: ${skipOCR}`);
+
     if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
         if (onProgress) onProgress("正在读取 Word 文档...");
         const arrayBuffer = await file.arrayBuffer();
