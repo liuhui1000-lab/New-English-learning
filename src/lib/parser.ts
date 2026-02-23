@@ -848,6 +848,9 @@ async function extractPageText(page: any, scale: number, quality: number): Promi
                 console.log("\n====== OCR SPATIAL LOGS ======");
                 data.layoutMetrics.forEach((log: string) => console.log(log));
                 console.log("==============================\n");
+            } else {
+                console.log("\n❌ OCR SPATIAL LOGS FAILED TRIGGER! Raw debug response below:");
+                console.log(JSON.stringify(data.debug?.result?.ocrResults?.[0], null, 2));
             }
 
             return data.text || "";
