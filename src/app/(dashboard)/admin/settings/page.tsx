@@ -35,7 +35,8 @@ const AI_PROVIDERS: ProviderMeta[] = [
 ]
 
 const OCR_PROVIDERS: ProviderMeta[] = [
-    { id: 'paddle', name: 'PaddleOCR (百度飞桨)', defaultApiUrl: 'https://5ejew8k4i019dek5.aistudio-app.com/layout-parsing', description: 'Best for layout & table recognition' },
+    { id: 'paddle', name: 'PaddleOCR (默认提取)', defaultApiUrl: 'https://v37ebk984n0v6q97.aistudio-app.com/ocr', description: 'Faster. Great for practice handwriting.' },
+    { id: 'paddle_layout', name: 'PaddleOCR (排版提取)', defaultApiUrl: 'https://5ejew8k4i019dek5.aistudio-app.com/layout-parsing', description: 'Requires layout parsing API. Excellent for mock papers.' },
     { id: 'general', name: 'General/Custom OCR', defaultApiUrl: '', description: 'Compatible generic OCR API' }
 ]
 

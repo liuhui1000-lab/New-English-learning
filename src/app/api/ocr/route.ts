@@ -53,9 +53,11 @@ export async function POST(req: NextRequest) {
             }
         )
 
-        // 1. Get Settings from DB
         const body = await req.json();
+        const { image, source } = body; // Base64 image
+        const isLayoutEndpoint = source !== 'practice';
 
+        // 1. Get Settings from DB
         // Allow explicit config override for testing
         let token = body.token || process.env.PADDLE_OCR_TOKEN || process.env.BAIDU_OCR_API_KEY;
         let apiUrl = body.apiUrl || PADDLE_API_URL;
@@ -69,19 +71,35 @@ export async function POST(req: NextRequest) {
             const map: Record<string, string> = {};
             settings.forEach((s: any) => map[s.key] = s.value);
 
-            if (map['ocr_url'] && !body.apiUrl) apiUrl = map['ocr_url'];
+            // Determine which exact provider configuration to pull
+            // Default to 'paddle' block, but use 'paddle_layout' if this is a layout endpoint requirement
+            const configKeyToUse = isLayoutEndpoint ? 'ocr_config_paddle_layout' : 'ocr_config_paddle';
 
-            // Only override if not provided in body
+            let preferredConfig: any = null;
+            if (map[configKeyToUse]) {
+                try {
+                    preferredConfig = JSON.parse(map[configKeyToUse]);
+                } catch (e) { console.error("Could not parse preferred config:", e); }
+            }
+
+            // Fallback to legacy raw keys if JSON structured keys don't exist
+            if (preferredConfig?.apiUrl) {
+                apiUrl = preferredConfig.apiUrl;
+            } else if (map['ocr_url'] && !body.apiUrl) {
+                apiUrl = map['ocr_url'];
+            }
+
             if (!body.token) {
-                if (map['ocr_token']) {
+                if (preferredConfig?.token) {
+                    token = preferredConfig.token;
+                    console.log(`Using DB ${configKeyToUse} token:`, token.substring(0, 5) + "...");
+                } else if (map['ocr_token']) {
                     token = map['ocr_token'];
-                    console.log("Using DB 'ocr_token':", token.substring(0, 5) + "...");
-                }
-                else if (map['paddle_ocr_token']) {
+                    console.log("Using Legacy 'ocr_token':", token.substring(0, 5) + "...");
+                } else if (map['paddle_ocr_token']) {
                     token = map['paddle_ocr_token'];
                     console.log("Using DB 'paddle_ocr_token':", token.substring(0, 5) + "...");
-                }
-                else if (map['baidu_ocr_api_key']) {
+                } else if (map['baidu_ocr_api_key']) {
                     token = map['baidu_ocr_api_key'];
                     console.log("Using DB 'baidu_ocr_api_key':", token.substring(0, 5) + "...");
                 }
@@ -96,16 +114,12 @@ export async function POST(req: NextRequest) {
             console.log("Using Env 'PADDLE_OCR_TOKEN'");
         }
 
-        const { image, source } = body; // Base64 image
         if (!image) return NextResponse.json({ error: "No image provided" }, { status: 400 });
 
         // Ensure clean base64 (strip data:image/...;base64, prefix if present)
         const cleanImage = image.replace(/^data:image\/\w+;base64,/, "");
 
         // 2. Prepare Payload
-        // Force generic OCR if source is specifically request as 'practice' (e.g. handwriting grading)
-        // Otherwise, ALWAYS enforce layout parsing for Mock Paper mode (import)
-        const isLayoutEndpoint = source !== 'practice';
         const payload: any = {
             file: cleanImage,
             fileType: 1,
