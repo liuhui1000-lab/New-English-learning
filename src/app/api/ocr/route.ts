@@ -249,6 +249,8 @@ export async function POST(req: NextRequest) {
                 let currentLineHeight = -1;
                 let lastBlockRight = -1;
 
+                console.log(`[OCR Layout Debug] Total blocks to process: ${blocks.length}. First 3:`, JSON.stringify(blocks.slice(0, 3)));
+
                 blocks.forEach((b: any, index: number) => {
                     // Check if it's a new line
                     const overlapY = currentLineY === -1 ? 0 : Math.max(0, Math.min(b.bottom, currentLineY + currentLineHeight) - Math.max(b.y, currentLineY));
@@ -266,9 +268,15 @@ export async function POST(req: NextRequest) {
                         const avgCharWidth = b.width / Math.max(1, b.text.length);
                         const gap = b.x - lastBlockRight;
 
-                        // If gap is unusually large (e.g. > 3 average characters), assume an underline was stripped
-                        if (gap > avgCharWidth * 3 && gap > 15) { // 15px minimum absolute threshold to ignore standard kerning
+                        if (index < 30) {
+                            console.log(`[OCR Layout Debug] Same Line: "${currentLineStr}" -> "${b.text}". Gap: ${gap.toFixed(1)}, AvgChar: ${avgCharWidth.toFixed(1)}`);
+                        }
+
+                        // If gap is unusually large (e.g. > 2.5 average characters), assume an underline was stripped
+                        // We also enforce an absolute threshold of 15px to avoid triggering on standard spaces in some fonts
+                        if (gap > avgCharWidth * 2.5 && gap > 15) {
                             currentLineStr += ` ____ ${b.text}`;
+                            if (index < 30) console.log(`[OCR Layout Debug] 🚨 INJECTED BLANK HERE!`);
                         } else {
                             // Standard space
                             currentLineStr += ` ${b.text}`;
