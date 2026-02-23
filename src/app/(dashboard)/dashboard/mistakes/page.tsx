@@ -364,7 +364,7 @@ export default function ErrorNotebookPage() {
                     ) : (
                         <div className="space-y-4">
                             {filteredMistakes.map((item) => (
-                                <div key={item.id} className={`bg-white rounded-xl border transition group break-inside-avoid ${selectedIds.includes(item.id) ? 'border-indigo-500 ring-1 ring-indigo-500' : 'border-gray-200 hover:border-indigo-200'
+                                <div key={item.id} className={`mistake-card bg-white rounded-xl border transition group break-inside-avoid ${selectedIds.includes(item.id) ? 'border-indigo-500 ring-1 ring-indigo-500' : 'border-gray-200 hover:border-indigo-200'
                                     }`}>
                                     <div className="p-5 flex gap-4">
                                         <div className="mt-1 print:hidden">
