@@ -124,34 +124,103 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
         const imgData = canvas.toDataURL('image/jpeg', 0.95);
 
         // 3. Initialize jsPDF
-        // 'p' for portrait, 'mm' for millimeters, 'a4' for size
         const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidthMM = pdf.internal.pageSize.getWidth();
+        const pdfHeightMM = pdf.internal.pageSize.getHeight();
 
-        // A4 dimensions in mm
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
+        // 4. Calculate dimensions and margins
+        const marginMM = 15; // 15mm margins
+        const contentWidthMM = pdfWidthMM - (marginMM * 2);
+        const contentHeightMM = pdfHeightMM - (marginMM * 2);
 
-        // Calculate image dimensions to fit the PDF page width
-        const imgWidth = pdfWidth;
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        // Ratio of PDF mm to DOM px
+        const pxToMm = contentWidthMM / element.scrollWidth;
+        const pageHeightDOM = contentHeightMM / pxToMm;
+        const totalHeightDOM = Math.max(element.scrollHeight, canvas.height / 2); // Fallback to canvas height
 
-        let heightLeft = imgHeight;
-        let position = 0;
+        // 5. Smart Pagination: Find safe split points
+        const cards = Array.from(element.querySelectorAll('.mistake-card'));
+        const containerRect = element.getBoundingClientRect();
 
-        // 4. Add image to PDF, handling multiple pages if necessary
-        // First page
-        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pdfHeight;
+        let currentOffset = 0;
+        const pageOffsets = [];
 
-        // Additional pages
-        while (heightLeft >= 0) {
-            position = heightLeft - imgHeight;
-            pdf.addPage();
-            pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-            heightLeft -= pdfHeight;
+        while (currentOffset < totalHeightDOM) {
+            pageOffsets.push(currentOffset);
+            let nextOffset = currentOffset + pageHeightDOM;
+
+            if (nextOffset >= totalHeightDOM) {
+                break; // Reached the end
+            }
+
+            // Find the card that crosses nextOffset
+            let breakOffset = nextOffset;
+            for (let i = 0; i < cards.length; i++) {
+                const rect = cards[i].getBoundingClientRect();
+                const cardTop = rect.top - containerRect.top;
+                const cardBottom = rect.bottom - containerRect.top;
+
+                // If the card crosses the page boundary
+                if (cardTop < nextOffset && cardBottom > nextOffset) {
+                    // Check if we can safely push it to the next page
+                    // We want to avoid empty pages, so ensure there's at least 60px of content before breaking
+                    if (cardTop > currentOffset + 60) {
+                        breakOffset = cardTop - 15; // 15px DOM buffering gap above card
+                    }
+                    // If card takes up the entire page, let it be cut in the middle (break inside).
+                    break;
+                }
+            }
+
+            // Failsafe: always advance to prevent infinite loops
+            if (breakOffset <= currentOffset) {
+                breakOffset = currentOffset + pageHeightDOM;
+            }
+            currentOffset = breakOffset;
         }
 
-        // 5. Save the PDF
+        // 6. Draw PDF pages
+        const imgWidthMM = contentWidthMM;
+        const imgHeightMM = canvas.height * (imgWidthMM / canvas.width); // Total scaled image height
+
+        for (let i = 0; i < pageOffsets.length; i++) {
+            if (i > 0) pdf.addPage();
+
+            const offsetDOM = pageOffsets[i];
+            const nextOffsetDOM = (i < pageOffsets.length - 1) ? pageOffsets[i + 1] : totalHeightDOM;
+
+            // Draw the full image shifted up by offsetDOM
+            pdf.addImage(
+                imgData,
+                'JPEG',
+                marginMM,
+                marginMM - (offsetDOM * pxToMm),
+                imgWidthMM,
+                imgHeightMM
+            );
+
+            // Calculate how much content we actually printed from this offset
+            const printedHeightMM = (nextOffsetDOM - offsetDOM) * pxToMm;
+
+            // Mask the bottom overflow if we broke early (to avoid duplicating card pieces)
+            if (printedHeightMM < contentHeightMM) {
+                pdf.setFillColor(255, 255, 255);
+                pdf.rect(
+                    0,
+                    marginMM + printedHeightMM,
+                    pdfWidthMM,
+                    pdfHeightMM - (marginMM + printedHeightMM),
+                    'F'
+                );
+            }
+
+            // Always mask the top and bottom margins to keep them clean
+            pdf.setFillColor(255, 255, 255);
+            pdf.rect(0, 0, pdfWidthMM, marginMM, 'F'); // Top margin
+            pdf.rect(0, pdfHeightMM - marginMM, pdfWidthMM, marginMM, 'F'); // Bottom margin
+        }
+
+        // 7. Save the PDF
         pdf.save(fileName);
     } catch (error: any) {
         console.error('PDF Export Error:', error);
