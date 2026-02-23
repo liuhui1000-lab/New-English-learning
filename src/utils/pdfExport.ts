@@ -138,12 +138,25 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
         const pageHeightDOM = contentHeightMM / pxToMm;
 
         // The canvas height represents the true rendered height * scale (which is 2).
-        // Let's use the element's actual scrollHeight as the source of truth for the loop
         const totalHeightDOM = element.scrollHeight;
+
+        const debugData: any = {
+            elementScrollHeight: element.scrollHeight,
+            elementOffsetHeight: element.offsetHeight,
+            canvasWidth: canvas.width,
+            canvasHeight: canvas.height,
+            pxToMm: pxToMm,
+            pageHeightDOM: pageHeightDOM,
+            cardsCrossings: [] as any[],
+            pageOffsets: [] as any[]
+        };
 
         // 5. Smart Pagination: Find safe split points
         const cards = Array.from(element.querySelectorAll('.mistake-card'));
         const containerRect = element.getBoundingClientRect();
+
+        debugData.cardsCount = cards.length;
+        debugData.containerRect = { top: containerRect.top, height: containerRect.height };
 
         let currentOffset = 0;
         const pageOffsets = [];
@@ -166,6 +179,14 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
 
                 // Check if this card crosses the next page boundary
                 if (cardTop < nextOffset && cardBottom > nextOffset) {
+                    debugData.cardsCrossings.push({
+                        idx: i,
+                        cardTop,
+                        cardBottom,
+                        nextOffset,
+                        currentOffset
+                    });
+
                     // It crosses. Can we safely break before it?
                     // Ensure the card isn't taller than the whole page itself and that we aren't breaking too early (at least some content exists)
                     if (cardTop > currentOffset + 20) {
@@ -189,6 +210,8 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
 
             currentOffset = breakOffset;
         }
+
+        debugData.pageOffsets = pageOffsets;
 
         // 6. Draw PDF pages
         const imgWidthMM = contentWidthMM;
@@ -244,6 +267,26 @@ export async function exportToPDF(elementId: string, fileName: string = 'mistake
 
         // 7. Save the PDF
         pdf.save(fileName);
+
+        // Inject debug overlay so user can send logs
+        const debugDiv = document.createElement('div');
+        debugDiv.style.position = 'fixed';
+        debugDiv.style.top = '0';
+        debugDiv.style.left = '0';
+        debugDiv.style.width = '100vw';
+        debugDiv.style.height = '100vh';
+        debugDiv.style.backgroundColor = 'rgba(0,0,0,0.9)';
+        debugDiv.style.color = '#0f0';
+        debugDiv.style.zIndex = '999999';
+        debugDiv.style.overflow = 'auto';
+        debugDiv.style.padding = '20px';
+        debugDiv.innerHTML = `
+            <button onclick="this.parentElement.remove()" style="padding:10px 20px; background:white; color:black; font-weight:bold; margin-bottom: 20px; border-radius: 8px;">关闭诊断日志</button>
+            <h3 style="color:white; margin-bottom: 10px;">请将以下数据截图发给开发人员：</h3>
+            <pre style="white-space: pre-wrap; word-wrap: break-word; font-size: 14px;">${JSON.stringify(debugData, null, 2)}</pre>
+        `;
+        document.body.appendChild(debugDiv);
+
     } catch (error: any) {
         console.error('PDF Export Error:', error);
         alert('导出失败: ' + (error.message || '未知错误'));
