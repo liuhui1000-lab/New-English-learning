@@ -214,31 +214,102 @@ export async function POST(req: NextRequest) {
         }
 
         // Priority 3: Standard OCR (Plain Text) from 'ocrResults'
-        // This is the primary path for the new 'ocr' endpoint.
         if (result.result && result.result.ocrResults) {
             const ocrResults = result.result.ocrResults;
-            const text = ocrResults.map((r: any) => {
-                // IMPORTANT: The API might return text in different fields.
-                // Standard: prunedResult
-                // Layout: text
-                // Others: words
-                let val = r.prunedResult || r.words || r.text || "";
 
-                // Fix `[object Object]` bug: Sometimes PaddleOCR returns nested objects for words/text
-                if (typeof val === 'object' && val !== null) {
-                    if (Array.isArray(val.rec_texts)) {
-                        val = val.rec_texts.join(" ");
+            // Advanced Algorithm: Reconstruct blanks from Layout Bounding Boxes
+            // PaddleOCR often returns textRegion array: [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
+            let processedLines: string[] = [];
+
+            // Try spatial reconstruction first if textRegion data is robust
+            if (ocrResults.length > 0 && ocrResults[0].textRegion) {
+                // Map to simpler geometric objects
+                const blocks = ocrResults.map((r: any) => {
+                    let text = r.prunedResult || r.words || r.text || "";
+                    if (typeof text === 'object' && text !== null) {
+                        text = Array.isArray(text.rec_texts) ? text.rec_texts.join(" ") : (text.text || text.word || text.words || "");
+                        if (typeof text === 'object') text = JSON.stringify(text); // Fallback
+                    }
+
+                    const region = r.textRegion;
+                    // region[0] is top-left [x, y], region[2] is bottom-right [x, y] OR region is [x, y, w, h] depending on API output.
+                    // Assuming typical 4-point array: [[x1,y1], [x2,y1], [x3,y2], [x4,y2]]
+                    let x = 0, y = 0, width = 0, height = 0;
+                    if (Array.isArray(region) && region.length === 4 && Array.isArray(region[0])) {
+                        x = region[0][0];
+                        y = region[0][1];
+                        width = region[1][0] - region[0][0];
+                        height = region[2][1] - region[1][1];
+                    } else if (Array.isArray(region) && region.length === 4 && !Array.isArray(region[0])) {
+                        x = region[0]; y = region[1]; width = region[2]; height = region[3];
+                    }
+
+                    return { text, x, y, width, height, bottom: y + height, right: x + width };
+                }).filter((b: any) => b.text.trim() !== "");
+
+                // Sort blocks strictly vertically, then horizontally
+                blocks.sort((a: any, b: any) => {
+                    // If vertical overlap (i.e. on the same line) > 50%
+                    const overlapY = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.y, b.y));
+                    const minHeight = Math.min(a.height, b.height);
+                    if (overlapY > minHeight * 0.5) {
+                        return a.x - b.x; // same line, sort left to right
+                    }
+                    return a.y - b.y; // different lines, sort top to bottom
+                });
+
+                // Reconstruct lines with gap detection
+                let currentLineStr = "";
+                let currentLineY = -1;
+                let currentLineHeight = -1;
+                let lastBlockRight = -1;
+
+                blocks.forEach((b: any, index: number) => {
+                    // Check if it's a new line
+                    const overlapY = currentLineY === -1 ? 0 : Math.max(0, Math.min(b.bottom, currentLineY + currentLineHeight) - Math.max(b.y, currentLineY));
+                    const isSameLine = currentLineY !== -1 && overlapY > Math.min(b.height, currentLineHeight) * 0.5;
+
+                    if (!isSameLine) {
+                        if (currentLineStr) processedLines.push(currentLineStr);
+                        currentLineStr = b.text;
+                        currentLineY = b.y;
+                        currentLineHeight = b.height;
+                        lastBlockRight = b.right;
                     } else {
-                        val = val.text || val.word || val.words || "";
-                    }
+                        // Same line! Check distance between blocks.
+                        // Calculate average char width of current block as heuristic
+                        const avgCharWidth = b.width / Math.max(1, b.text.length);
+                        const gap = b.x - lastBlockRight;
 
-                    if (typeof val === 'object') {
-                        val = JSON.stringify(val); // Final fallback to avoid [object Object]
-                    }
-                }
+                        // If gap is unusually large (e.g. > 3 average characters), assume an underline was stripped
+                        if (gap > avgCharWidth * 3 && gap > 15) { // 15px minimum absolute threshold to ignore standard kerning
+                            currentLineStr += ` ____ ${b.text}`;
+                        } else {
+                            // Standard space
+                            currentLineStr += ` ${b.text}`;
+                        }
 
-                return val;
-            }).join("\n");
+                        lastBlockRight = b.right;
+                        // update currentLineHeight to max of line
+                        currentLineHeight = Math.max(currentLineHeight, b.height);
+                    }
+                });
+                if (currentLineStr) processedLines.push(currentLineStr);
+
+            } else {
+                // VERY Fallback if no geometry data
+                processedLines = ocrResults.map((r: any) => {
+                    let val = r.prunedResult || r.words || r.text || "";
+                    if (typeof val === 'object' && val !== null) {
+                        if (Array.isArray(val.rec_texts)) val = val.rec_texts.join(" ");
+                        else val = val.text || val.word || val.words || "";
+                        if (typeof val === 'object') val = JSON.stringify(val);
+                    }
+                    return val;
+                });
+            }
+
+            const text = processedLines.join("\n");
 
             const cleanedText = cleanOCRText(text);
 
