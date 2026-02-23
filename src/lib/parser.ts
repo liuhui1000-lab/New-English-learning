@@ -396,9 +396,9 @@ function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
             // 1. Must have a blank, options, OR be a sentence reordering question
             const hasBlank = /_+|\(\s{3,}\)|\[\s{3,}\]/.test(q.content);
             const hasOptions = /[A-D][\)\.].*[A-D][\)\.]/.test(q.content);
-            // Sentence reordering: multiple comma-separated words + keywords
+            // Sentence reordering: multiple comma-separated or slash-separated words + keywords
             const isSentenceReordering = /连词成句|reorder|rearrange/i.test(q.content) ||
-                (/,\s*\w+,\s*\w+,\s*\w+/.test(q.content) && /\(.*\)/.test(q.content));
+                (/(?:,\s*\w+|\/\s*\w+){2,}/.test(q.content) && /\(.*\)/.test(q.content));
 
             if (!hasBlank && !hasOptions && !isSentenceReordering) {
                 const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
@@ -628,10 +628,10 @@ function classifyQuestion(content: string): ParsedQuestion {
     const tags: string[] = [];
     const lowerContent = content.toLowerCase();
 
-    // Check for blanks (at least 2 consecutive underscores)
-    const hasBlank = /_{2,}/.test(content);
-    // Check for root word at the end: (word)
-    const rootWordMatch = content.match(/\(([a-zA-Z\s]+)\)\s*$/) || content.match(/\(([a-zA-Z\s]+)\)[^\)]*$/);
+    // Check for blanks: at least 2 consecutive underscores, or [] / () indicating a blank
+    const hasBlank = /_{2,}|\[\s*\]|\(\s*\)/.test(content);
+    // Check for root word at the end: (word) followed by optional punctuation or spaces
+    const rootWordMatch = content.match(/\(([a-zA-Z\s]+)\)[^\)]*$/);
 
     // 1. Sentence Transformation (Rewrite)
     // Keywords: "rewrite", "homonymous", "passive voice", "plural", "question", or Chinese prompts
