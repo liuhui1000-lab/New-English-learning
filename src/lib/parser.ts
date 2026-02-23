@@ -451,7 +451,7 @@ async function extractText(file: File, onProgress?: (msg: string) => void, skipO
         try {
             if (onProgress) onProgress("正在加载 PDF 核心组件...");
             const pdfjsLib = await import("pdfjs-dist");
-            // Ensure worker points to the correct version, using CDN to prevent Vercel public routing / caching misses.
+            // Use CDN for worker to prevent Vercel static routing misses.
             pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
             if (onProgress) onProgress("正在读取文件数据...");
