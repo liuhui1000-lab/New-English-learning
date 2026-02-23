@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
             console.log("Using Env 'PADDLE_OCR_TOKEN'");
         }
 
-        const { image, source } = await req.json(); // Base64 image
+        const { image, source } = body; // Base64 image
         if (!image) return NextResponse.json({ error: "No image provided" }, { status: 400 });
 
         // Ensure clean base64 (strip data:image/...;base64, prefix if present)
