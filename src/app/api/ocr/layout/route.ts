@@ -1,8 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
 
 export const maxDuration = 60; // PDF processing can take longer
+
+// Helper: Create admin client (service_role, bypasses RLS) for backend-only settings access
+function createAdminClient(fallbackClient: any) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    if (!url || !key) {
+        console.warn("Missing Supabase Admin credentials, falling back to standard client")
+        return fallbackClient
+    }
+
+    return createClient(url, key)
+}
 
 // Configuration for Paddle OCR Layout Parsing
 const PADDLE_LAYOUT_API_URL = "https://42g0y668o7v230je.aistudio-app.com/layout-parsing";
@@ -59,7 +73,9 @@ export async function POST(req: NextRequest) {
         let token = body.token || process.env.PADDLE_OCR_TOKEN || process.env.BAIDU_OCR_API_KEY;
         let apiUrl = body.apiUrl || PADDLE_LAYOUT_API_URL;
 
-        const { data: settings } = await supabase
+        // Use service role to bypass RLS so students can still trigger API calls using admin settings
+        const adminClient = createAdminClient(supabase)
+        const { data: settings } = await adminClient
             .from('system_settings')
             .select('*')
             .or('key.eq.ocr_config_paddle_layout,key.eq.ocr_url,key.eq.ocr_token');
