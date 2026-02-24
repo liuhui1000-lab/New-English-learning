@@ -340,15 +340,36 @@ export async function GET(request: Request) {
     }
 
     // Fetch latest 10 reports
-    const { data: reports } = await supabase
+    const { data: reports, error: reportsError } = await supabase
         .from('error_analysis_reports')
-        .select(`
-            *,
-            triggered_by_profile:profiles!error_analysis_reports_triggered_by_fkey(username, display_name)
-        `)
+        .select('*')
         .eq('user_id', targetUserId)
         .order('created_at', { ascending: false })
         .limit(10)
+
+    if (reportsError) {
+        console.error("Failed to fetch AI report history from POSTGREST:", reportsError)
+    }
+
+    // Safely attach triggered_by_profile by fetching profiles manually (avoiding ambiguous foreign key constraint names)
+    if (reports && reports.length > 0) {
+        const triggerIds = Array.from(new Set(reports.map(r => r.triggered_by).filter(Boolean)))
+        if (triggerIds.length > 0) {
+            const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, username, display_name')
+                .in('id', triggerIds)
+
+            if (profiles) {
+                const profileMap = Object.fromEntries(profiles.map(p => [p.id, p]))
+                reports.forEach(r => {
+                    if (r.triggered_by && profileMap[r.triggered_by]) {
+                        r.triggered_by_profile = profileMap[r.triggered_by]
+                    }
+                })
+            }
+        }
+    }
 
     // Calculate mistakes since last report
     let newMistakesCount = 0
