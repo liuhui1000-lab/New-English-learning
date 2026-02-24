@@ -879,10 +879,10 @@ async function extractPageText(page: any, scale: number, quality: number): Promi
         const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s per individual attempt
 
         try {
-            const response = await fetch('/api/ocr', {
+            const response = await fetch('/api/ocr/layout', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image, source: 'import' }),
+                body: JSON.stringify({ image }),
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
