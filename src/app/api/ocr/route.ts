@@ -52,7 +52,6 @@ export async function POST(req: NextRequest) {
             if (preferredConfig?.apiUrl) {
                 apiUrl = preferredConfig.apiUrl;
             } else if (map['ocr_url'] && !body.apiUrl) {
-                // For standard endpoint, only use generic ocr_url if it doesn't look like layout
                 if (!map['ocr_url'].includes('layout')) {
                     apiUrl = map['ocr_url'];
                 }
@@ -72,7 +71,7 @@ export async function POST(req: NextRequest) {
 
         const cleanImage = image.replace(/^data:image\/\w+;base64,/, "");
 
-        // 2. Prepare Payload (Tuned for Handwriting)
+        // 2. Prepare Payload (Tuning for maximum sensitivity and scale)
         const payload: any = {
             file: cleanImage,
             fileType: 1,
@@ -80,16 +79,20 @@ export async function POST(req: NextRequest) {
             useDocOrientationClassify: false,
             useDocUnwarping: false,
             useTextlineOrientation: false,
-            // Increase sensitivity for thin handwriting strokes
+            // Redundant parameters to ensure sensitivity is applied across different backend wrappers
+            det_db_thresh: 0.1,
+            det_db_box_thresh: 0.2,
+            det_limit_side_len: 2000,
             text_det_params: {
                 thresh: 0.1,
                 box_thresh: 0.2,
-                unclip_ratio: 2.0 // Slightly higher to capture stroke ends
+                limit_side_len: 2000,
+                unclip_ratio: 2.0
             }
         };
 
         // 3. Call External API
-        console.log("Calling Standard OCR API (Handwriting Optimized):", apiUrl);
+        console.log("Calling Standard OCR API (Robust Reconstruction):", apiUrl);
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
@@ -114,18 +117,75 @@ export async function POST(req: NextRequest) {
             throw new Error(result.errorMsg || result.error_msg || "Unknown Error");
         }
 
-        // 4. Parse Response (Standard OCR only)
+        // 4. Robust Spatial Reconstruction
         if (result.result && result.result.ocrResults) {
             const ocrResults = result.result.ocrResults;
-            // Join all standard word blocks
-            const text = ocrResults.map((r: any) => {
-                if (typeof r.prunedResult === 'string') return r.prunedResult;
-                if (r.prunedResult && r.prunedResult.text) return r.prunedResult.text;
-                if (r.prunedResult && Array.isArray(r.prunedResult.rec_texts)) return r.prunedResult.rec_texts.join(" ");
-                return r.words || r.text || "";
-            }).join("\n");
 
-            return NextResponse.json({ text: text.trim(), debug: result });
+            // Extract raw blocks with coordinates
+            let rawBlocks: any[] = [];
+            ocrResults.forEach((r: any) => {
+                const text = r.text || (r.prunedResult && (typeof r.prunedResult === 'string' ? r.prunedResult : (r.prunedResult.text || r.prunedResult.rec_texts?.join(" ")))) || r.words || "";
+                const region = r.region || r.textRegion || r.text_region || r.box || r.poly || r.points || r.location;
+
+                let x = 0, y = 0, width = 0, height = 0;
+                if (Array.isArray(region) && region.length === 4 && Array.isArray(region[0])) {
+                    // Coordinate array [[x,y], [x,y], [x,y], [x,y]]
+                    x = region[0][0]; y = region[0][1];
+                    width = region[1][0] - region[0][0];
+                    height = region[2][1] - region[0][1];
+                    if (height < 0) height = region[3][1] - region[0][1];
+                } else if (Array.isArray(region) && region.length === 4 && !Array.isArray(region[0])) {
+                    // Flat array [x, y, w, h]
+                    x = region[0]; y = region[1]; width = region[2]; height = region[3];
+                }
+
+                if (text && text.trim() !== "") {
+                    rawBlocks.push({
+                        text: text.trim(),
+                        x, y,
+                        width: Math.abs(width),
+                        height: Math.abs(height),
+                        bottom: y + Math.abs(height),
+                        right: x + Math.abs(width)
+                    });
+                }
+            });
+
+            if (rawBlocks.length > 0) {
+                // Sort blocks: Primary Y (line grouping), Secondary X
+                rawBlocks.sort((a, b) => {
+                    const overlapY = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.y, b.y));
+                    const minHeight = Math.min(a.height, b.height);
+                    // If vertical overlap > 50%, treat as same line
+                    if (overlapY > minHeight * 0.5) return a.x - b.x;
+                    return a.y - b.y;
+                });
+
+                // Assemble lines
+                let processedLines: string[] = [];
+                let currentLineStr = "";
+                let currentLineY = -1;
+                let currentLineHeight = -1;
+
+                rawBlocks.forEach((b) => {
+                    const overlapY = currentLineY === -1 ? 0 : Math.max(0, Math.min(b.bottom, currentLineY + currentLineHeight) - Math.max(b.y, currentLineY));
+                    const isSameLine = currentLineY !== -1 && overlapY > Math.min(b.height, currentLineHeight) * 0.5;
+
+                    if (!isSameLine) {
+                        if (currentLineStr) processedLines.push(currentLineStr);
+                        currentLineStr = b.text;
+                        currentLineY = b.y;
+                        currentLineHeight = b.height;
+                    } else {
+                        // Handle horizontal gaps - very basic for standard OCR
+                        currentLineStr += " " + b.text;
+                        currentLineHeight = Math.max(currentLineHeight, b.height);
+                    }
+                });
+                if (currentLineStr) processedLines.push(currentLineStr);
+
+                return NextResponse.json({ text: processedLines.join("\n"), debug: result });
+            }
         }
 
         return NextResponse.json({ text: "", debug: result });
