@@ -45,9 +45,7 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     return
                 }
 
-                // Fill white first (handle transparency)
-                tempCtx.fillStyle = '#FFFFFF'
-                tempCtx.fillRect(0, 0, img.width, img.height)
+                // Draw TO temp canvas (Keep transparency for dilation)
                 tempCtx.drawImage(img, 0, 0)
 
                 // 2. Scan for bounding box AND Binarize in one pass
@@ -105,15 +103,15 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 }
 
                 // 4. Create Final Canvas (Fit to content)
-                const padding = 30 // Padding for context
+                const padding = 50 // Increased padding for context
                 const maxSide = 960 // Backend limit as seen in logs
-                const targetHeight = 400 // Increased to 400px to match successful logs
+                const targetHeight = 500 // Increased to 500px for maximum detail
 
                 let scale = 1
                 if (cutH > 0) {
                     scale = targetHeight / cutH
-                    // Max 4x upscale
-                    scale = Math.min(scale, 4)
+                    // Max 5x upscale
+                    scale = Math.min(scale, 5)
                 }
 
                 // Width Guard: ensure we don't exceed 960px after scaling+padding
