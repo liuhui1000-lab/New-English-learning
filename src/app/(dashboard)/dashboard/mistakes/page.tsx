@@ -19,10 +19,12 @@ export default function ErrorNotebookPage() {
     const [analyzing, setAnalyzing] = useState(false)
     const [analysisData, setAnalysisData] = useState<{
         latestReport: any | null,
+        history: any[],
         newMistakesCount: number,
         lastAnalyzedAt: string | null
-    }>({ latestReport: null, newMistakesCount: 0, lastAnalyzedAt: null })
+    }>({ latestReport: null, history: [], newMistakesCount: 0, lastAnalyzedAt: null })
     const [showReportModal, setShowReportModal] = useState(false)
+    const [viewingReport, setViewingReport] = useState<any | null>(null)
 
     const supabase = createBrowserClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
@@ -161,6 +163,7 @@ export default function ErrorNotebookPage() {
                 const data = await res.json()
                 setAnalysisData({
                     latestReport: data.latestReport,
+                    history: data.history || [],
                     newMistakesCount: data.newMistakesCount,
                     lastAnalyzedAt: data.latestReport?.created_at || null
                 })
@@ -173,6 +176,7 @@ export default function ErrorNotebookPage() {
     const handleAnalyzeErrors = async () => {
         if (!confirm("确定要对错题本进行 AI 深度分析吗？\n(系统将自动提取高频及最新练习题错题进行分析，不包含纯背诵任务)")) return
         setAnalyzing(true)
+        setViewingReport(null) // Reset to show loading for the *new* report
         setShowReportModal(true) // Show modal immediately with loading state
         try {
             const { data: { user } } = await supabase.auth.getUser()
@@ -207,12 +211,17 @@ export default function ErrorNotebookPage() {
 
             const data = await res.json()
             if (data.report) {
-                setAnalysisData(prev => ({
-                    ...prev,
-                    latestReport: data.report,
-                    newMistakesCount: 0,
-                    lastAnalyzedAt: data.report.created_at
-                }))
+                setAnalysisData(prev => {
+                    const newHistory = [data.report, ...prev.history].slice(0, 10)
+                    return {
+                        ...prev,
+                        latestReport: data.report,
+                        history: newHistory,
+                        newMistakesCount: 0,
+                        lastAnalyzedAt: data.report.created_at
+                    }
+                })
+                setViewingReport(data.report)
             } else {
                 fetchAnalysis(user.id) // Fallback
             }
@@ -222,6 +231,30 @@ export default function ErrorNotebookPage() {
         } finally {
             setAnalyzing(false)
         }
+    }
+
+    const deleteReport = async (reportId: string) => {
+        if (!confirm("确定要删除这份诊断报告吗？")) return
+        try {
+            const res = await fetch(`/api/ai/analyze-errors?id=${reportId}`, { method: 'DELETE' })
+            if (!res.ok) throw new Error("Delete failed")
+
+            setAnalysisData(prev => {
+                const newHistory = prev.history.filter((r: any) => r.id !== reportId)
+                return {
+                    ...prev,
+                    history: newHistory,
+                    latestReport: newHistory.length > 0 ? newHistory[0] : null
+                }
+            })
+        } catch (e: any) {
+            alert("删除失败: " + e.message)
+        }
+    }
+
+    const openReport = (report: any) => {
+        setViewingReport(report)
+        setShowReportModal(true)
     }
 
     useEffect(() => {
@@ -378,6 +411,42 @@ export default function ErrorNotebookPage() {
                         </button>
                     </div>
                 </div>
+
+                {/* AI Report History List */}
+                {analysisData.history.length > 0 && (
+                    <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm print:hidden">
+                        <h2 className="text-sm font-bold text-gray-900 mb-3 flex items-center">
+                            <TrendingUp className="w-4 h-4 mr-2 text-indigo-600" /> 近期诊断报告 (显示最新 5 份)
+                        </h2>
+                        <div className="divide-y divide-gray-100">
+                            {analysisData.history.slice(0, 5).map((report: any) => (
+                                <div key={report.id} className="py-2.5 flex items-center justify-between group">
+                                    <div className="flex items-center gap-4 flex-1">
+                                        <span className="text-sm text-gray-500 w-36 shrink-0">
+                                            {new Date(report.created_at).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                        <button
+                                            onClick={() => openReport(report)}
+                                            className="text-sm text-indigo-600 hover:text-indigo-800 hover:underline font-medium truncate max-w-[200px] sm:max-w-sm flex-1 text-left"
+                                        >
+                                            {report.report_content.substring(0, 20).replace(/\n/g, '')}...
+                                        </button>
+                                        <div className="hidden sm:flex items-center text-xs text-gray-400">
+                                            <span>触发者: {report.triggered_by_profile?.display_name || report.triggered_by_profile?.username || '用户本身'}</span>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => deleteReport(report.id)}
+                                        className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-2 ml-4 shrink-0"
+                                        title="删除报告"
+                                    >
+                                        <Trash className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* Tabs */}
                 <div className="flex items-center justify-between print:hidden">
@@ -544,9 +613,9 @@ export default function ErrorNotebookPage() {
                                 <h3 className="text-lg font-bold text-gray-900 flex items-center">
                                     <TrendingUp className="w-5 h-5 mr-2 text-indigo-600" /> AI 学习诊断报告
                                 </h3>
-                                {analysisData.lastAnalyzedAt && !analyzing && (
+                                {(viewingReport || analysisData.latestReport) && !analyzing && (
                                     <p className="text-xs text-gray-500 mt-1">
-                                        基于 {new Date(analysisData.lastAnalyzedAt).toLocaleString('zh-CN')} 的错题数据生成
+                                        生成于 {new Date((viewingReport || analysisData.latestReport).created_at).toLocaleString('zh-CN')}
                                     </p>
                                 )}
                             </div>
@@ -567,10 +636,10 @@ export default function ErrorNotebookPage() {
                                         正在提取高频错题与近期错题，生成知识点图谱，最多可能需要 60 秒，请耐心等待。
                                     </p>
                                 </div>
-                            ) : analysisData.latestReport ? (
+                            ) : (viewingReport || analysisData.latestReport) ? (
                                 <div className="prose prose-sm md:prose-base prose-indigo max-w-none">
                                     <pre className="whitespace-pre-wrap font-sans bg-transparent text-gray-800 p-0 m-0 leading-relaxed">
-                                        {analysisData.latestReport.report_content}
+                                        {(viewingReport || analysisData.latestReport).report_content}
                                     </pre>
                                 </div>
                             ) : (

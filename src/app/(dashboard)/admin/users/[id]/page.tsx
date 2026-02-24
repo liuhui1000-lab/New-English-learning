@@ -34,13 +34,16 @@ export default function UserDetailPage() {
 
     const [analysisData, setAnalysisData] = useState<{
         latestReport: any | null,
+        history: any[],
         newMistakesCount: number,
         lastAnalyzedAt: string | null
     }>({
         latestReport: null,
+        history: [],
         newMistakesCount: 0,
         lastAnalyzedAt: null
     })
+    const [viewingReport, setViewingReport] = useState<any | null>(null)
     const [analyzing, setAnalyzing] = useState(false)
 
     useEffect(() => {
@@ -93,6 +96,7 @@ export default function UserDetailPage() {
                 const data = await res.json()
                 setAnalysisData({
                     latestReport: data.latestReport,
+                    history: data.history || [],
                     newMistakesCount: data.newMistakesCount,
                     lastAnalyzedAt: data.latestReport?.created_at || null
                 })
@@ -105,6 +109,7 @@ export default function UserDetailPage() {
     const handleAnalyzeErrors = async () => {
         if (!confirm("确定要对该学员进行 AI 错题分析吗？这将消耗 API Token。")) return
         setAnalyzing(true)
+        setViewingReport(null)
         try {
             const res = await fetch('/api/ai/analyze-errors', {
                 method: 'POST',
@@ -119,12 +124,17 @@ export default function UserDetailPage() {
 
             const data = await res.json()
             if (data.report) {
-                setAnalysisData(prev => ({
-                    ...prev,
-                    latestReport: data.report,
-                    newMistakesCount: 0,
-                    lastAnalyzedAt: data.report.created_at
-                }))
+                setAnalysisData(prev => {
+                    const newHistory = [data.report, ...prev.history].slice(0, 10)
+                    return {
+                        ...prev,
+                        latestReport: data.report,
+                        history: newHistory,
+                        newMistakesCount: 0,
+                        lastAnalyzedAt: data.report.created_at
+                    }
+                })
+                setViewingReport(data.report)
                 alert("分析完成！")
             } else {
                 alert("分析完成，但报告未返回。")
@@ -134,6 +144,26 @@ export default function UserDetailPage() {
             alert("分析失败: " + e.message)
         } finally {
             setAnalyzing(false)
+        }
+    }
+
+    const deleteReport = async (reportId: string) => {
+        if (!confirm("确定要删除该用户的这份诊断报告吗？")) return
+        try {
+            const res = await fetch(`/api/ai/analyze-errors?id=${reportId}`, { method: 'DELETE' })
+            if (!res.ok) throw new Error("Delete failed")
+
+            setAnalysisData(prev => {
+                const newHistory = prev.history.filter((r: any) => r.id !== reportId)
+                return {
+                    ...prev,
+                    history: newHistory,
+                    latestReport: newHistory.length > 0 ? newHistory[0] : null
+                }
+            })
+            if (viewingReport?.id === reportId) setViewingReport(null)
+        } catch (e: any) {
+            alert("删除失败: " + e.message)
         }
     }
 
@@ -364,11 +394,11 @@ export default function UserDetailPage() {
             {/* Detailed Activity Placeholder */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-lg font-bold text-gray-900">AI 错题诊断分析</h3>
+                    <h3 className="text-lg font-bold text-gray-900">AI 错题诊断分析记录</h3>
                     <div className="flex items-center space-x-3">
                         <span className="text-sm text-gray-500">
-                            {analysisData.lastAnalyzedAt ?
-                                `上次分析: ${new Date(analysisData.lastAnalyzedAt).toLocaleString('zh-CN')}` :
+                            {(viewingReport || analysisData.latestReport) ?
+                                `生成时间: ${new Date((viewingReport || analysisData.latestReport).created_at).toLocaleString('zh-CN')}` :
                                 '从未进行过 AI 分析'}
                         </span>
                         {analysisData.newMistakesCount > 0 && (
@@ -386,15 +416,49 @@ export default function UserDetailPage() {
                     </div>
                 </div>
 
-                {analysisData.latestReport ? (
+                {(viewingReport || analysisData.latestReport) ? (
                     <div className="bg-gray-50 p-6 rounded-lg border border-gray-100 prose prose-sm max-w-none">
                         <pre className="whitespace-pre-wrap font-sans bg-transparent text-gray-800 p-0 m-0">
-                            {analysisData.latestReport.report_content}
+                            {(viewingReport || analysisData.latestReport).report_content}
                         </pre>
                     </div>
                 ) : (
                     <div className="text-center py-10 bg-gray-50 rounded-lg border border-dashed border-gray-300 text-gray-500">
                         暂无分析报告，请点击右上角按钮生成。
+                    </div>
+                )}
+
+                {/* AI Report History List */}
+                {analysisData.history.length > 0 && (
+                    <div className="mt-6 border-t border-gray-100 pt-6">
+                        <h4 className="text-sm font-bold text-gray-900 mb-3">历史诊断报告 (最近 5 份)</h4>
+                        <div className="divide-y divide-gray-100 border border-gray-100 rounded-lg overflow-hidden">
+                            {analysisData.history.slice(0, 5).map((report: any) => (
+                                <div key={report.id} className="py-2.5 px-4 flex items-center justify-between hover:bg-gray-50 transition group bg-white">
+                                    <div className="flex items-center gap-4 flex-1">
+                                        <span className="text-xs text-gray-500 w-32 shrink-0">
+                                            {new Date(report.created_at).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                        <button
+                                            onClick={() => setViewingReport(report)}
+                                            className={`text-sm hover:underline font-medium truncate max-w-[200px] sm:max-w-xs flex-1 text-left ${viewingReport?.id === report.id ? 'text-indigo-600' : 'text-gray-700 hover:text-indigo-600'}`}
+                                        >
+                                            {report.report_content.substring(0, 20).replace(/\n/g, '')}...
+                                        </button>
+                                        <div className="hidden sm:flex items-center text-xs text-gray-400">
+                                            <span>操作人: {report.triggered_by_profile?.display_name || report.triggered_by_profile?.username || '学生自助'}</span>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => deleteReport(report.id)}
+                                        className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1 ml-4 shrink-0"
+                                        title="删除此报告"
+                                    >
+                                        删除
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
             </div>

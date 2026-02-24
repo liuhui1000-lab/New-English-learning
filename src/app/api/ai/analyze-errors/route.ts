@@ -292,7 +292,8 @@ Please generate the diagnostic report.`
             .insert({
                 user_id: targetUserId,
                 report_content: report,
-                mistake_count: totalErrors
+                mistake_count: totalErrors,
+                triggered_by: user.id
             })
             .select()
             .single()
@@ -338,18 +339,20 @@ export async function GET(request: Request) {
         targetUserId = requestedUserId
     }
 
-    // Fetch latest report
-    const { data: report } = await supabase
+    // Fetch latest 10 reports
+    const { data: reports } = await supabase
         .from('error_analysis_reports')
-        .select('*')
+        .select(`
+            *,
+            triggered_by_profile:profiles!error_analysis_reports_triggered_by_fkey(username, display_name)
+        `)
         .eq('user_id', targetUserId)
         .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
+        .limit(10)
 
     // Calculate mistakes since last report
     let newMistakesCount = 0
-    let lastAnalyzedAt = report ? report.created_at : null
+    let lastAnalyzedAt = reports && reports.length > 0 ? reports[0].created_at : null
 
     // Simple count of quiz results after last analysis
     // Ideally we count unique questions, but row count is ok for now
@@ -367,7 +370,45 @@ export async function GET(request: Request) {
     newMistakesCount = count || 0
 
     return NextResponse.json({
-        latestReport: report,
+        latestReport: reports && reports.length > 0 ? reports[0] : null,
+        history: reports || [],
         newMistakesCount
     })
+}
+
+export async function DELETE(request: Request) {
+    const { searchParams } = new URL(request.url)
+    const reportId = searchParams.get('id')
+
+    if (!reportId) {
+        return NextResponse.json({ error: 'Missing report id' }, { status: 400 })
+    }
+
+    const cookieStore = await cookies()
+    const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+            cookies: {
+                getAll() { return cookieStore.getAll() },
+                setAll(cookiesToSet) { try { cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options)) } catch { } },
+            },
+        }
+    )
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // Use regular authenticated client so RLS handles the permissions perfectly
+    const { error } = await supabase
+        .from('error_analysis_reports')
+        .delete()
+        .eq('id', reportId)
+
+    if (error) {
+        console.error("Failed to delete report:", error)
+        return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
 }
