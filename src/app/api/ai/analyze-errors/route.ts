@@ -4,12 +4,19 @@ import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
+export const maxDuration = 60; // Allow up to 60s for AI processing
+
 // Helper: Create admin client (service_role, bypasses RLS)
-function createAdminClient() {
-    return createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
+function createAdminClient(fallbackClient: any) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    if (!url || !key) {
+        console.warn("Missing Supabase Admin credentials, falling back to standard client")
+        return fallbackClient
+    }
+
+    return createClient(url, key)
 }
 
 export async function POST(request: Request) {
@@ -269,7 +276,7 @@ Please generate the diagnostic report.`
         }
 
         // 5. Save Report (Use Service Role to bypass RLS for administrative reports)
-        const adminClient = createAdminClient()
+        const adminClient = createAdminClient(supabase)
         const { data: savedData, error: saveError } = await adminClient
             .from('error_analysis_reports')
             .insert({
