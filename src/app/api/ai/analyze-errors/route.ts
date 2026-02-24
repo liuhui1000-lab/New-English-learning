@@ -264,21 +264,14 @@ Please generate the diagnostic report.`
             temperature: 0.7
         }
 
-        // Set a timeout to avoid Vercel Hobby's 10s limit
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 9000); // 9 sec timeout
-
         const response = await fetch(targetUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${(apiKey || '').trim()}`
             },
-            body: JSON.stringify(payload),
-            signal: controller.signal
+            body: JSON.stringify(payload)
         })
-
-        clearTimeout(timeoutId);
 
         if (!response.ok) {
             const err = await response.text()
