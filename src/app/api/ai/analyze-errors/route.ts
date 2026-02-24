@@ -210,11 +210,13 @@ Structure:
 
 **Important**: For 'Recitation Mistakes', just include the top 10 list in the overview/stats section. Do NOT perform deep pedagogical analysis on them. Focus your core analysis on the 'Practice Questions' sections.`
 
-    // Helper to format sample
+    // Helper to format sample with truncation
     const formatSample = (m: any, idx: number) => {
         const tagInfo = (m.tags && m.tags.length > 0) ? m.tags.join(',') : (m.subType || m.type || 'General')
         const countInfo = m.user_error_count || m.count || 1
-        return `${idx + 1}. [${tagInfo}] ${m.content} (Error Count: ${countInfo})`
+        // Truncate content to 200 chars to avoid huge prompts
+        const content = (m.content || "").toString().slice(0, 200)
+        return `${idx + 1}. [${tagInfo}] ${content} (Error Count: ${countInfo})`
     }
 
     // Filter out recitation for AI prompt (Keep only quiz/exercise mistakes)
@@ -232,7 +234,7 @@ Distribution:
 ${statsText}
 
 [Section B: Recitation Top 10 (Stats Only - DO NOT ANALYZE DEEPLY)]
-${recitationSamples.length > 0 ? recitationSamples.map((m: any, i: number) => `${i + 1}. ${m.content} (Freq: ${m.user_error_count || m.count || 1})`).join('\n') : "(None)"}
+${recitationSamples.length > 0 ? recitationSamples.map((m: any, i: number) => `${i + 1}. ${(m.content || "").toString().slice(0, 100)} (Freq: ${m.user_error_count || m.count || 1})`).join('\n') : "(None)"}
 
 [Section C: Recent Mistakes (Practice Questions Only - ANALYZE THESE)]
 ${filteredRecent.length > 0 ? filteredRecent.map((m: any, i: number) => formatSample(m, i)).join('\n') : "(None found in this sample)"}
@@ -243,7 +245,7 @@ ${filteredFrequent.length > 0 ? filteredFrequent.map((m: any, i: number) => form
 Please generate the diagnostic report.`
 
     try {
-        let targetUrl = baseUrl || '';
+        let targetUrl = (baseUrl || '').trim();
         if (!targetUrl) {
             if (activeProvider === 'deepseek') targetUrl = 'https://api.deepseek.com';
             else if (activeProvider === 'zhipu') targetUrl = 'https://open.bigmodel.cn/api/paas/v4';
@@ -264,14 +266,21 @@ Please generate the diagnostic report.`
             temperature: 0.7
         }
 
+        // Set a timeout to avoid Vercel Hobby's 10s limit
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 9000); // 9 sec timeout
+
         const response = await fetch(targetUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
+                'Authorization': `Bearer ${(apiKey || '').trim()}`
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: controller.signal
         })
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             const err = await response.text()
