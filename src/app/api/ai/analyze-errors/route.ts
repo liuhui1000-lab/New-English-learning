@@ -174,8 +174,9 @@ export async function POST(request: Request) {
         frequentSamples = topWeaknesses.slice(0, 10)
     }
 
-    // 3. Get AI Settings
-    const { data: settingsData } = await supabase.from('system_settings').select('key, value')
+    // 3. Get AI Settings using Service Role to bypass RLS (students can't read settings directly)
+    const adminClient = createAdminClient(supabase)
+    const { data: settingsData } = await adminClient.from('system_settings').select('key, value')
     const settingsMap: Record<string, string> = {}
     if (settingsData) settingsData.forEach((s: any) => settingsMap[s.key] = s.value)
 
@@ -286,7 +287,6 @@ Please generate the diagnostic report.`
         }
 
         // 5. Save Report (Use Service Role to bypass RLS for administrative reports)
-        const adminClient = createAdminClient(supabase)
         const { data: savedData, error: saveError } = await adminClient
             .from('error_analysis_reports')
             .insert({
