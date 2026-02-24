@@ -126,7 +126,7 @@ export async function POST(request: Request) {
         }
 
         if (allMistakes.length === 0) {
-            return NextResponse.json({ report: "没有足够的错题数据进行分析。" })
+            return NextResponse.json({ error: "没有足够的错题数据进行分析。" }, { status: 400 })
         }
 
         // --- Smart Aggregation Strategy ---
@@ -253,22 +253,29 @@ Please generate the diagnostic report.`
         }
 
         const aiData = await response.json()
-        const report = aiData.choices[0].message.content
+        const report = aiData.choices[0]?.message?.content
+
+        if (!report) {
+            throw new Error("AI 返回了空报告，请稍后再试。")
+        }
 
         // 5. Save Report
-        const { error: saveError } = await supabase
+        const { data: savedData, error: saveError } = await supabase
             .from('error_analysis_reports')
             .insert({
                 user_id: targetUserId,
                 report_content: report,
                 mistake_count: totalErrors
             })
+            .select()
+            .single()
 
         if (saveError) {
             console.error("Failed to save report:", saveError)
+            return NextResponse.json({ error: "报告生成成功但保存失败: " + saveError.message, report }, { status: 500 })
         }
 
-        return NextResponse.json({ report, success: true })
+        return NextResponse.json({ report: savedData, success: true })
 
     } catch (e: any) {
         console.error("AI Analyze Errors Failed:", e)

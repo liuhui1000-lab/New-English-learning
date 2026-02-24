@@ -113,13 +113,23 @@ export default function UserDetailPage() {
             })
 
             if (!res.ok) {
-                const err = await res.text()
-                throw new Error(err)
+                const errData = await res.json().catch(() => ({ error: 'Unknown Error' }))
+                throw new Error(errData.error || '分析请求失败')
             }
 
             const data = await res.json()
-            alert("分析完成！")
-            fetchAnalysis() // Refresh
+            if (data.report) {
+                setAnalysisData(prev => ({
+                    ...prev,
+                    latestReport: data.report,
+                    newMistakesCount: 0,
+                    lastAnalyzedAt: data.report.created_at
+                }))
+                alert("分析完成！")
+            } else {
+                alert("分析完成，但报告未返回。")
+                fetchAnalysis() // Fallback
+            }
         } catch (e: any) {
             alert("分析失败: " + e.message)
         } finally {
