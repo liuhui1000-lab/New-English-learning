@@ -4,8 +4,8 @@ import { cookies } from "next/headers";
 
 export const maxDuration = 30; // Standard OCR is usually fast
 
-// Configuration for Standard Paddle OCR
-const PADDLE_API_URL = "https://42g0y668o7v230je.aistudio-app.com/ocr";
+// Configuration for Standard Paddle OCR (Handwriting optimized)
+const PADDLE_API_URL = "https://v37ebk984n0v6q97.aistudio-app.com/ocr";
 const DEFAULT_TOKEN = "483605608bc2d69ed9979463871dd4bc6095285a";
 
 export async function POST(req: NextRequest) {
@@ -72,14 +72,24 @@ export async function POST(req: NextRequest) {
 
         const cleanImage = image.replace(/^data:image\/\w+;base64,/, "");
 
-        // 2. Prepare Payload (Simplified for Standard OCR)
+        // 2. Prepare Payload (Tuned for Handwriting)
         const payload: any = {
             file: cleanImage,
-            fileType: 1
+            fileType: 1,
+            // Disable orientation/warping to prevent handwriting being "rectified" incorrectly
+            useDocOrientationClassify: false,
+            useDocUnwarping: false,
+            useTextlineOrientation: false,
+            // Increase sensitivity for thin handwriting strokes
+            text_det_params: {
+                thresh: 0.1,
+                box_thresh: 0.2,
+                unclip_ratio: 2.0 // Slightly higher to capture stroke ends
+            }
         };
 
         // 3. Call External API
-        console.log("Calling Standard OCR API:", apiUrl);
+        console.log("Calling Standard OCR API (Handwriting Optimized):", apiUrl);
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
