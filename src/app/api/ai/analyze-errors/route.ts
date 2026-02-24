@@ -1,8 +1,7 @@
-
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
 export const maxDuration = 60; // Allow up to 60s for AI processing
 
@@ -16,7 +15,7 @@ function createAdminClient(fallbackClient: any) {
         return fallbackClient
     }
 
-    return createClient(url, key)
+    return createSupabaseClient(url, key)
 }
 
 export async function POST(request: Request) {
@@ -327,8 +326,11 @@ export async function GET(request: Request) {
         }
     )
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (!user || authError) {
+        console.error("Auth ERROR IN GET:", authError)
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
     let targetUserId = user.id
     if (requestedUserId && requestedUserId !== user.id) {

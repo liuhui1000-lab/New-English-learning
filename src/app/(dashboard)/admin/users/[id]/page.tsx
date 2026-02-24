@@ -20,18 +20,6 @@ export default function UserDetailPage() {
     })
     const [loading, setLoading] = useState(true)
 
-    useEffect(() => {
-        if (userId) {
-            fetchProfile()
-            fetchStats()
-        }
-    }, [userId])
-
-    const fetchProfile = async () => {
-        const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
-        if (data) setProfile(data)
-    }
-
     const [analysisData, setAnalysisData] = useState<{
         latestReport: any | null,
         history: any[],
@@ -45,15 +33,6 @@ export default function UserDetailPage() {
     })
     const [viewingReport, setViewingReport] = useState<any | null>(null)
     const [analyzing, setAnalyzing] = useState(false)
-
-    useEffect(() => {
-        if (userId) {
-            fetchProfile()
-            fetchStats()
-            fetchAnalysis()
-        }
-    }, [userId])
-
     const [recentActivity, setRecentActivity] = useState<any[]>([])
     const [weakWords, setWeakWords] = useState<any[]>([])
 
@@ -87,6 +66,11 @@ export default function UserDetailPage() {
             .limit(10)
 
         if (weak) setWeakWords(weak)
+    }
+
+    const fetchProfile = async () => {
+        const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
+        if (data) setProfile(data)
     }
 
     const fetchAnalysis = async () => {

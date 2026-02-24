@@ -32,7 +32,14 @@ export default function ErrorNotebookPage() {
     )
 
     useEffect(() => {
-        fetchMistakes()
+        const initData = async () => {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user) {
+                fetchMistakes()
+                fetchAnalysis(user.id)
+            }
+        }
+        initData()
     }, [])
 
     const fetchMistakes = async () => {
