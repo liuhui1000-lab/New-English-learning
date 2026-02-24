@@ -356,7 +356,7 @@ export async function GET(request: Request) {
 
     // Safely attach triggered_by_profile by fetching profiles manually (avoiding ambiguous foreign key constraint names)
     if (reports && reports.length > 0) {
-        const triggerIds = Array.from(new Set(reports.map(r => r.triggered_by).filter(Boolean)))
+        const triggerIds = Array.from(new Set(reports.map((r: any) => r.triggered_by).filter(Boolean)))
         if (triggerIds.length > 0) {
             const { data: profiles } = await adminClient
                 .from('profiles')
@@ -364,8 +364,8 @@ export async function GET(request: Request) {
                 .in('id', triggerIds)
 
             if (profiles) {
-                const profileMap = Object.fromEntries(profiles.map(p => [p.id, p]))
-                reports.forEach(r => {
+                const profileMap = Object.fromEntries(profiles.map((p: any) => [p.id, p]))
+                reports.forEach((r: any) => {
                     if (r.triggered_by && profileMap[r.triggered_by]) {
                         r.triggered_by_profile = profileMap[r.triggered_by]
                     }
