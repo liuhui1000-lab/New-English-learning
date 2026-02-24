@@ -162,13 +162,11 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     });
                 }
 
-                // 6. Push Pixels back to tempCtx for Binarization (Already done) - Wait.
-                // Actually, we modified 'data' but we didn't call putImageData.
-                // Let's call putImageData so tempCanvas becomes binarized.
+                // 6. Push Pixels back to tempCtx for Binarization (Already done)
                 tempCtx.putImageData(imageData, 0, 0);
 
-                // Use PNG for Lossless Quality (Crucial for OCR)
-                const base64 = canvas.toDataURL('image/png')
+                // Revert to JPEG (High Quality) as PNG was rejected for size
+                const base64 = canvas.toDataURL('image/jpeg', 0.95)
 
                 console.log(`Recognizing (v${strokeVersion.current})... Original size: ${dataUrl.length}`)
 
