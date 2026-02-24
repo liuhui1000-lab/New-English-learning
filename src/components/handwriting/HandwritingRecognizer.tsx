@@ -147,12 +147,22 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     ctx.imageSmoothingEnabled = true;
                     ctx.imageSmoothingQuality = 'high';
 
-                    // Draw from TEMP CANVAS (which has natural pixels)
-                    ctx.drawImage(
-                        tempCanvas,
-                        cutX, cutY, cutW, cutH, // Source rect
-                        destX, destY, finalW, finalH // Dest rect
-                    )
+                    // 5. DRAW WITH DILATION (Thickening)
+                    // Draw the image 9 times with small offsets to "thicken" the strokes.
+                    // This forces the backend (with its high 0.3 threshold) to see the ink.
+                    const offsets = [
+                        [0, 0],   // Center
+                        [1, 0], [1, 1], [0, 1], [-1, 1],
+                        [-1, 0], [-1, -1], [0, -1], [1, -1]
+                    ];
+
+                    offsets.forEach(([ox, oy]) => {
+                        ctx.drawImage(
+                            tempCanvas,
+                            cutX, cutY, cutW, cutH, // Source rect
+                            destX + ox, destY + oy, finalW, finalH // Dest rect
+                        )
+                    });
                 }
 
                 // Use High Quality JPEG (0.95)
