@@ -208,7 +208,7 @@ Structure:
 3. **Root Causes (High Frequency)**: Analyze the 'High Frequency' list to identify deep-rooted, recurring weaknesses.
 4. **Action Plan**: Provide specific steps to address the identified long-term weaknesses.
 
-Keep the tone encouraging, professional, and data-driven.`
+**Important**: For 'Recitation Mistakes', just include the top 10 list in the overview/stats section. Do NOT perform deep pedagogical analysis on them. Focus your core analysis on the 'Practice Questions' sections.`
 
     // Helper to format sample
     const formatSample = (m: any, idx: number) => {
@@ -217,6 +217,13 @@ Keep the tone encouraging, professional, and data-driven.`
         return `${idx + 1}. [${tagInfo}] ${m.content} (Error Count: ${countInfo})`
     }
 
+    // Filter out recitation for AI prompt (Keep only quiz/exercise mistakes)
+    const filteredRecent = recentSamples.filter((m: any) => m.type !== 'recitation' && m.subType !== 'recitation')
+    const filteredFrequent = frequentSamples.filter((m: any) => m.type !== 'recitation' && m.subType !== 'recitation')
+    const recitationSamples = (useSmartSampling ? (body.frequent || []) : frequentSamples)
+        .filter((m: any) => m.type === 'recitation' || m.subType === 'recitation')
+        .slice(0, 10)
+
     const userPrompt = `Student Error Data:
 
 [Section A: Statistics]
@@ -224,11 +231,14 @@ Total Errors Analyzed: ${totalErrors}
 Distribution:
 ${statsText}
 
-[Section B: Recent Mistakes (Last 10)]
-${recentSamples.map((m, i) => formatSample(m, i)).join('\n')}
+[Section B: Recitation Top 10 (Stats Only - DO NOT ANALYZE DEEPLY)]
+${recitationSamples.length > 0 ? recitationSamples.map((m: any, i: number) => `${i + 1}. ${m.content} (Freq: ${m.user_error_count || m.count || 1})`).join('\n') : "(None)"}
 
-[Section C: High Frequency / Persistent Mistakes (Top 10)]
-${frequentSamples.map((m, i) => formatSample(m, i)).join('\n')}
+[Section C: Recent Mistakes (Practice Questions Only - ANALYZE THESE)]
+${filteredRecent.length > 0 ? filteredRecent.map((m: any, i: number) => formatSample(m, i)).join('\n') : "(None found in this sample)"}
+
+[Section D: High Frequency / Persistent Mistakes (Practice Questions Only - ANALYZE THESE)]
+${filteredFrequent.length > 0 ? filteredFrequent.map((m: any, i: number) => formatSample(m, i)).join('\n') : "(None found in this sample)"}
 
 Please generate the diagnostic report.`
 
