@@ -82,27 +82,31 @@ export async function POST(req: NextRequest) {
             useTextlineOrientation: false,
             use_direction_classify: false, // Variant
 
-            // Detection sensitivity (Shotgun)
+            // Detection sensitivity (Shotgun v3)
             thresh: 0.1,
             det_thresh: 0.1,
-            box_thresh: 0.2,
-            det_db_thresh: 0.1,
-            det_db_box_thresh: 0.2,
-            det_db_unclip_ratio: 2.0,
-            det_limit_side_len: 2000,
+            box_thresh: 0.1,
+            det_db_thresh: 0.05, // Extra low
+            det_db_box_thresh: 0.1,
+            det_db_unclip_ratio: 2.2,
+            det_limit_side_len: 1280,
+            limit_side_len: 1280,
 
             // Nested structure variations
             text_det_params: {
                 thresh: 0.1,
-                box_thresh: 0.2,
-                limit_side_len: 2000,
-                unclip_ratio: 2.0
+                box_thresh: 0.1,
+                limit_side_len: 1280,
+                unclip_ratio: 2.2,
+                det_db_thresh: 0.05,
+                det_db_box_thresh: 0.1
             },
-            det_params: {
-                det_db_thresh: 0.1,
-                det_db_box_thresh: 0.2,
-                det_limit_side_len: 2000,
-                det_db_unclip_ratio: 2.0
+            data: {
+                // Some wrappers expect params inside a 'data' block
+                thresh: 0.1,
+                det_db_thresh: 0.05,
+                det_limit_side_len: 1280,
+                unclip_ratio: 2.2
             }
         };
 

@@ -55,14 +55,19 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 let foundAny = false
 
                 for (let i = 0; i < data.length; i += 4) {
+                    // BINARIZATION & BOUNDS DETECTION
                     const r = data[i]
                     const g = data[i + 1]
                     const b = data[i + 2]
 
-                    // BOUNDS DETECTION ONLY (Don't binarize)
                     // If pixel is NOT white (detect ink)
-                    if (r < 250 || g < 250 || b < 250) {
-                        // Found ink
+                    // Use a generous threshold (any non-white becomes ink)
+                    if (r < 240 || g < 240 || b < 240) {
+                        // Found ink -> FORCIBLY MAKE IT BLACK (Binarization)
+                        data[i] = 0;
+                        data[i + 1] = 0;
+                        data[i + 2] = 0;
+                        data[i + 3] = 255; // Fully opaque
 
                         // Update bounds
                         const x = (i / 4) % img.width
@@ -141,17 +146,11 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     const destX = padding
                     const destY = padding
 
-                    // Enable Smoothing for Natural Images (Better for OCR model)
-                    ctx.imageSmoothingEnabled = true;
-                    ctx.imageSmoothingQuality = 'high';
-
-                    // 5. DRAW WITH DILATION (Thickening)
-                    // Draw the image 9 times with small offsets to "thicken" the strokes.
-                    // This forces the backend (with its high 0.3 threshold) to see the ink.
+                    // 5. DRAW WITH SHARP DILATION (Thickening)
+                    // Use a 5-point cross for sharper edges
                     const offsets = [
                         [0, 0],   // Center
-                        [1, 0], [1, 1], [0, 1], [-1, 1],
-                        [-1, 0], [-1, -1], [0, -1], [1, -1]
+                        [1, 0], [0, 1], [-1, 0], [0, -1]
                     ];
 
                     offsets.forEach(([ox, oy]) => {
@@ -163,8 +162,13 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                     });
                 }
 
-                // Use High Quality JPEG (0.95)
-                const base64 = canvas.toDataURL('image/jpeg', 0.95)
+                // 6. Push Pixels back to tempCtx for Binarization (Already done) - Wait.
+                // Actually, we modified 'data' but we didn't call putImageData.
+                // Let's call putImageData so tempCanvas becomes binarized.
+                tempCtx.putImageData(imageData, 0, 0);
+
+                // Use PNG for Lossless Quality (Crucial for OCR)
+                const base64 = canvas.toDataURL('image/png')
 
                 console.log(`Recognizing (v${strokeVersion.current})... Original size: ${dataUrl.length}`)
 
