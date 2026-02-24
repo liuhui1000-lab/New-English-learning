@@ -165,18 +165,25 @@ export default function ErrorNotebookPage() {
 
     const fetchAnalysis = async (userId: string) => {
         try {
+            console.log(`[Frontend] Triggering fetchAnalysis for ${userId}...`)
             const res = await fetch(`/api/ai/analyze-errors?userId=${userId}`)
+            console.log(`[Frontend] fetchAnalysis response status: ${res.status}`)
+
             if (res.ok) {
                 const data = await res.json()
+                console.log(`[Frontend] fetchAnalysis JSON data:`, data)
                 setAnalysisData({
                     latestReport: data.latestReport,
                     history: data.history || [],
                     newMistakesCount: data.newMistakesCount,
                     lastAnalyzedAt: data.latestReport?.created_at || null
                 })
+            } else {
+                const errText = await res.text();
+                console.error(`[Frontend] fetchAnalysis returned non-OK. Error payload:`, errText)
             }
         } catch (e) {
-            console.error("Fetch analysis failed", e)
+            console.error("[Frontend] fetchAnalysis failed absolutely (network/cors):", e)
         }
     }
 
