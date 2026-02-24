@@ -210,13 +210,11 @@ Structure:
 
 **Important**: For 'Recitation Mistakes', just include the top 10 list in the overview/stats section. Do NOT perform deep pedagogical analysis on them. Focus your core analysis on the 'Practice Questions' sections.`
 
-    // Helper to format sample with truncation
+    // Helper to format sample
     const formatSample = (m: any, idx: number) => {
         const tagInfo = (m.tags && m.tags.length > 0) ? m.tags.join(',') : (m.subType || m.type || 'General')
         const countInfo = m.user_error_count || m.count || 1
-        // Truncate content to 200 chars to avoid huge prompts
-        const content = (m.content || "").toString().slice(0, 200)
-        return `${idx + 1}. [${tagInfo}] ${content} (Error Count: ${countInfo})`
+        return `${idx + 1}. [${tagInfo}] ${m.content} (Error Count: ${countInfo})`
     }
 
     // Filter out recitation for AI prompt (Keep only quiz/exercise mistakes)
@@ -234,7 +232,7 @@ Distribution:
 ${statsText}
 
 [Section B: Recitation Top 10 (Stats Only - DO NOT ANALYZE DEEPLY)]
-${recitationSamples.length > 0 ? recitationSamples.map((m: any, i: number) => `${i + 1}. ${(m.content || "").toString().slice(0, 100)} (Freq: ${m.user_error_count || m.count || 1})`).join('\n') : "(None)"}
+${recitationSamples.length > 0 ? recitationSamples.map((m: any, i: number) => `${i + 1}. ${m.content} (Freq: ${m.user_error_count || m.count || 1})`).join('\n') : "(None)"}
 
 [Section C: Recent Mistakes (Practice Questions Only - ANALYZE THESE)]
 ${filteredRecent.length > 0 ? filteredRecent.map((m: any, i: number) => formatSample(m, i)).join('\n') : "(None found in this sample)"}
