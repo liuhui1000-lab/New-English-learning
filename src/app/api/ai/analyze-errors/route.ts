@@ -2,6 +2,15 @@
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
+import { createClient } from "@supabase/supabase-js"
+
+// Helper: Create admin client (service_role, bypasses RLS)
+function createAdminClient() {
+    return createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+}
 
 export async function POST(request: Request) {
     const cookieStore = await cookies()
@@ -259,8 +268,9 @@ Please generate the diagnostic report.`
             throw new Error("AI 返回了空报告，请稍后再试。")
         }
 
-        // 5. Save Report
-        const { data: savedData, error: saveError } = await supabase
+        // 5. Save Report (Use Service Role to bypass RLS for administrative reports)
+        const adminClient = createAdminClient()
+        const { data: savedData, error: saveError } = await adminClient
             .from('error_analysis_reports')
             .insert({
                 user_id: targetUserId,
