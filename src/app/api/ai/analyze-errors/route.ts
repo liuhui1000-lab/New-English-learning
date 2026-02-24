@@ -72,6 +72,9 @@ export async function POST(request: Request) {
     // Strategy Selection
     const useSmartSampling = !!(recent && frequent);
 
+    // Initialize adminClient early to bypass RLS during server-side aggregation for Admins
+    const adminClient = createAdminClient(supabase)
+
     if (useSmartSampling) {
         // --- Plan A: Use Frontend Smart Sampling (Preferred) ---
         recentSamples = recent
@@ -88,7 +91,7 @@ export async function POST(request: Request) {
         console.log("Using Legacy Server-Side Aggregation")
 
         // Fetch Recitation Mistakes
-        const { data: recitationData } = await supabase
+        const { data: recitationData } = await adminClient
             .from('user_progress')
             .select(`*, questions (id, content, answer, type)`)
             .eq('user_id', targetUserId)
@@ -110,7 +113,7 @@ export async function POST(request: Request) {
         }
 
         // Fetch Quiz Mistakes (Increase limit for stats)
-        const { data: quizData } = await supabase
+        const { data: quizData } = await adminClient
             .from('quiz_results')
             .select(`*, questions (id, content, answer, type, explanation)`)
             .eq('user_id', targetUserId)
@@ -174,7 +177,6 @@ export async function POST(request: Request) {
     }
 
     // 3. Get AI Settings using Service Role to bypass RLS (students can't read settings directly)
-    const adminClient = createAdminClient(supabase)
     const { data: settingsData } = await adminClient.from('system_settings').select('key, value')
     const settingsMap: Record<string, string> = {}
     if (settingsData) settingsData.forEach((s: any) => settingsMap[s.key] = s.value)
