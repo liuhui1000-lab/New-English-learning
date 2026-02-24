@@ -71,29 +71,43 @@ export async function POST(req: NextRequest) {
 
         const cleanImage = image.replace(/^data:image\/\w+;base64,/, "");
 
-        // 2. Prepare Payload (Force Maximum Sensitivity)
-        // We use both top-level and nested params to ensure coverage across different Paddle wrapper versions
+        // 2. Prepare Payload (Shotgun Approach for Sensitivity)
+        // We use all known parameter variations to ensure the backend respects our request
         const payload: any = {
             file: cleanImage,
             fileType: 1,
+            // Direction/Orientation settings
             useDocOrientationClassify: false,
             useDocUnwarping: false,
             useTextlineOrientation: false,
-            // Top-level params for some FastAPI wrappers
+            use_direction_classify: false, // Variant
+
+            // Detection sensitivity (Shotgun)
+            thresh: 0.1,
+            det_thresh: 0.1,
+            box_thresh: 0.2,
             det_db_thresh: 0.1,
             det_db_box_thresh: 0.2,
+            det_db_unclip_ratio: 2.0,
             det_limit_side_len: 2000,
-            // Nested params as seen in user logs
+
+            // Nested structure variations
             text_det_params: {
                 thresh: 0.1,
                 box_thresh: 0.2,
                 limit_side_len: 2000,
                 unclip_ratio: 2.0
+            },
+            det_params: {
+                det_db_thresh: 0.1,
+                det_db_box_thresh: 0.2,
+                det_limit_side_len: 2000,
+                det_db_unclip_ratio: 2.0
             }
         };
 
         // 3. Call External API
-        console.log("Calling Standard OCR API (Robust Reconst v2):", apiUrl);
+        console.log("Calling Standard OCR API (Shotgun Params):", apiUrl);
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: {
@@ -118,7 +132,7 @@ export async function POST(req: NextRequest) {
             throw new Error(result.errorMsg || result.error_msg || "Unknown Error");
         }
 
-        // 4. Robust Spatial Reconstruction (Fixed Unpacking)
+        // 4. Robust Spatial Reconstruction (with logging)
         if (result.result && result.result.ocrResults) {
             const ocrResults = result.result.ocrResults;
             let rawBlocks: any[] = [];
@@ -126,28 +140,20 @@ export async function POST(req: NextRequest) {
             ocrResults.forEach((r: any) => {
                 const pruned = r.prunedResult;
 
-                // CASE 1: Flattened Multi-result (Common in modern PaddleOCR wrappers)
+                // CASE 1: Flattened Multi-result
                 if (pruned && Array.isArray(pruned.rec_texts)) {
                     pruned.rec_texts.forEach((text: string, i: number) => {
                         if (!text || text.trim() === "") return;
 
-                        // Try different region keys in prioritized order
-                        const region = (pruned.dt_polys?.[i]) ||
-                            (pruned.rec_polys?.[i]) ||
-                            (pruned.rec_boxes?.[i]) ||
-                            (pruned.poly?.[i]) ||
-                            (pruned.box?.[i]);
-
+                        const region = (pruned.dt_polys?.[i]) || (pruned.rec_polys?.[i]) || (pruned.rec_boxes?.[i]);
                         if (region) {
                             let x = 0, y = 0, w = 0, h = 0;
                             if (Array.isArray(region)) {
                                 if (Array.isArray(region[0])) {
-                                    // Polygon: [[x,y], [x,y], [x,y], [x,y]]
                                     x = region[0][0]; y = region[0][1];
                                     w = Math.max(...region.map((p: any) => p[0])) - x;
                                     h = Math.max(...region.map((p: any) => p[1])) - y;
                                 } else if (region.length === 4) {
-                                    // BBox: [x,y,w,h]
                                     x = region[0]; y = region[1]; w = region[2]; h = region[3];
                                 }
                             }
@@ -159,14 +165,14 @@ export async function POST(req: NextRequest) {
                         }
                     });
                 }
-                // CASE 2: Single-block result or other formats
+                // CASE 2: Nested/Standard result
                 else {
                     const text = r.text || (pruned && (typeof pruned === 'string' ? pruned : (pruned.text || pruned.word))) || r.words || "";
-                    const region = r.region || r.textRegion || r.text_region || r.box || r.poly || r.points || r.location;
+                    const region = r.region || r.textRegion || r.box || r.poly;
 
                     if (text && text.trim() !== "" && region) {
                         let x = 0, y = 0, w = 0, h = 0;
-                        if (Array.isArray(region) && region.length === 4 && Array.isArray(region[0])) {
+                        if (Array.isArray(region) && Array.isArray(region[0])) {
                             x = region[0][0]; y = region[0][1];
                             w = Math.max(...region.map((p: any) => p[0])) - x;
                             h = Math.max(...region.map((p: any) => p[1])) - y;
@@ -182,12 +188,17 @@ export async function POST(req: NextRequest) {
                 }
             });
 
+            console.log("OCR Blocks detected:", rawBlocks.length);
+            rawBlocks.forEach((b, i) => {
+                console.log(`Block ${i}: "${b.text}" at (${b.x}, ${b.y}) w:${b.width} h:${b.height}`);
+            });
+
             if (rawBlocks.length > 0) {
-                // Sort blocks: Vertical lines grouping first, then horizontal X
+                // Sort blocks (Allow 50% overlap for line grouping)
                 rawBlocks.sort((a, b) => {
                     const overlapY = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.y, b.y));
-                    const minHeight = Math.min(a.height, b.height);
-                    if (overlapY > minHeight * 0.4) return a.x - b.x; // Same line (threshold lowered to 0.4 for messy handwriting)
+                    const minH = Math.min(a.height, b.height);
+                    if (overlapY > minH * 0.5) return a.x - b.x;
                     return a.y - b.y;
                 });
 
@@ -198,7 +209,7 @@ export async function POST(req: NextRequest) {
 
                 rawBlocks.forEach((b) => {
                     const overlapY = currentLineY === -1 ? 0 : Math.max(0, Math.min(b.bottom, currentLineY + currentLineHeight) - Math.max(b.y, currentLineY));
-                    const isSameLine = currentLineY !== -1 && overlapY > Math.min(b.height, currentLineHeight) * 0.4;
+                    const isSameLine = currentLineY !== -1 && overlapY > Math.min(b.height, currentLineHeight) * 0.5;
 
                     if (!isSameLine) {
                         if (currentLineStr) processedLines.push(currentLineStr);
@@ -212,7 +223,10 @@ export async function POST(req: NextRequest) {
                 });
                 if (currentLineStr) processedLines.push(currentLineStr);
 
-                const finalResult = processedLines.join("\n").replace(/\s+/g, " "); // Join with space for single-line inputs
+                // For handwriting practice, usually it's one answer string
+                const finalResult = processedLines.join("\n").replace(/\n/g, " ").replace(/\s+/g, " ");
+                console.log("Final OCR Result:", finalResult);
+
                 return NextResponse.json({ text: finalResult, debug: result });
             }
         }
