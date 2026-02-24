@@ -105,14 +105,20 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 }
 
                 // 4. Create Final Canvas (Fit to content)
-                const padding = 50 // Increased padding for context
-                const targetHeight = 300 // Target a LARGER height (300px) typical for OCR. 100px is too small.
+                const padding = 30 // Padding for context
+                const maxSide = 960 // Backend limit as seen in logs
+                const targetHeight = 150 // 150px is enough for clean handwriting
 
                 let scale = 1
                 if (cutH > 0) {
                     scale = targetHeight / cutH
-                    // Allow upscaling up to 5x to reach 300px
-                    scale = Math.min(scale, 5)
+                    // Max 3x upscale
+                    scale = Math.min(scale, 3)
+                }
+
+                // Width Guard: ensure we don't exceed 960px after scaling+padding
+                if (cutW * scale + padding * 2 > maxSide) {
+                    scale = (maxSide - padding * 2) / cutW
                 }
 
                 const finalW = cutW * scale
