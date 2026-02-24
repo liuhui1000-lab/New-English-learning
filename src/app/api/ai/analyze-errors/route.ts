@@ -341,8 +341,9 @@ export async function GET(request: Request) {
         targetUserId = requestedUserId
     }
 
-    // Fetch latest 10 reports
-    const { data: reports, error: reportsError } = await supabase
+    // Fetch latest 10 reports securely using admin client to bypass flaky RLS on Edge
+    const adminClient = createAdminClient(supabase)
+    const { data: reports, error: reportsError } = await adminClient
         .from('error_analysis_reports')
         .select('*')
         .eq('user_id', targetUserId)
@@ -357,7 +358,7 @@ export async function GET(request: Request) {
     if (reports && reports.length > 0) {
         const triggerIds = Array.from(new Set(reports.map(r => r.triggered_by).filter(Boolean)))
         if (triggerIds.length > 0) {
-            const { data: profiles } = await supabase
+            const { data: profiles } = await adminClient
                 .from('profiles')
                 .select('id, username, display_name')
                 .in('id', triggerIds)
