@@ -15,6 +15,15 @@ export default function ErrorNotebookPage() {
     const [selectedIds, setSelectedIds] = useState<string[]>([])
     const [exporting, setExporting] = useState(false)
 
+    // AI Analysis State
+    const [analyzing, setAnalyzing] = useState(false)
+    const [analysisData, setAnalysisData] = useState<{
+        latestReport: any | null,
+        newMistakesCount: number,
+        lastAnalyzedAt: string | null
+    }>({ latestReport: null, newMistakesCount: 0, lastAnalyzedAt: null })
+    const [showReportModal, setShowReportModal] = useState(false)
+
     const supabase = createBrowserClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder_key'
@@ -145,6 +154,82 @@ export default function ErrorNotebookPage() {
             }
         })
 
+    const fetchAnalysis = async (userId: string) => {
+        try {
+            const res = await fetch(`/api/ai/analyze-errors?userId=${userId}`)
+            if (res.ok) {
+                const data = await res.json()
+                setAnalysisData({
+                    latestReport: data.latestReport,
+                    newMistakesCount: data.newMistakesCount,
+                    lastAnalyzedAt: data.latestReport?.created_at || null
+                })
+            }
+        } catch (e) {
+            console.error("Fetch analysis failed", e)
+        }
+    }
+
+    const handleAnalyzeErrors = async () => {
+        if (!confirm("确定要对错题本进行 AI 深度分析吗？\n(系统将自动提取高频及最新练习题错题进行分析，不包含纯背诵任务)")) return
+        setAnalyzing(true)
+        setShowReportModal(true) // Show modal immediately with loading state
+        try {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) throw new Error("Unauthenticated")
+
+            // Send actual lists based on smart sampling strategy from frontend
+            const quizList = mistakes.filter(m => m.type !== 'recitation') // Frontend filter for safety
+            const topFrequent = [...quizList].sort((a, b) => b.count - a.count).slice(0, 10)
+            const recent = [...quizList].sort((a, b) => new Date(b.lastAttempt || 0).getTime() - new Date(a.lastAttempt || 0).getTime()).slice(0, 10)
+
+            const res = await fetch('/api/ai/analyze-errors', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: user.id,
+                    stats: {
+                        total: quizList.length,
+                        type_distribution: quizList.reduce((acc: any, cur) => {
+                            acc[cur.note] = (acc[cur.note] || 0) + 1;
+                            return acc;
+                        }, {})
+                    },
+                    frequent: topFrequent,
+                    recent: recent
+                })
+            })
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({ error: 'Unknown Error' }))
+                throw new Error(errData.error || '分析请求失败')
+            }
+
+            const data = await res.json()
+            if (data.report) {
+                setAnalysisData(prev => ({
+                    ...prev,
+                    latestReport: data.report,
+                    newMistakesCount: 0,
+                    lastAnalyzedAt: data.report.created_at
+                }))
+            } else {
+                fetchAnalysis(user.id) // Fallback
+            }
+        } catch (e: any) {
+            alert("分析失败: " + e.message)
+            setShowReportModal(false)
+        } finally {
+            setAnalyzing(false)
+        }
+    }
+
+    useEffect(() => {
+        supabase.auth.getUser().then(({ data: { user } }) => {
+            if (user) fetchAnalysis(user.id)
+        })
+    }, [])
+
     const availableTypes = Array.from(new Set(mistakes.map(m => m.note))).filter(Boolean).sort()
     const availableTopics = Array.from(new Set(
         mistakes.flatMap(m => m.tags || [])
@@ -249,26 +334,46 @@ export default function ErrorNotebookPage() {
                             共记录 {mistakes.length} 道错题，坚持复习是进步的关键。
                         </p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
+                        <div className="relative group">
+                            <button
+                                onClick={handleAnalyzeErrors}
+                                disabled={analyzing || mistakes.filter(m => m.type !== 'recitation').length === 0}
+                                className="flex items-center px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg text-sm font-medium hover:from-purple-700 hover:to-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm border border-transparent"
+                            >
+                                {analyzing ? (
+                                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 分析中...</>
+                                ) : (
+                                    <><TrendingUp className="w-4 h-4 mr-2" /> AI 错题分析</>
+                                )}
+                            </button>
+                            {/* Tooltip */}
+                            <div className="absolute bottom-full left-1/2 min-w-[200px] -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition duration-200 shadow-xl z-50 pointer-events-none after:content-[''] after:absolute after:top-full after:left-1/2 after:-translate-x-1/2 after:border-4 after:border-transparent after:border-t-gray-900 whitespace-nowrap">
+                                <div className="font-bold mb-1">🧠 AI 智能诊断逻辑</div>
+                                <ul className="list-disc pl-4 space-y-1 text-gray-300">
+                                    <li>仅深度分析<span className="text-white font-medium">练习题</span>(除单词外)</li>
+                                    <li>自动提取<span className="text-white font-medium">Top 10 高频</span>顽固错题</li>
+                                    <li>自动追加<span className="text-white font-medium">Top 10 最新</span>近期错题</li>
+                                    <li>全面诊断知识薄弱点并生成方案</li>
+                                </ul>
+                            </div>
+                        </div>
+
                         <button
                             onClick={handleExportPDF}
                             disabled={exporting}
-                            className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="flex items-center px-4 py-2 bg-white text-gray-700 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                         >
                             {exporting ? (
-                                <>
-                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" /> 正在生成...
-                                </>
+                                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 生成中...</>
                             ) : (
-                                <>
-                                    <FileDown className="w-4 h-4 mr-2" /> 导出 PDF
-                                </>
+                                <><FileDown className="w-4 h-4 mr-2" /> 导出 PDF</>
                             )}
                         </button>
-                        <button onClick={() => window.print()} className="flex items-center px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 transition print:hidden">
-                            <FileDown className="w-4 h-4 mr-2" /> 浏览器打印
+                        <button onClick={() => window.print()} className="flex items-center px-4 py-2 bg-white text-gray-700 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 transition print:hidden shadow-sm" title="浏览器打印">
+                            <FileDown className="w-4 h-4 mr-2" /> 打印
                         </button>
-                        <button onClick={fetchMistakes} className="p-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50">
+                        <button onClick={() => fetchAnalysis('dummy')} className="p-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition" title="刷新报告状态">
                             <CheckCircle className="w-5 h-5 text-indigo-600" />
                         </button>
                     </div>
@@ -429,6 +534,73 @@ export default function ErrorNotebookPage() {
                     )}
                 </div>
             </div>
+
+            {/* AI Report Modal */}
+            {showReportModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 print:hidden animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-gray-100">
+                        <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-900 flex items-center">
+                                    <TrendingUp className="w-5 h-5 mr-2 text-indigo-600" /> AI 学习诊断报告
+                                </h3>
+                                {analysisData.lastAnalyzedAt && !analyzing && (
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        基于 {new Date(analysisData.lastAnalyzedAt).toLocaleString('zh-CN')} 的错题数据生成
+                                    </p>
+                                )}
+                            </div>
+                            <button
+                                onClick={() => setShowReportModal(false)}
+                                className="text-gray-400 hover:text-gray-600 p-2 hover:bg-gray-100 rounded-full transition"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto flex-1 bg-white">
+                            {analyzing ? (
+                                <div className="flex flex-col items-center justify-center py-20">
+                                    <Loader2 className="w-12 h-12 text-indigo-600 animate-spin mb-4" />
+                                    <p className="text-gray-900 font-medium text-lg">AI 正在深度分析错题...</p>
+                                    <p className="text-gray-500 text-sm mt-2 text-center max-w-sm">
+                                        正在提取高频错题与近期错题，生成知识点图谱，最多可能需要 60 秒，请耐心等待。
+                                    </p>
+                                </div>
+                            ) : analysisData.latestReport ? (
+                                <div className="prose prose-sm md:prose-base prose-indigo max-w-none">
+                                    <pre className="whitespace-pre-wrap font-sans bg-transparent text-gray-800 p-0 m-0 leading-relaxed">
+                                        {analysisData.latestReport.report_content}
+                                    </pre>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center py-20 text-center">
+                                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                                        <AlertTriangle className="w-8 h-8 text-gray-400" />
+                                    </div>
+                                    <p className="text-gray-900 font-medium">暂无有效的分析报告</p>
+                                    <p className="text-gray-500 text-sm mt-1">生成失败或当前网络不稳定，请点击重试。</p>
+                                    <button
+                                        onClick={handleAnalyzeErrors}
+                                        className="mt-6 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium"
+                                    >
+                                        重新生成分析报告
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end">
+                            <button
+                                onClick={() => setShowReportModal(false)}
+                                className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition shadow-sm"
+                            >
+                                关闭报告
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     )
 }
