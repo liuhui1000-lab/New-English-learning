@@ -48,28 +48,22 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 // Draw TO temp canvas (Keep transparency for dilation)
                 tempCtx.drawImage(img, 0, 0)
 
-                // 2. Scan for bounding box AND Binarize in one pass
+                // 2. Scan for bounding box ONLY (No more binarization)
+                // PaddleOCR relies on natural anti-aliased grey edges to identify letters.
+                // Forcing everything to pure black created pixelated jagged edges that broke detection for simple letters like 'C'
                 const imageData = tempCtx.getImageData(0, 0, img.width, img.height)
                 const data = imageData.data
                 let minX = img.width, minY = img.height, maxX = 0, maxY = 0
                 let foundAny = false
 
                 for (let i = 0; i < data.length; i += 4) {
-                    // BINARIZATION & BOUNDS DETECTION
                     const r = data[i]
                     const g = data[i + 1]
                     const b = data[i + 2]
+                    const a = data[i + 3]
 
-                    // If pixel is NOT white (detect ink)
-                    // Use a generous threshold (any non-white becomes ink)
-                    if (r < 240 || g < 240 || b < 240) {
-                        // Found ink -> FORCIBLY MAKE IT BLACK (Binarization)
-                        data[i] = 0;
-                        data[i + 1] = 0;
-                        data[i + 2] = 0;
-                        data[i + 3] = 255; // Fully opaque
-
-                        // Update bounds
+                    // Detect ink by checking if pixel is not fully white/transparent
+                    if (a > 10 && (r < 250 || g < 250 || b < 250)) {
                         const x = (i / 4) % img.width
                         const y = Math.floor((i / 4) / img.width)
 
@@ -84,9 +78,6 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                         }
                     }
                 }
-
-                // No need to putImageData back because we didn't modify pixels
-                // We want the NATURAL anti-aliased strokes.
 
                 if (!foundAny) {
                     console.warn("Auto-Crop finding NO content (Blank Canvas)");
@@ -161,9 +152,7 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                         )
                     });
                 }
-
-                // 6. Push Pixels back to tempCtx for Binarization (Already done)
-                tempCtx.putImageData(imageData, 0, 0);
+                // 6. Draw the original smooth strokes (removing putImageData binarization override)
 
                 // Revert to JPEG (High Quality) as PNG was rejected for size
                 const base64 = canvas.toDataURL('image/jpeg', 0.95)
