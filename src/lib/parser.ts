@@ -414,12 +414,29 @@ function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
             return true;
         });
 
-    // Strategy: We will no longer truncate after sentence reordering, because word
-    // transformations (e.g. Q48-51) might appear later in the paper.
-    // Instead, the strict filtering above is trusted to drop reading comprehension blocks automatically.
+    // 4. Truncation Strategy (User Request)
+    // The "Sentence Reordering" (连词成句) is ALWAYS the final question of the Grammar/Vocabulary block.
+    // Anything parsed after it (e.g. Reading Comprehension, Writing) should be discarded.
+    let cutoffIndex = -1;
+    for (let i = 0; i < parsedAndFilteredQuestions.length; i++) {
+        const q = parsedAndFilteredQuestions[i];
+        const isSentenceReordering = /连词成句|reorder|rearrange/i.test(q.content) ||
+            (/(?:,\s*\w+|\/\s*\w+){2,}/.test(q.content) && /\(.*\)/.test(q.content));
 
-    console.log(`Mock Paper Mode: Filtered ${rawItems.length} items down to ${parsedAndFilteredQuestions.length}`);
-    return parsedAndFilteredQuestions;
+        if (isSentenceReordering) {
+            cutoffIndex = i;
+        }
+    }
+
+    let finalQuestions = parsedAndFilteredQuestions;
+    if (cutoffIndex !== -1) {
+        console.log(`Truncating mock paper after question at index ${cutoffIndex} (Sentence Reordering detected)`);
+        // Keep everything UP TO AND INCLUDING the LAST sentence reordering question
+        finalQuestions = parsedAndFilteredQuestions.slice(0, cutoffIndex + 1);
+    }
+
+    console.log(`Mock Paper Mode: Filtered ${rawItems.length} items down to ${finalQuestions.length}`);
+    return finalQuestions;
 }
 
 // ... Shared Helpers ...
@@ -525,8 +542,10 @@ function splitQuestions(text: string): string[] {
     // This handles cases where questions are separated by minimal spacing (e.g., "D) / 22.")
 
     // 1. Remove section headers first
-    // CRITICAL: Use [^\n]* instead of .* to match only until end of line
-    const sectionHeaderRegex = /(?:^|\n)\s*(?:#{2,}\s*)?(?:Part\s+[A-Z]|Section\s+[A-Z]|[IVX]+\.\s+[^\n]*|[A-Z]\.\s+(?:Read|Complete|Fill|Choose|Section|Listen)[^\n]*|Choose\s+the\s+best\s+answer[^\n]*|Listen\s+to\s+the\s+passage[^\n]*)(?:\n|$)/gi;
+    // CRITICAL: Use lazy matching [^\n]*? with a lookahead for question numbers
+    // to prevent swallowing actual questions if OCR merged headers and questions on the same line.
+    const qNumLookahead = '(?=\\s*\\d+\\s*[\\.\\．\\、\\)\\）]|\\n|$)';
+    const sectionHeaderRegex = new RegExp(`(?:^|\\n)\\s*(?:#{2,}\\s*)?(?:Part\\s+[A-Z]|Section\\s+[A-Z]|[IVX]+\\.\\s+[^\\n]*?|[A-Z]\\.\\s+(?:Read|Complete|Fill|Choose|Section|Listen)[^\\n]*?|Choose\\s+the\\s+best\\s+answer[^\\n]*?|Listen\\s+to\\s+the\\s+passage[^\\n]*?)${qNumLookahead}`, 'gi');
     console.log(`splitQuestions: Input text length: ${text.length}`);
     console.log('Input text preview:', text.substring(0, 500));
 
