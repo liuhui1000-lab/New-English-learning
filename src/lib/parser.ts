@@ -93,27 +93,14 @@ function extractTargetSections(text: string): string {
     }
 
     // 2. Find End (Start of Next Section)
-    // IMPORTANT: Only match "Reading and Writing" TOGETHER, not separately
-    // This ensures we don't truncate Word Transformation or Sentence Transformation sections
+    // We want to KEEP "Reading and Writing" because Word/Sentence Transformations are usually in there.
+    // Instead, we explicitly stop ONLY when we hit the final "Writing / Composition" section to prevent essay parsing.
     const endPatterns = [
-        // Match "Part 3/III Reading and Writing" (must have both Reading AND Writing together)
-        // Allow optional markdown headers (# ## ###) before "Part"
-        /(?:^|\n)\s*#{0,6}\s*(?:Part\s*(?:[IVX]+|\d+|[A-Z])\.?|[IVX]+\.|[A-Z]\.)\s*Reading\s*(?:and|&)\s*Writing/i,
-        // Fallback: Match generic "Reading and Writing" header
-        /(?:^|\n)\s*#{0,6}\s*Reading\s*(?:and|&)\s*Writing/i,
-        // Match "Part 3" or "Part III" or "III." (Reading/Writing section start)
-        // CRITICAL: Handle OCR misreadings of III (111, TII, IlI) and Reading (Reacling, Reeding)
-        // Boundaries: Line start, 3+ spaces, or punctuation/parentheses.
-        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:Part\s*(?:III|I{3}|1{3}|TII|Three|3)|III|I{3}|1{3}|TII)\.?\s*(?:Rea[dl]ing|Writing)/i,
-        // Fallback for "Part 3" without the word Reading
-        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:Part\s*(?:III|I{3}|1{3}|TII|Three|3)|III|I{3}|1{3}|TII)\s*(?:\n|(?:\(|（))/i,
         // Match "VII. Writing" or similar (Writing section)
         // Handle OCR: VII -> VIL, VIII -> VILI/VIIII
-        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:VII|VIL|VIII|VILI|Part\s*(?:VII|7|Seven))\.?\s*Writing/i,
-        // Match generic Reading and Writing with very loose spelling
-        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:Rea[dl]ing|Writ[il]ng)\s*(?:and|&)\s*(?:Writ[il]ng|Rea[dl]ing)/i,
-        // Match writing prompts (e.g., "94. Write at least...")
-        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:\d+\.\s*)?Write\s+at\s+least/i,
+        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:VII|VIL|VIII|VILI|IX|Part\s*(?:(?:VII|VIII|IX)|7|8|9|Seven|Eight|Nine))\.?\s*(?:Writing|Composition)/i,
+        // Match writing prompts natively (e.g., "84. Write at least...")
+        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:\d+\s*[\.\．\、\)\）]\s*)?Write\s+at\s+least/i,
     ];
 
     let endIndex = text.length;
@@ -542,7 +529,12 @@ function splitQuestions(text: string): string[] {
     const sectionHeaderRegex = /(?:^|\n)\s*(?:#{2,}\s*)?(?:Part\s+[A-Z]|Section\s+[A-Z]|[IVX]+\.\s+[^\n]*|[A-Z]\.\s+(?:Read|Complete|Fill|Choose|Section|Listen)[^\n]*|Choose\s+the\s+best\s+answer[^\n]*|Listen\s+to\s+the\s+passage[^\n]*)(?:\n|$)/gi;
     console.log(`splitQuestions: Input text length: ${text.length}`);
     console.log('Input text preview:', text.substring(0, 500));
-    let cleanText = text.replace(sectionHeaderRegex, '\n');
+
+    // 1.5 Strip dense Reading Comprehension blocks (A/B/C reading passages) to prevent massive memory usage.
+    // We aggressively match from the start of Reading sections, scanning downward until we hit the first Transformation section
+    let prepText = text.replace(/(?:^|\n|\s*)(?:VI\.\s*Reading\s*comprehension|A\.\s*Choose\s*the\s*best\s*answer|B\.\s*Choose\s*the\s*words\s*and\s*expressions|C\.\s*Read\s*the\s*passage|D\.\s*Read\s*the\s*passage|Read\s*the\s*passage\s*and)[\s\S]*?(?=(?:(?:VII|VIL|VIII|VILI|IX)\.\s*(?:Complete|Rewrite|Writing|Fill)|Complete\s*the\s*sentences|Rewrite\s*the\s*following|Writing|7[0-9]\s*[\.\．\、\)\）]))/gi, '\n');
+
+    let cleanText = prepText.replace(sectionHeaderRegex, '\n');
     console.log(`After header removal: ${cleanText.length} chars`);
     console.log('Clean text preview:', cleanText.substring(0, 500));
 
