@@ -381,7 +381,7 @@ function isRelated(root: string, target: string): boolean {
 function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
     // Strategy: Strict Filter. Keep only Questions (blanks/options).
     console.log(`processMockPaperMode: Input ${rawItems.length} items`);
-    console.log('Question numbers:', rawItems.map(q => q.match(/^\d+\./)?.[0] || 'NO_NUM').slice(0, 20));
+    console.log('Question numbers:', rawItems.map(q => q.match(/^\d+\s*[\.\．\、\)\）]/)?.[0] || 'NO_NUM').slice(0, 20));
 
     const parsedAndFilteredQuestions = rawItems
         .map((item) => classifyQuestion(item))
@@ -401,7 +401,7 @@ function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
                 (/(?:,\s*\w+|\/\s*\w+){2,}/.test(q.content) && /\(.*\)/.test(q.content));
 
             if (!hasBlank && !hasOptions && !isSentenceReordering) {
-                const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
+                const qNum = q.content.match(/^\d+\s*[\.\．\、\)\）]/)?.[0] || 'UNKNOWN';
                 console.log(`Filtered out ${qNum}: no blank, options, or sentence reordering pattern`);
                 return false;
             }
@@ -409,19 +409,18 @@ function processMockPaperMode(rawItems: string[]): ParsedQuestion[] {
             // 2. Filter out "Listening" style questions (Empty content with just a blank)
             // e.g. "1. ______" or "1. (     )" with no no other text
             // Clean the question number for checking
-            const cleanQ = q.content.replace(/^[\(（\[]?\d+[）\)\]]?[\.\,，、]/, '').trim();
+            const cleanQ = q.content.replace(/^[\(（\[]?\d+[）\)\]]?[\.\,，、\s]*/, '').trim();
             // If the remaining text is JUST underscores/blanks, it's likely listening
             if (/^(_+|[\(\[]\s*[\)\]])$/.test(cleanQ)) {
-                const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
+                const qNum = q.content.match(/^\d+\s*[\.\．\、\)\）]/)?.[0] || 'UNKNOWN';
                 console.log(`Filtered out ${qNum}: looks like a listening question (just blank)`);
                 return false;
             }
 
             // 3. Filter out "First Letter" questions (detected via instructions in the content if header missed)
             if (q.content.includes("首字母") || q.content.includes("beginning with")) {
-                const qNum = q.content.match(/^\d+\./)?.[0] || 'UNKNOWN';
+                const qNum = q.content.match(/^\d+\s*[\.\．\、\)\）]/)?.[0] || 'UNKNOWN';
                 console.log(`Filtered out ${qNum}: first letter question`);
-                return false;
                 return false;
             }
 
@@ -547,9 +546,9 @@ function splitQuestions(text: string): string[] {
     console.log(`After header removal: ${cleanText.length} chars`);
     console.log('Clean text preview:', cleanText.substring(0, 500));
 
-    // 2. Split on question numbers (e.g., "21.", "22.", etc.)
-    // Use capturing group to keep the numbers
-    const parts = cleanText.split(/(\d+\.)/);
+    // 2. Split on question numbers (e.g., "21.", "22.", "22)", "22．", "22、")
+    // Include optional spaces before the punctuation to be resilient against OCR
+    const parts = cleanText.split(/(?:^|\n|\s)(\d+\s*[\.\．\、\)\）])/);
     console.log(`splitQuestions: Split into ${parts.length} parts`);
     console.log('First 5 parts:', parts.slice(0, 10).map(p => p.substring(0, 50)));
 
@@ -561,7 +560,7 @@ function splitQuestions(text: string): string[] {
         if (!part) continue;
 
         // Check if this part is a question number
-        if (/^\d+\.$/.test(part)) {
+        if (/^\d+\s*[\.\．\、\)\）]$/.test(part)) {
             // Save previous question if exists
             if (currentQuestion) {
                 questions.push(currentQuestion.trim());
@@ -608,7 +607,7 @@ function splitQuestions(text: string): string[] {
             return false;
         }
         // Must start with a number
-        if (!/^\d+\./.test(q)) {
+        if (!/^\d+\s*[\.\．\、\)\）]/.test(q)) {
             console.log('Filtered (no number):', q.substring(0, 50));
             return false;
         }
