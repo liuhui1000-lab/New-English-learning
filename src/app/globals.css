@@ -28,6 +28,12 @@ textarea[readonly] {
   opacity: 1;
 }
 
+/* Force text inputs to always have black text, fixing dark mode gray defaults */
+input[type="text"],
+textarea {
+  color: #000;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
