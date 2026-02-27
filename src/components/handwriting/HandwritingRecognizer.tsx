@@ -9,6 +9,7 @@ interface HandwritingRecognizerProps {
     height?: number | string
     placeholder?: string
     enableAutoRecognize?: boolean
+    onRecognizingChange?: (isRecognizing: boolean) => void
 }
 
 export interface HandwritingRecognizerRef {
@@ -17,7 +18,7 @@ export interface HandwritingRecognizerRef {
     getDataUrl: () => string | null
 }
 
-const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRecognizerProps>(({ onRecognized, height = 150, placeholder, enableAutoRecognize = false }, ref) => {
+const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRecognizerProps>(({ onRecognized, height = 150, placeholder, enableAutoRecognize = false, onRecognizingChange }, ref) => {
     const canvasRef = useRef<HandwritingCanvasRef>(null)
     const [recognizing, setRecognizing] = useState(false)
     const [lastRecognized, setLastRecognized] = useState<string | null>(null)
@@ -28,6 +29,13 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
 
     // Sync state to ref
     useEffect(() => { lastRecognizedRef.current = lastRecognized }, [lastRecognized])
+
+    // Sync auto recognizing state to parent
+    useEffect(() => {
+        if (onRecognizingChange) {
+            onRecognizingChange(isAutoRecognizing)
+        }
+    }, [isAutoRecognizing, onRecognizingChange])
 
     // Helper to compress image (with Auto-Crop)
     const compressImage = (dataUrl: string, maxWidth = 1000, quality = 0.95): Promise<string | null> => {

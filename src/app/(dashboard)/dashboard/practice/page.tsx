@@ -19,6 +19,7 @@ function PracticeContent() {
     const [loading, setLoading] = useState(true)
     const [showHandwriting, setShowHandwriting] = useState(false)
     const [enableAutoOCR, setEnableAutoOCR] = useState(false) // Default to manual submission for cost saving
+    const [pendingOCRTasks, setPendingOCRTasks] = useState<Set<string>>(new Set()) // Track which questions are currently recognizing
 
     useEffect(() => {
         fetchPracticeBatch()
@@ -174,18 +175,50 @@ function PracticeContent() {
         setIsSubmitting(true)
         setProcessingStatus("准备提交...") // Initial status
 
-        // 1. Process Handwriting Batch (if any)
-        if (showHandwriting) {
-            console.log("Batch processing handwriting answers...")
-            try {
-                // STRATEGY: Use Stitched Batch Recognition if Auto-OCR is disabled
-                // This saves API calls (1 call vs N calls) and is faster for bulk updates
-                if (!enableAutoOCR) {
-                    setProcessingStatus("正在合并图像并批量识别 (极速模式)...")
-                    const imagesToStitch: { id: string, dataUrl: string }[] = []
+        // Tier 1: No Handwriting enabled
+        if (!showHandwriting) {
+            setProcessingStatus("正在提交...")
+            await finalizeSubmission(answers)
+            setIsSubmitting(false)
+            return
+        }
 
-                    // 1. Collect Valid Images
-                    for (const q of questions) {
+        // Tier 2: Handwriting + Auto OCR ON
+        if (showHandwriting && enableAutoOCR) {
+            if (pendingOCRTasks.size > 0) {
+                setProcessingStatus(`正在等待 ${pendingOCRTasks.size} 道题自动识别完成...`)
+
+                // Wait loop: Poll until pending tasks finish
+                // We use a small timeout loop. A more robust way in React is useEffect on pendingOCRTasks, 
+                // but for a sequential submit handler, polling the ref/state is simpler.
+                let waitCount = 0;
+                while (pendingOCRTasks.size > 0 && waitCount < 30) { // Max wait 15 seconds
+                    await new Promise(r => setTimeout(r, 500));
+                    waitCount++;
+                }
+
+                if (pendingOCRTasks.size > 0) {
+                    alert("部分题目自动识别超时，将提交已识别部分。");
+                }
+            }
+
+            setProcessingStatus("正在合并答案并提交...")
+            await finalizeSubmission(answers)
+            setIsSubmitting(false)
+            return
+        }
+
+        // Tier 3: Handwriting ON + Auto OCR OFF (Manual Batch Mode)
+        if (showHandwriting && !enableAutoOCR) {
+            console.log("Batch processing missing handwriting answers...")
+            try {
+                setProcessingStatus("正在提取未识别的手写内容...")
+                const imagesToStitch: { id: string, dataUrl: string }[] = []
+
+                // Gather ONLY questions that don't have an answer typed/recognized yet
+                for (const q of questions) {
+                    const currentAnswer = (answers[q.id] || "").trim()
+                    if (!currentAnswer) {
                         const recognizer = recognizerRefs.current[q.id]
                         if (recognizer && recognizer.getDataUrl) {
                             const dataUrl = recognizer.getDataUrl()
@@ -195,105 +228,108 @@ function PracticeContent() {
                             }
                         }
                     }
+                }
 
-                    if (imagesToStitch.length > 0) {
-                        // 2. Stitch (Returns image + coordinate map)
-                        console.log(`Stitching ${imagesToStitch.length} images...`)
-                        const { dataUrl: stitchedImage, rects } = await stitchImages(imagesToStitch)
+                if (imagesToStitch.length > 0) {
+                    // 2. Stitch (Returns image + coordinate map)
+                    console.log(`Stitching ${imagesToStitch.length} images...`)
+                    const { dataUrl: stitchedImage, rects } = await stitchImages(imagesToStitch)
 
-                        // 3. Send Single API Request
-                        const base64Image = stitchedImage.replace(/^data:image\/\w+;base64,/, "");
-                        const res = await fetch('/api/ocr', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ image: base64Image })
-                        })
+                    // 3. Send Single API Request
+                    const base64Image = stitchedImage.replace(/^data:image\/\w+;base64,/, "");
+                    const res = await fetch('/api/ocr', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image: base64Image })
+                    })
 
-                        if (!res.ok) {
-                            const errData = await res.json().catch(() => ({ error: res.statusText }));
-                            console.error("Batch OCR API Error:", errData);
-                            // Fallback to sequential if bulk fails? Or just throw.
-                            throw new Error(`Batch OCR Failed: ${errData.error || res.statusText}`)
-                        }
+                    if (!res.ok) {
+                        const errData = await res.json().catch(() => ({ error: res.statusText }));
+                        console.error("Batch OCR API Error:", errData);
+                        // Fallback to sequential if bulk fails? Or just throw.
+                        throw new Error(`Batch OCR Failed: ${errData.error || res.statusText}`)
+                    }
 
-                        const data = await res.json()
-                        console.log("Stitched OCR Raw Text:", data.text)
+                    const data = await res.json()
+                    console.log("Stitched OCR Raw Text:", data.text)
 
-                        // DEBUG: Log the full debug info to help diagnose issues if any
-                        if (data.debug) {
-                            console.log("Stitched OCR Full Debug:", JSON.stringify(data.debug));
-                        }
+                    // DEBUG: Log the full debug info to help diagnose issues if any
+                    if (data.debug) {
+                        console.log("Stitched OCR Full Debug:", JSON.stringify(data.debug));
+                    }
 
-                        // 4. Parse Results using COORDINATES
-                        // We pass the full DEBUG result (which has bounding boxes) and the RECTS map
-                        const parsedResults = parseStitchedOCRResult(data.debug, rects)
-                        console.log("Parsed Batch Answers (via coordinates):", parsedResults)
+                    // 4. Parse Results using COORDINATES
+                    // We pass the full DEBUG result (which has bounding boxes) and the RECTS map
+                    const parsedResults = parseStitchedOCRResult(data.debug, rects)
+                    console.log("Parsed Batch Answers (via coordinates):", parsedResults)
 
-                        // 5. Update State
-                        const newAnswers = { ...answers, ...parsedResults }
-                        setAnswers(newAnswers) // Update UI
+                    // 5. Update State
+                    const newAnswers = { ...answers, ...parsedResults }
+                    setAnswers(newAnswers) // Update UI
 
-                        // 6. Check for Missing Answers (Partial Failure Recovery)
-                        const missingIds = imagesToStitch
-                            .map(img => img.id)
-                            .filter(id => !parsedResults[id] || !parsedResults[id].trim())
+                    // 6. Check for Missing Answers (Partial Failure Recovery)
+                    const missingIds = imagesToStitch
+                        .map(img => img.id)
+                        .filter(id => !parsedResults[id] || !parsedResults[id].trim())
 
-                        if (missingIds.length > 0) {
-                            console.warn(`Batch OCR missed ${missingIds.length} questions. Triggering fallback...`, missingIds)
-                            setProcessingStatus(`批量识别完成，正在补充识别剩余 ${missingIds.length} 题...`)
+                    if (missingIds.length > 0) {
+                        console.warn(`Batch OCR missed ${missingIds.length} questions. Triggering fallback...`, missingIds)
+                        setProcessingStatus(`批量识别完成，正在补充识别剩余 ${missingIds.length} 题...`)
 
-                            // Fallback Loop for missing items (Sequential for Rate Limit)
-                            // Strict Limit: 1 QPS, Concurrency 1
-                            let processedCount = 0;
-                            for (const id of missingIds) {
-                                processedCount++;
-                                setProcessingStatus(`正在补充识别: ${processedCount}/${missingIds.length}...`);
+                        // Fallback Loop for missing items (Sequential for Rate Limit)
+                        // Strict Limit: 1 QPS, Concurrency 1
+                        let processedCount = 0;
+                        for (const id of missingIds) {
+                            processedCount++;
+                            setProcessingStatus(`正在补充识别: ${processedCount}/${missingIds.length}...`);
 
-                                const recognizer = recognizerRefs.current[id];
-                                if (recognizer) {
-                                    try {
-                                        console.log(`Fallback recognizing for ${id}...`);
-                                        const text = await recognizer.recognize();
-                                        console.log(`Fallback result for ${id}:`, text);
+                            const recognizer = recognizerRefs.current[id];
+                            if (recognizer) {
+                                try {
+                                    console.log(`Fallback recognizing for ${id}...`);
+                                    const text = await recognizer.recognize();
+                                    console.log(`Fallback result for ${id}:`, text);
 
-                                        if (text) {
-                                            newAnswers[id] = text;
-                                            // Update UI incrementally
-                                            setAnswers(prev => ({ ...prev, [id]: text }));
-                                        } else {
-                                            console.warn(`Fallback returned empty for ${id}`);
-                                        }
-                                    } catch (err) {
-                                        console.error(`Fallback recognition failed for ${id}`, err);
+                                    if (text) {
+                                        newAnswers[id] = text;
+                                        // Update UI incrementally
+                                        setAnswers(prev => ({ ...prev, [id]: text }));
+                                    } else {
+                                        console.warn(`Fallback returned empty for ${id}`);
                                     }
-                                }
-
-                                // Strict Delay: > 1000ms to avoid 429
-                                if (processedCount < missingIds.length) {
-                                    await new Promise(r => setTimeout(r, 1200));
+                                } catch (err) {
+                                    console.error(`Fallback recognition failed for ${id}`, err);
                                 }
                             }
-                        }
 
-                        // Direct Submit
-                        setProcessingStatus("正在提交并保存成绩...")
-                        await finalizeSubmission(newAnswers)
-                        setIsSubmitting(false)
-                        setProcessingStatus("")
-                        return; // Exit early
+                            // Strict Delay: > 1000ms to avoid 429
+                            if (processedCount < missingIds.length) {
+                                await new Promise(r => setTimeout(r, 1200));
+                            }
+                        }
                     }
+
+                    // Direct Submit
+                    setProcessingStatus("正在提交并保存成绩...")
+                    await finalizeSubmission(newAnswers)
+                    setIsSubmitting(false)
+                    setProcessingStatus("")
+                    return; // Exit early
+                } else {
+                    // All written answers were already processed, just submit
+                    setProcessingStatus("正在提交...")
+                    await finalizeSubmission(answers)
+                    setIsSubmitting(false)
+                    return;
                 }
             } catch (e) {
                 console.error("Batch recognition error:", e)
                 alert("手写识别过程中发生错误，将直接提交现有答案。")
                 await finalizeSubmission(answers)
             }
-        } else {
-            // No handwriting enabled, just submit
-            setProcessingStatus("正在提交...")
-            await finalizeSubmission(answers)
         }
 
+        // Failsafe
         setIsSubmitting(false)
     }
 
