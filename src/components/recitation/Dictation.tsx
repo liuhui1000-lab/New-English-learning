@@ -149,7 +149,7 @@ export default function Dictation({ groups, onComplete, onError }: DictationProp
                                     type="text"
                                     value={inputs[item.id] || ""}
                                     onChange={e => handleInputChange(item.id, e.target.value)}
-                                    disabled={status === 'correct'}
+                                    readOnly={status === 'correct'}
                                     className={`
                                         w-full font-mono text-lg p-2 border-b-2 outline-none transition-colors
                                         ${status === 'idle' ? 'border-gray-300 focus:border-indigo-500' : ''}

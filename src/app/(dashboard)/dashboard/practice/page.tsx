@@ -462,7 +462,7 @@ function PracticeContent() {
                     <div className="pl-6">
                         <input
                             type="text"
-                            disabled={submitted}
+                            readOnly={submitted}
                             value={answers[q.id] || ""}
                             onChange={(e) => setAnswers({ ...answers, [q.id]: e.target.value })}
                             className={`w-full border-b-2 border-0 border-gray-300 focus:ring-0 focus:border-indigo-600 bg-gray-50 px-2 py-1 rounded transition
