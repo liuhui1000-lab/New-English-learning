@@ -68,8 +68,14 @@ export async function POST(req: NextRequest) {
             if (preferredConfig?.apiUrl) {
                 apiUrl = preferredConfig.apiUrl;
             } else if (map['ocr_url'] && !body.apiUrl) {
-                if (!map['ocr_url'].includes('layout')) {
+                // If there's NO specific handwriting config but there IS a global url,
+                // Make sure we DO NOT accidentally use the powerful Layout/VL model for standard handwriting OCR,
+                // because the VL models tend to strip strokes or treat them as images.
+                const fallbackUrl = map['ocr_url'].toLowerCase();
+                if (!fallbackUrl.includes('layout') && !fallbackUrl.includes('vl-15')) {
                     apiUrl = map['ocr_url'];
+                } else {
+                    console.log("Ignored global ocr_url because it looks like a Layout/VL endpoint. Falling back to default Handwriting endpoint.");
                 }
             }
 
