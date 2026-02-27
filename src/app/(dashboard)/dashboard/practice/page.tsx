@@ -235,18 +235,29 @@ function PracticeContent() {
                     console.log(`Stitching ${imagesToStitch.length} images...`)
                     const { dataUrl: stitchedImage, rects } = await stitchImages(imagesToStitch)
 
-                    // 3. Send Single API Request
+                    // 3. Send Single API Request using File Upload to avoid payload limits
+                    setProcessingStatus("正在上传合并图像 (极速模式)...")
                     const base64Image = stitchedImage.replace(/^data:image\/\w+;base64,/, "");
-                    const res = await fetch('/api/ocr', {
+                    const byteCharacters = atob(base64Image);
+                    const byteNumbers = new Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) {
+                        byteNumbers[i] = byteCharacters.charCodeAt(i);
+                    }
+                    const byteArray = new Uint8Array(byteNumbers);
+                    const blob = new Blob([byteArray], { type: 'image/png' });
+
+                    const formData = new FormData()
+                    formData.append('file', blob, 'batch_stitched.png')
+
+                    const res = await fetch('/api/ocr/async', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ image: base64Image })
+                        body: formData
                     })
 
                     if (!res.ok) {
                         const errData = await res.json().catch(() => ({ error: res.statusText }));
                         console.error("Batch OCR API Error:", errData);
-                        // Fallback to sequential if bulk fails? Or just throw.
+                        // Fallback to sequential if bulk fails
                         throw new Error(`Batch OCR Failed: ${errData.error || res.statusText}`)
                     }
 
