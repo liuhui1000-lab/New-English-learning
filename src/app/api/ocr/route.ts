@@ -98,6 +98,13 @@ export async function POST(req: NextRequest) {
             useTextlineOrientation: false,
             use_direction_classify: false, // Variant
 
+            // Disable Layout Features to force raw OCR
+            use_layout_detection: false,
+            useLayoutDetection: false,
+            use_seal_recognition: false,
+            use_chart_recognition: false,
+            use_ocr_for_image_block: true,
+
             // Detection sensitivity (Shotgun v3)
             thresh: 0.1,
             det_thresh: 0.1,
