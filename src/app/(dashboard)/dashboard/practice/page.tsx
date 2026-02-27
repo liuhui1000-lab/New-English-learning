@@ -235,23 +235,14 @@ function PracticeContent() {
                     console.log(`Stitching ${imagesToStitch.length} images...`)
                     const { dataUrl: stitchedImage, rects } = await stitchImages(imagesToStitch)
 
-                    // 3. Send Single API Request using File Upload to avoid payload limits
-                    setProcessingStatus("正在上传合并图像 (极速模式)...")
+                    // 3. Send Single API Request
+                    setProcessingStatus("正在提交合并图像 (极速模式)...")
                     const base64Image = stitchedImage.replace(/^data:image\/\w+;base64,/, "");
-                    const byteCharacters = atob(base64Image);
-                    const byteNumbers = new Array(byteCharacters.length);
-                    for (let i = 0; i < byteCharacters.length; i++) {
-                        byteNumbers[i] = byteCharacters.charCodeAt(i);
-                    }
-                    const byteArray = new Uint8Array(byteNumbers);
-                    const blob = new Blob([byteArray], { type: 'image/png' });
 
-                    const formData = new FormData()
-                    formData.append('file', blob, 'batch_stitched.png')
-
-                    const res = await fetch('/api/ocr/async', {
+                    const res = await fetch('/api/ocr', {
                         method: 'POST',
-                        body: formData
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image: base64Image })
                     })
 
                     if (!res.ok) {
