@@ -206,6 +206,8 @@ function PracticeContent() {
                 }
 
                 // Rule B.II: Canvas has content AND Auto OCR is currently running on it
+                // → Wait for it to finish, then move on. The auto-OCR callback already writes
+                //   results into `answers`. No need to trigger another request after waiting.
                 if (pendingOCRTasks.has(q.id)) {
                     setProcessingStatus(`正在等待部分题目自动识别完成...`);
 
@@ -215,19 +217,14 @@ function PracticeContent() {
                         await new Promise(r => setTimeout(r, 500));
                         waitCount++;
                     }
-
-                    // After waiting, if the answer is now populated by the Auto OCR callback, pull it from latest answers state structure if available.
-                    // Because React state in this async closure might be stale, we rely on the component's state update cycle.
-                    // However, to be perfectly safe, if the wait finishes, we check the latest `answers[q.id]`.
-                    // Actually, if it finished but didn't write to answers yet due to react batches, we might miss it.
-                    // The safest way is to fetch the result manually if it's still empty!
+                    // Auto-OCR is done (or timed out). Whatever it found is already written
+                    // to the answers state. No fallback needed — skip to next question.
+                    continue;
                 }
 
-                // Re-evaluate emptiness after potentially waiting (B.II might have failed or B.III needs it)
-                // Since this handler closure has a stale `answers` reference, we will force a manual recognition
-                // if we don't confidently know the result.
-                // Rule B.III: Canvas has content, but NO pending Auto OCR (or it timed out without setting text)
-                // We manually re-trigger recognition here to guarantee a result is captured before grading.
+                // Rule B.III: Canvas has content, but NO auto-OCR was running.
+                // This means auto-OCR never fired (e.g. debounce didn't trigger yet),
+                // so we trigger a single manual recognition now.
                 setProcessingStatus(`正在补充识别...`);
                 try {
                     console.log(`Fallback recognizing for ${q.id} during Tier 2 submit...`);
