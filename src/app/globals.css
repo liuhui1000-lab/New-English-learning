@@ -28,10 +28,25 @@ textarea[readonly] {
   opacity: 1;
 }
 
-/* Force text inputs to always have black text, fixing dark mode gray defaults */
+/* Force ALL form controls to black text on white background.
+   Prevents iOS / Windows dark mode from rendering gray/unreadable text
+   in select dropdowns, date pickers, text inputs, and textareas. */
+input,
 input[type="text"],
+input[type="date"],
+input[type="number"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="url"],
+input[type="tel"],
+select,
 textarea {
-  color: #000;
+  color: #111827;
+  /* gray-900 — visibly dark on any bg */
+  background-color: #ffffff;
+  -webkit-text-fill-color: #111827;
+  /* Safari/iOS override */
 }
 
 body {
