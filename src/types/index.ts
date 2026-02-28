@@ -26,6 +26,7 @@ export interface Question {
     source_material_id?: string;
     created_at: string;
     is_ai_analyzed?: boolean;
+    analyzed_at?: string;
 }
 
 export interface StudyRecord {

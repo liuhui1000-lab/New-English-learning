@@ -16,6 +16,11 @@ export default function QuestionBankPage() {
     const [selectedTypes, setSelectedTypes] = useState<string[]>([])
     const [filterAIStatus, setFilterAIStatus] = useState<string>('all')
     const [searchQuery, setSearchQuery] = useState('')
+    // Date range filters
+    const [filterCreatedFrom, setFilterCreatedFrom] = useState('')
+    const [filterCreatedTo, setFilterCreatedTo] = useState('')
+    const [filterAnalyzedFrom, setFilterAnalyzedFrom] = useState('')
+    const [filterAnalyzedTo, setFilterAnalyzedTo] = useState('')
 
     // Pagination
     const [page, setPage] = useState(1)
@@ -41,7 +46,7 @@ export default function QuestionBankPage() {
 
     useEffect(() => {
         fetchQuestions()
-    }, [page, pageSize, activeTab, selectedTypes, filterAIStatus, searchQuery])
+    }, [page, pageSize, activeTab, selectedTypes, filterAIStatus, searchQuery, filterCreatedFrom, filterCreatedTo, filterAnalyzedFrom, filterAnalyzedTo])
 
     const fetchQuestions = async () => {
         setLoading(true)
@@ -68,6 +73,11 @@ export default function QuestionBankPage() {
         } else if (filterAIStatus === 'not_analyzed') {
             query = query.or('is_ai_analyzed.is.false,is_ai_analyzed.is.null')
         }
+
+        if (filterCreatedFrom) query = query.gte('created_at', filterCreatedFrom)
+        if (filterCreatedTo) query = query.lte('created_at', filterCreatedTo + 'T23:59:59')
+        if (filterAnalyzedFrom) query = query.gte('analyzed_at', filterAnalyzedFrom)
+        if (filterAnalyzedTo) query = query.lte('analyzed_at', filterAnalyzedTo + 'T23:59:59')
 
         if (searchQuery) {
             query = query.ilike('content', `%${searchQuery}%`)
@@ -196,6 +206,7 @@ export default function QuestionBankPage() {
 
                     const { results } = await res.json()
 
+                    const analyzedAt = new Date().toISOString()
                     const updates = results.map((r: any, idx: number) => {
                         const q = batch[idx]
                         const newTags = new Set(q.tags || [])
@@ -208,7 +219,8 @@ export default function QuestionBankPage() {
                             tags: Array.from(newTags),
                             answer: (!q.answer && r.answer) ? r.answer : q.answer,
                             explanation: r.explanation || "",
-                            is_ai_analyzed: true
+                            is_ai_analyzed: true,
+                            analyzed_at: analyzedAt
                         }
                     })
 
@@ -356,41 +368,69 @@ export default function QuestionBankPage() {
             </div>
 
             {/* Filters */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-wrap gap-4 items-center">
-                <div className="flex items-center space-x-2">
-                    <Filter className="w-4 h-4 text-gray-500" />
-                    <span className="text-sm font-medium text-gray-700">筛选:</span>
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 space-y-3">
+                <div className="flex flex-wrap gap-4 items-center">
+                    <div className="flex items-center space-x-2">
+                        <Filter className="w-4 h-4 text-gray-500" />
+                        <span className="text-sm font-medium text-gray-700">筛选:</span>
+                    </div>
+
+                    {activeTab === 'questions' && (
+                        <MultiSelect
+                            options={typeOptions}
+                            selected={selectedTypes}
+                            onChange={setSelectedTypes}
+                            placeholder="所有题型"
+                            className="w-48"
+                        />
+                    )}
+
+                    <select
+                        value={filterAIStatus}
+                        onChange={e => setFilterAIStatus(e.target.value)}
+                        className="text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                        <option value="all">AI 状态 (全部)</option>
+                        <option value="not_analyzed">未分析</option>
+                        <option value="analyzed">已分析</option>
+                    </select>
+
+                    <div className="relative flex-1 min-w-[200px]">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="搜索内容..."
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2 text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                        />
+                    </div>
                 </div>
 
-                {activeTab === 'questions' && (
-                    <MultiSelect
-                        options={typeOptions}
-                        selected={selectedTypes}
-                        onChange={setSelectedTypes}
-                        placeholder="所有题型"
-                        className="w-48"
-                    />
-                )}
-
-                <select
-                    value={filterAIStatus}
-                    onChange={e => setFilterAIStatus(e.target.value)}
-                    className="text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                >
-                    <option value="all">AI 状态 (全部)</option>
-                    <option value="not_analyzed">未分析</option>
-                    <option value="analyzed">已分析</option>
-                </select>
-
-                <div className="relative flex-1 min-w-[200px]">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                        type="text"
-                        placeholder="搜索内容..."
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2 text-sm border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
-                    />
+                {/* Date range filters */}
+                <div className="flex flex-wrap gap-6 items-center text-sm text-gray-600">
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-gray-500 whitespace-nowrap">录入时间:</span>
+                        <input type="date" value={filterCreatedFrom} onChange={e => { setFilterCreatedFrom(e.target.value); setPage(1) }}
+                            className="text-xs border-gray-300 rounded focus:ring-indigo-500 focus:border-indigo-500 py-1 px-2" />
+                        <span className="text-gray-400">—</span>
+                        <input type="date" value={filterCreatedTo} onChange={e => { setFilterCreatedTo(e.target.value); setPage(1) }}
+                            className="text-xs border-gray-300 rounded focus:ring-indigo-500 focus:border-indigo-500 py-1 px-2" />
+                        {(filterCreatedFrom || filterCreatedTo) && (
+                            <button onClick={() => { setFilterCreatedFrom(''); setFilterCreatedTo('') }} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-gray-500 whitespace-nowrap">AI分析时间:</span>
+                        <input type="date" value={filterAnalyzedFrom} onChange={e => { setFilterAnalyzedFrom(e.target.value); setPage(1) }}
+                            className="text-xs border-gray-300 rounded focus:ring-indigo-500 focus:border-indigo-500 py-1 px-2" />
+                        <span className="text-gray-400">—</span>
+                        <input type="date" value={filterAnalyzedTo} onChange={e => { setFilterAnalyzedTo(e.target.value); setPage(1) }}
+                            className="text-xs border-gray-300 rounded focus:ring-indigo-500 focus:border-indigo-500 py-1 px-2" />
+                        {(filterAnalyzedFrom || filterAnalyzedTo) && (
+                            <button onClick={() => { setFilterAnalyzedFrom(''); setFilterAnalyzedTo('') }} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -415,9 +455,9 @@ export default function QuestionBankPage() {
                                     className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                                 />
                             </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[40%]">题目</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[35%]">题目</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">类型 / 标签</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">AI 状态</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">AI 状态 / 时间</th>
                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
                         </tr>
                     </thead>
@@ -467,13 +507,28 @@ export default function QuestionBankPage() {
                                     </td>
                                     <td className="px-6 py-4">
                                         {q.is_ai_analyzed ? (
-                                            <span className="flex items-center text-green-600 text-xs font-medium">
-                                                <CheckCircle className="w-3 h-3 mr-1" /> 已分析
-                                            </span>
+                                            <div>
+                                                <span className="flex items-center text-green-600 text-xs font-medium">
+                                                    <CheckCircle className="w-3 h-3 mr-1" /> 已分析
+                                                </span>
+                                                {q.analyzed_at && (
+                                                    <div className="text-[10px] text-gray-400 mt-0.5">
+                                                        {new Date(q.analyzed_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                                    </div>
+                                                )}
+                                                <div className="text-[10px] text-gray-300 mt-0.5">
+                                                    录入: {new Date(q.created_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit' })}
+                                                </div>
+                                            </div>
                                         ) : (
-                                            <span className="flex items-center text-gray-400 text-xs">
-                                                <AlertCircle className="w-3 h-3 mr-1" /> 未处理
-                                            </span>
+                                            <div>
+                                                <span className="flex items-center text-gray-400 text-xs">
+                                                    <AlertCircle className="w-3 h-3 mr-1" /> 未处理
+                                                </span>
+                                                <div className="text-[10px] text-gray-300 mt-0.5">
+                                                    录入: {new Date(q.created_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit' })}
+                                                </div>
+                                            </div>
                                         )}
                                     </td>
                                     <td className="px-6 py-4 text-right text-sm">
