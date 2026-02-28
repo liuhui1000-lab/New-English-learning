@@ -183,27 +183,62 @@ function PracticeContent() {
             return
         }
 
-        // Tier 2: Handwriting + Auto OCR ON
+        // Tier 2: Handwriting + Auto OCR ON (Hybrid Submit Logic)
         if (showHandwriting && enableAutoOCR) {
-            if (pendingOCRTasks.size > 0) {
-                setProcessingStatus(`正在等待 ${pendingOCRTasks.size} 道题自动识别完成...`)
+            setProcessingStatus("正在检查每道题的识别状态...");
+            const newAnswers = { ...answers };
 
-                // Wait loop: Poll until pending tasks finish
-                // We use a small timeout loop. A more robust way in React is useEffect on pendingOCRTasks, 
-                // but for a sequential submit handler, polling the ref/state is simpler.
-                let waitCount = 0;
-                while (pendingOCRTasks.size > 0 && waitCount < 30) { // Max wait 15 seconds
-                    await new Promise(r => setTimeout(r, 500));
-                    waitCount++;
+            for (const q of questions) {
+                // Rule A: Answer box already has content. Skip.
+                if ((newAnswers[q.id] || "").trim()) {
+                    continue;
                 }
 
-                if (pendingOCRTasks.size > 0) {
-                    alert("部分题目自动识别超时，将提交已识别部分。");
+                // Rule B: Answer box is empty
+                const recognizer = recognizerRefs.current[q.id];
+                if (!recognizer || !recognizer.getDataUrl) continue;
+
+                const dataUrl = recognizer.getDataUrl();
+
+                // Rule B.I: Canvas is empty (no content drawn)
+                if (!dataUrl || dataUrl.length < 1000) {
+                    continue; // Skip OCR, graded as incorrect later
+                }
+
+                // Rule B.II: Canvas has content AND Auto OCR is currently running on it
+                // → Wait for it to finish, then move on. The auto-OCR callback already writes
+                //   results into `answers`. No need to trigger another request after waiting.
+                if (pendingOCRTasks.has(q.id)) {
+                    setProcessingStatus(`正在等待部分题目自动识别完成...`);
+
+                    // Poll until this specific task is done (Max 15s)
+                    let waitCount = 0;
+                    while (pendingOCRTasks.has(q.id) && waitCount < 30) {
+                        await new Promise(r => setTimeout(r, 500));
+                        waitCount++;
+                    }
+                    // Auto-OCR is done (or timed out). Whatever it found is already written
+                    // to the answers state. No fallback needed — skip to next question.
+                    continue;
+                }
+
+                // Rule B.III: Canvas has content, but NO auto-OCR was running.
+                // This means auto-OCR never fired (e.g. debounce didn't trigger yet),
+                // so we trigger a single manual recognition now.
+                setProcessingStatus(`正在补充识别...`);
+                try {
+                    console.log(`Fallback recognizing for ${q.id} during Tier 2 submit...`);
+                    const text = await recognizer.recognize();
+                    if (text) {
+                        newAnswers[q.id] = text;
+                    }
+                } catch (err) {
+                    console.error(`Fallback recognition failed for ${q.id}`, err);
                 }
             }
 
             setProcessingStatus("正在合并答案并提交...")
-            await finalizeSubmission(answers)
+            await finalizeSubmission(newAnswers)
             setIsSubmitting(false)
             return
         }
@@ -329,10 +364,11 @@ function PracticeContent() {
                 alert("手写识别过程中发生错误，将直接提交现有答案。")
                 await finalizeSubmission(answers)
             }
+
+            // Failsafe
+            setIsSubmitting(false)
         }
 
-        // Failsafe
-        setIsSubmitting(false)
     }
 
     const finalizeSubmission = async (currentAnswers: Record<string, string>) => {
@@ -346,19 +382,14 @@ function PracticeContent() {
             return
         }
 
-        questions.forEach(q => {
+        questions.forEach((q: Question) => {
             const userAnswer = (currentAnswers[q.id] || "").trim().toLowerCase()
             const correctAnswer = (q.answer || "").trim().toLowerCase()
 
             if (!correctAnswer) {
                 newResults[q.id] = null // Mark as not graded
             } else {
-                // Normalize answers for comparison:
-                // 1. Replace separators (;,，) with spaces
-                // 2. Collapse multiple spaces to single space
-                // 3. Trim and lowercase
                 const normalize = (str: string) => str.replace(/[;；,，]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase()
-
                 const isCorrect = userAnswer !== "" && normalize(userAnswer) === normalize(correctAnswer)
                 newResults[q.id] = isCorrect
 
@@ -376,8 +407,6 @@ function PracticeContent() {
         setResults(newResults)
         setSubmitted(true)
 
-        // Async save to DB
-        // 1. Save results
         const { error: resultsError } = await supabase
             .from('quiz_results')
             .insert(submissionData)
@@ -388,14 +417,12 @@ function PracticeContent() {
             return
         }
 
-        // 2. Update user_progress for mastery stats
         const progressUpdates = submissionData.map(d => ({
             user_id: d.user_id,
             question_id: d.question_id,
             status: d.is_correct ? 'mastered' : 'learning',
             last_practiced_at: new Date().toISOString(),
-            attempts: 1 // This will be incremented via upsert if we had more complex logic, 
-            // but for now we just mark the status
+            attempts: 1
         }))
 
         if (progressUpdates.length > 0) {
@@ -411,8 +438,9 @@ function PracticeContent() {
 
     // Keep handleRecognized for manual clicks
     const handleRecognized = (questionId: string, text: string) => {
-        setAnswers(prev => ({ ...prev, [questionId]: text }))
+        setAnswers((prev: Record<string, string>) => ({ ...prev, [questionId]: text }))
     }
+
 
     if (loading) return <div>Loading...</div>
 
