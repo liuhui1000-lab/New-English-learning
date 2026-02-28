@@ -17,6 +17,10 @@ export interface HandwritingCanvasRef {
     getDataUrl: () => string | undefined;
 }
 
+// Palm rejection: reject touches where contact area exceeds this threshold (px²)
+// A fingertip is roughly 10x10 to 20x20 px on most screens; a palm is much larger.
+const PALM_AREA_THRESHOLD = 800; // width * height > 800 = likely palm, reject
+
 const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProps>(({
     width = "100%",
     height = 200,
@@ -27,8 +31,12 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
     onStrokeEnd
 }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [isDrawing, setIsDrawing] = useState(false);
     const [hasContent, setHasContent] = useState(false);
+
+    // Track the active pointerId so only one pointer draws at a time
+    const activePointerIdRef = useRef<number | null>(null);
+    // Store last position for bezier midpoint smoothing
+    const lastPosRef = useRef<{ x: number; y: number } | null>(null);
 
     useImperativeHandle(ref, () => ({
         clear: handleClear,
@@ -42,12 +50,11 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Set initial canvas size based on client size
         const resizeCanvas = () => {
             const parent = canvas.parentElement;
             if (parent) {
                 canvas.width = parent.clientWidth;
-                canvas.height = typeof height === 'number' ? height : parseInt(height);
+                canvas.height = typeof height === 'number' ? height : parseInt(height as string);
 
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
@@ -58,43 +65,103 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
 
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
-
         return () => window.removeEventListener('resize', resizeCanvas);
     }, [height, color, lineWidth]);
 
-    const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+    // --- Pointer Events (replaces Touch + Mouse events) ---
 
-        setIsDrawing(true);
-        setHasContent(true);
-
-        const pos = getPos(e);
-        ctx.beginPath();
-        ctx.moveTo(pos.x, pos.y);
+    const getCanvasPos = (e: React.PointerEvent): { x: number; y: number } => {
+        const canvas = canvasRef.current!;
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+        };
     };
 
-    const draw = (e: React.MouseEvent | React.TouchEvent) => {
-        if (!isDrawing) return;
+    const isPalmContact = (e: React.PointerEvent): boolean => {
+        // width and height are the contact dimensions reported by the hardware.
+        // Pen tip or fingertip area is small; palm is much larger.
+        // Only apply to touch type; pen type naturally has small contact.
+        if (e.pointerType === 'pen') return false;
+        const area = (e.width || 1) * (e.height || 1);
+        return area > PALM_AREA_THRESHOLD;
+    };
+
+    const handlePointerDown = (e: React.PointerEvent) => {
+        // Reject palm contacts
+        if (isPalmContact(e)) return;
+
+        // Only one pointer at a time - reject subsequent pointers
+        if (activePointerIdRef.current !== null) return;
+
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (!ctx || !canvas) return;
+
+        // Capture this pointer so it stays tracked even if it leaves the element
+        canvas.setPointerCapture(e.pointerId);
+        activePointerIdRef.current = e.pointerId;
+
+        const pos = getCanvasPos(e);
+        lastPosRef.current = pos;
+
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+
+        setHasContent(true);
+    };
+
+    const handlePointerMove = (e: React.PointerEvent) => {
+        // Only handle the active pointer
+        if (e.pointerId !== activePointerIdRef.current) return;
+        if (isPalmContact(e)) return;
+
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
         if (!ctx) return;
 
-        const pos = getPos(e);
-        ctx.lineTo(pos.x, pos.y);
-        ctx.stroke();
+        const pos = getCanvasPos(e);
+        const last = lastPosRef.current;
 
-        // Prevent scrolling when drawing on touch devices
-        if (e.cancelable) e.preventDefault();
+        if (last) {
+            // Bezier midpoint smoothing: draw a quadratic curve through the midpoint
+            // This smooths out jitter while keeping strokes looking natural.
+            const midX = (last.x + pos.x) / 2;
+            const midY = (last.y + pos.y) / 2;
+            ctx.quadraticCurveTo(last.x, last.y, midX, midY);
+            ctx.stroke();
+
+            // Start a new sub-path from the midpoint to avoid accumulation artifacts
+            ctx.beginPath();
+            ctx.moveTo(midX, midY);
+        }
+
+        lastPosRef.current = pos;
     };
 
-    const stopDrawing = () => {
-        if (isDrawing) {
-            setIsDrawing(false);
-            if (onStrokeEnd) onStrokeEnd();
+    const handlePointerUp = (e: React.PointerEvent) => {
+        if (e.pointerId !== activePointerIdRef.current) return;
+
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (ctx && lastPosRef.current) {
+            // Draw final segment to the exact release point
+            ctx.lineTo(e.clientX - canvas!.getBoundingClientRect().left, e.clientY - canvas!.getBoundingClientRect().top);
+            ctx.stroke();
         }
+
+        activePointerIdRef.current = null;
+        lastPosRef.current = null;
+
+        if (onStrokeEnd) onStrokeEnd();
+    };
+
+    const handlePointerCancel = (e: React.PointerEvent) => {
+        if (e.pointerId !== activePointerIdRef.current) return;
+        activePointerIdRef.current = null;
+        lastPosRef.current = null;
+        if (onStrokeEnd) onStrokeEnd();
     };
 
     const handleClear = () => {
@@ -103,24 +170,8 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
         if (ctx && canvas) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             setHasContent(false);
-        }
-    };
-
-    const getPos = (e: React.MouseEvent | React.TouchEvent) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return { x: 0, y: 0 };
-        const rect = canvas.getBoundingClientRect();
-
-        if ('touches' in e) {
-            return {
-                x: e.touches[0].clientX - rect.left,
-                y: e.touches[0].clientY - rect.top
-            };
-        } else {
-            return {
-                x: e.clientX - rect.left,
-                y: e.clientY - rect.top
-            };
+            activePointerIdRef.current = null;
+            lastPosRef.current = null;
         }
     };
 
@@ -133,13 +184,13 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
             )}
             <canvas
                 ref={canvasRef}
-                onMouseDown={startDrawing}
-                onMouseMove={draw}
-                onMouseUp={stopDrawing}
-                onMouseOut={stopDrawing}
-                onTouchStart={startDrawing}
-                onTouchMove={draw}
-                onTouchEnd={stopDrawing}
+                // Pointer Events (handles pen, touch, mouse uniformly)
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerCancel}
+                // touch-none: prevent browser scroll/zoom gestures inside the canvas
+                // All scroll must happen outside the canvas area (per user design decision)
                 className="w-full touch-none cursor-crosshair"
                 style={{ height }}
             />
