@@ -37,6 +37,8 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
     const activePointerIdRef = useRef<number | null>(null);
     // Store last position for bezier midpoint smoothing
     const lastPosRef = useRef<{ x: number; y: number } | null>(null);
+    // Timer ref for Active Pen Mode cooldown
+    const penModeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useImperativeHandle(ref, () => ({
         clear: handleClear,
@@ -68,6 +70,42 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
         return () => window.removeEventListener('resize', resizeCanvas);
     }, [height, color, lineWidth]);
 
+    // Active Pen Mode: helpers to lock / unlock body selection
+    // Cooldown is 1200ms — long enough to cover student writing pauses.
+    const PEN_MODE_COOLDOWN_MS = 1200;
+
+    const activatePenMode = () => {
+        // Cancel any pending deactivation
+        if (penModeTimerRef.current) {
+            clearTimeout(penModeTimerRef.current);
+            penModeTimerRef.current = null;
+        }
+        // Disable text selection on the whole page while pen is active
+        document.body.style.userSelect = 'none';
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (document.body.style as any).WebkitUserSelect = 'none';
+    };
+
+    const schedulePenModeDeactivation = () => {
+        if (penModeTimerRef.current) clearTimeout(penModeTimerRef.current);
+        penModeTimerRef.current = setTimeout(() => {
+            document.body.style.userSelect = '';
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (document.body.style as any).WebkitUserSelect = '';
+            penModeTimerRef.current = null;
+        }, PEN_MODE_COOLDOWN_MS);
+    };
+
+    // Cleanup: restore body styles if component unmounts while pen mode is active
+    useEffect(() => {
+        return () => {
+            if (penModeTimerRef.current) clearTimeout(penModeTimerRef.current);
+            document.body.style.userSelect = '';
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (document.body.style as any).WebkitUserSelect = '';
+        };
+    }, []);
+
     // --- Pointer Events (replaces Touch + Mouse events) ---
 
     const getCanvasPos = (e: React.PointerEvent): { x: number; y: number } => {
@@ -91,10 +129,11 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
     const handlePointerDown = (e: React.PointerEvent) => {
         // CRITICAL: Prevent default immediately to stop Safari/iPadOS from treating
         // pen touch-down as the start of a text-selection drag gesture.
-        // Without this, pointerdown initiates selection that picks up the next question's
-        // number text as the pen moves — even though pointermove also has preventDefault(),
-        // that fires too late to cancel the already-started selection.
         e.preventDefault();
+
+        // Activate pen mode: disable text selection on entire page to prevent
+        // palm contact outside the canvas from selecting nearby text.
+        activatePenMode();
 
         // Reject palm contacts
         if (isPalmContact(e)) return;
@@ -172,6 +211,9 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
         activePointerIdRef.current = null;
         lastPosRef.current = null;
 
+        // Start 1200ms cooldown before restoring page selection (covers student writing pauses)
+        schedulePenModeDeactivation();
+
         if (onStrokeEnd) onStrokeEnd();
     };
 
@@ -179,6 +221,7 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
         if (e.pointerId !== activePointerIdRef.current) return;
         activePointerIdRef.current = null;
         lastPosRef.current = null;
+        schedulePenModeDeactivation();
         if (onStrokeEnd) onStrokeEnd();
     };
 
