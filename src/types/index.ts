@@ -27,6 +27,7 @@ export interface Question {
     created_at: string;
     is_ai_analyzed?: boolean;
     analyzed_at?: string;
+    ai_update_locked?: boolean; // When true, AI batch analysis will skip updating this question
 }
 
 export interface StudyRecord {

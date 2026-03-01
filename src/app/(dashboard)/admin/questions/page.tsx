@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 import { Question, QuestionType } from "@/types"
-import { Search, Filter, Cpu, CheckCircle, AlertCircle, Trash, Edit2, ChevronLeft, ChevronRight, Save } from "lucide-react"
+import { Search, Filter, Cpu, CheckCircle, AlertCircle, Trash, Edit2, ChevronLeft, ChevronRight, Save, Lock } from "lucide-react"
 import MultiSelect from "@/components/MultiSelect"
 
 export default function QuestionBankPage() {
@@ -37,6 +37,10 @@ export default function QuestionBankPage() {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false)
     const [editingQuestion, setEditingQuestion] = useState<Question | null>(null)
     const [isSaving, setIsSaving] = useState(false)
+
+    // Locked Questions Report Modal
+    const [skippedItems, setSkippedItems] = useState<{ content: string, answer: string, suggestedAnswer: string }[]>([])
+    const [isReportModalOpen, setIsReportModalOpen] = useState(false)
 
     useEffect(() => {
         setPage(1)
@@ -174,10 +178,12 @@ export default function QuestionBankPage() {
         try {
             const { data: targets } = await supabase
                 .from('questions')
-                .select('id, content, type, tags, answer')
+                .select('id, content, type, tags, answer, ai_update_locked')
                 .in('id', idsToProcess)
 
             if (!targets) throw new Error("无法获取题目内容")
+
+            const newSkippedItems: { content: string, answer: string, suggestedAnswer: string }[] = []
 
             for (let i = 0; i < targets.length; i += batchSize) {
                 const batch = targets.slice(i, i + batchSize)
@@ -209,6 +215,17 @@ export default function QuestionBankPage() {
                     const analyzedAt = new Date().toISOString()
                     const updates = results.map((r: any, idx: number) => {
                         const q = batch[idx]
+
+                        if (q.ai_update_locked) {
+                            // Don't modify locked questions, just record them for the report
+                            newSkippedItems.push({
+                                content: q.content,
+                                answer: q.answer || '',
+                                suggestedAnswer: r.answer || ''
+                            })
+                            return null;
+                        }
+
                         const newTags = new Set(q.tags || [])
                         if (r.topic) newTags.add(`Topic:${r.topic}`)
                         if (r.key_point) newTags.add(`Point:${r.key_point}`)
@@ -217,19 +234,21 @@ export default function QuestionBankPage() {
                         return {
                             id: q.id,
                             tags: Array.from(newTags),
-                            answer: (!q.answer && r.answer) ? r.answer : q.answer,
+                            answer: r.answer || q.answer, // Always overwrite unlocked questions
                             explanation: r.explanation || "",
                             is_ai_analyzed: true,
                             analyzed_at: analyzedAt
                         }
-                    })
+                    }).filter(Boolean); // Remove nulls (locked questions)
 
-                    const { error: updateError } = await supabase
-                        .from('questions')
-                        .upsert(updates)
+                    if (updates.length > 0) {
+                        const { error: updateError } = await supabase
+                            .from('questions')
+                            .upsert(updates)
 
-                    if (updateError) {
-                        console.error("Update failed", updateError)
+                        if (updateError) {
+                            console.error("Update failed", updateError)
+                        }
                     }
 
                 } catch (batchErr) {
@@ -243,6 +262,11 @@ export default function QuestionBankPage() {
             setStatusMessage("分析完成")
             fetchQuestions()
             setSelectedIds(new Set())
+
+            if (newSkippedItems.length > 0) {
+                setSkippedItems(newSkippedItems)
+                setIsReportModalOpen(true)
+            }
 
         } catch (err: any) {
             alert("分析过程出错: " + err.message)
@@ -269,7 +293,8 @@ export default function QuestionBankPage() {
                     answer: editingQuestion.answer,
                     type: editingQuestion.type,
                     tags: editingQuestion.tags,
-                    explanation: editingQuestion.explanation
+                    explanation: editingQuestion.explanation,
+                    ai_update_locked: editingQuestion.ai_update_locked
                 })
                 .eq('id', editingQuestion.id)
 
@@ -511,6 +536,11 @@ export default function QuestionBankPage() {
                                                 <span className="flex items-center text-green-600 text-xs font-medium">
                                                     <CheckCircle className="w-3 h-3 mr-1" /> 已分析
                                                 </span>
+                                                {q.ai_update_locked && (
+                                                    <span className="flex items-center text-amber-600 text-xs font-medium mt-1">
+                                                        <Lock className="w-3 h-3 mr-1" /> 已锁定
+                                                    </span>
+                                                )}
                                                 {q.analyzed_at && (
                                                     <div className="text-[10px] text-gray-400 mt-0.5">
                                                         {new Date(q.analyzed_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -663,6 +693,19 @@ export default function QuestionBankPage() {
                                                     className="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm font-serif"
                                                 />
                                             </div>
+
+                                            <div className="flex items-center mt-4 pt-4 border-t border-gray-200">
+                                                <input
+                                                    id="ai-lock-checkbox"
+                                                    type="checkbox"
+                                                    checked={editingQuestion.ai_update_locked || false}
+                                                    onChange={e => setEditingQuestion({ ...editingQuestion, ai_update_locked: e.target.checked })}
+                                                    className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                                                />
+                                                <label htmlFor="ai-lock-checkbox" className="ml-2 block text-sm text-gray-900 font-medium">
+                                                    🔒 锁定此题（禁止 AI 自动更新答案、标签和解析）
+                                                </label>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -682,6 +725,67 @@ export default function QuestionBankPage() {
                                     className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
                                 >
                                     取消
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Skipped/Locked Items Report Modal */}
+            {isReportModalOpen && (
+                <div className="fixed inset-0 z-50 overflow-y-auto">
+                    <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+                        <div className="fixed inset-0 transition-opacity" aria-hidden="true" onClick={() => setIsReportModalOpen(false)}>
+                            <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
+                        </div>
+
+                        <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+
+                        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full relative z-50">
+                            <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                                <div className="sm:flex sm:items-start">
+                                    <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-amber-100 sm:mx-0 sm:h-10 sm:w-10">
+                                        <Lock className="h-6 w-6 text-amber-600" aria-hidden="true" />
+                                    </div>
+                                    <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+                                        <h3 className="text-lg leading-6 font-medium text-gray-900">
+                                            分析完成，但以下 {skippedItems.length} 道题目已被锁定
+                                        </h3>
+                                        <div className="mt-2">
+                                            <p className="text-sm text-gray-500 mb-4">
+                                                这些题目设置了“禁止 AI 更新”，因此跳过了处理。未锁定的题目已正常更新。
+                                            </p>
+                                            <div className="max-h-[60vh] overflow-y-auto border border-gray-200 rounded-md">
+                                                <table className="min-w-full divide-y divide-gray-200">
+                                                    <thead className="bg-gray-50 sticky top-0">
+                                                        <tr>
+                                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">题目内容</th>
+                                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-32">当前答案</th>
+                                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-32">AI建议答案</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="bg-white divide-y divide-gray-200">
+                                                        {skippedItems.map((item, idx) => (
+                                                            <tr key={idx} className="hover:bg-gray-50">
+                                                                <td className="px-4 py-3 text-sm font-mono text-gray-900 border-r">{item.content}</td>
+                                                                <td className="px-4 py-3 text-sm font-bold text-gray-900 border-r">{item.answer}</td>
+                                                                <td className="px-4 py-3 text-sm text-amber-600">{item.suggestedAnswer}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsReportModalOpen(false)}
+                                    className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:ml-3 sm:w-auto sm:text-sm"
+                                >
+                                    我知道了
                                 </button>
                             </div>
                         </div>

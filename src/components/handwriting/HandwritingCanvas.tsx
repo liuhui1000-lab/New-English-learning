@@ -191,9 +191,6 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
         lastPosRef.current = pos;
     };
 
-    // Suppress hover-entry gestures (Apple Pencil / Windows Ink entering the digitizer range)
-    const handlePointerOver = (e: React.PointerEvent) => e.preventDefault();
-
     // Suppress context menu from pen barrel button or long-press hover (all platforms)
     const handleContextMenu = (e: React.MouseEvent) => e.preventDefault();
 
@@ -264,8 +261,6 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerCancel}
-                onPointerOver={handlePointerOver}
-                onPointerEnter={handlePointerOver}
                 // Prevent context menu: pen barrel button / long-press hover on all platforms
                 onContextMenu={handleContextMenu}
                 // touch-none: prevent browser scroll/zoom gestures inside the canvas
