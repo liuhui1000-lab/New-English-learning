@@ -19,7 +19,11 @@ export interface HandwritingCanvasRef {
 
 // Palm rejection: reject touches where contact area exceeds this threshold (px²)
 // A fingertip is roughly 10x10 to 20x20 px on most screens; a palm is much larger.
-const PALM_AREA_THRESHOLD = 800; // width * height > 800 = likely palm, reject
+const PALM_AREA_THRESHOLD = 800;
+
+// Active Pen Mode cooldown: keep body user-select:none for this long after pen lifts,
+// covering student writing pauses so palm contact can't select surrounding text.
+const PEN_MODE_COOLDOWN_MS = 1200;
 
 const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProps>(({
     width = "100%",
@@ -33,213 +37,13 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [hasContent, setHasContent] = useState(false);
 
-    // Track the active pointerId so only one pointer draws at a time
+    // Refs so native event listeners always get the latest values without stale closures.
     const activePointerIdRef = useRef<number | null>(null);
-    // Store last position for bezier midpoint smoothing
     const lastPosRef = useRef<{ x: number; y: number } | null>(null);
-    // Timer ref for Active Pen Mode cooldown
     const penModeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    useImperativeHandle(ref, () => ({
-        clear: handleClear,
-        getDataUrl: () => canvasRef.current?.toDataURL()
-    }));
-
-    useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        const resizeCanvas = () => {
-            const parent = canvas.parentElement;
-            if (parent) {
-                canvas.width = parent.clientWidth;
-                canvas.height = typeof height === 'number' ? height : parseInt(height as string);
-
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                ctx.strokeStyle = color;
-                ctx.lineWidth = lineWidth;
-            }
-        };
-
-        resizeCanvas();
-        window.addEventListener('resize', resizeCanvas);
-        return () => window.removeEventListener('resize', resizeCanvas);
-    }, [height, color, lineWidth]);
-
-    // Active Pen Mode: helpers to lock / unlock body selection
-    // Cooldown is 1200ms — long enough to cover student writing pauses.
-    const PEN_MODE_COOLDOWN_MS = 1200;
-
-    const activatePenMode = () => {
-        // Cancel any pending deactivation
-        if (penModeTimerRef.current) {
-            clearTimeout(penModeTimerRef.current);
-            penModeTimerRef.current = null;
-        }
-        // Disable text selection on the whole page while pen is active
-        document.body.style.userSelect = 'none';
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (document.body.style as any).WebkitUserSelect = 'none';
-    };
-
-    const schedulePenModeDeactivation = () => {
-        if (penModeTimerRef.current) clearTimeout(penModeTimerRef.current);
-        penModeTimerRef.current = setTimeout(() => {
-            document.body.style.userSelect = '';
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (document.body.style as any).WebkitUserSelect = '';
-            penModeTimerRef.current = null;
-        }, PEN_MODE_COOLDOWN_MS);
-    };
-
-    // Cleanup: restore body styles if component unmounts while pen mode is active
-    useEffect(() => {
-        return () => {
-            if (penModeTimerRef.current) clearTimeout(penModeTimerRef.current);
-            document.body.style.userSelect = '';
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (document.body.style as any).WebkitUserSelect = '';
-        };
-    }, []);
-
-    // CRITICAL: Native passive:false listeners directly on the canvas element.
-    // React attaches handlers at the root container via event delegation, so
-    // React's e.preventDefault() fires AFTER the browser has already decided
-    // whether to start a gesture and potentially fire pointercancel.
-    // Native listeners on the element fire FIRST, synchronously, before any
-    // browser gesture recognition — preventing pointercancel from wiping out
-    // activePointerIdRef before the first pointermove can draw anything.
-    useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const prevent = (e: Event) => e.preventDefault();
-        canvas.addEventListener('pointerdown', prevent, { passive: false });
-        canvas.addEventListener('pointermove', prevent, { passive: false });
-        return () => {
-            canvas.removeEventListener('pointerdown', prevent);
-            canvas.removeEventListener('pointermove', prevent);
-        };
-    }, []);
-
-    // --- Pointer Events (replaces Touch + Mouse events) ---
-
-    const getCanvasPos = (e: React.PointerEvent): { x: number; y: number } => {
-        const canvas = canvasRef.current!;
-        const rect = canvas.getBoundingClientRect();
-        return {
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top,
-        };
-    };
-
-    const isPalmContact = (e: React.PointerEvent): boolean => {
-        // width and height are the contact dimensions reported by the hardware.
-        // Pen tip or fingertip area is small; palm is much larger.
-        // Only apply to touch type; pen type naturally has small contact.
-        if (e.pointerType === 'pen') return false;
-        const area = (e.width || 1) * (e.height || 1);
-        return area > PALM_AREA_THRESHOLD;
-    };
-
-    const handlePointerDown = (e: React.PointerEvent) => {
-        // CRITICAL: Prevent default immediately to stop Safari/iPadOS from treating
-        // pen touch-down as the start of a text-selection drag gesture.
-        e.preventDefault();
-
-        // Activate pen mode: disable text selection on entire page to prevent
-        // palm contact outside the canvas from selecting nearby text.
-        activatePenMode();
-
-        // Reject palm contacts
-        if (isPalmContact(e)) return;
-
-        // Only one pointer at a time - reject subsequent pointers
-        if (activePointerIdRef.current !== null) return;
-
-        const canvas = canvasRef.current;
-        const ctx = canvas?.getContext('2d');
-        if (!ctx || !canvas) return;
-
-        // Capture this pointer so it stays tracked even if it leaves the element
-        canvas.setPointerCapture(e.pointerId);
-        activePointerIdRef.current = e.pointerId;
-
-        const pos = getCanvasPos(e);
-        lastPosRef.current = pos;
-
-        ctx.beginPath();
-        ctx.moveTo(pos.x, pos.y);
-
-        setHasContent(true);
-    };
-
-    const handlePointerMove = (e: React.PointerEvent) => {
-        // CRITICAL: Always preventDefault on pointermove, even during hover (buttons=0).
-        // Without this, iPadOS Safari + Apple Pencil hover generates a drag-select gesture
-        // that can trigger "select all" on surrounding text. Same issue on Android Chrome.
-        e.preventDefault();
-
-        // Only draw when this is the active pointer
-        if (e.pointerId !== activePointerIdRef.current) return;
-        if (isPalmContact(e)) return;
-
-        const canvas = canvasRef.current;
-        const ctx = canvas?.getContext('2d');
-        if (!ctx) return;
-
-        const pos = getCanvasPos(e);
-        const last = lastPosRef.current;
-
-        if (last) {
-            // Bezier midpoint smoothing: draw a quadratic curve through the midpoint
-            // This smooths out jitter while keeping strokes looking natural.
-            const midX = (last.x + pos.x) / 2;
-            const midY = (last.y + pos.y) / 2;
-            ctx.quadraticCurveTo(last.x, last.y, midX, midY);
-            ctx.stroke();
-
-            // Start a new sub-path from the midpoint to avoid accumulation artifacts
-            ctx.beginPath();
-            ctx.moveTo(midX, midY);
-        }
-
-        lastPosRef.current = pos;
-    };
-
-    // Suppress context menu from pen barrel button or long-press hover (all platforms)
-    const handleContextMenu = (e: React.MouseEvent) => e.preventDefault();
-
-    const handlePointerUp = (e: React.PointerEvent) => {
-        if (e.pointerId !== activePointerIdRef.current) return;
-
-        const canvas = canvasRef.current;
-        const ctx = canvas?.getContext('2d');
-        if (ctx && lastPosRef.current) {
-            // Draw final segment to the exact release point
-            ctx.lineTo(e.clientX - canvas!.getBoundingClientRect().left, e.clientY - canvas!.getBoundingClientRect().top);
-            ctx.stroke();
-        }
-
-        activePointerIdRef.current = null;
-        lastPosRef.current = null;
-
-        // Start 1200ms cooldown before restoring page selection (covers student writing pauses)
-        schedulePenModeDeactivation();
-
-        if (onStrokeEnd) onStrokeEnd();
-    };
-
-    const handlePointerCancel = (e: React.PointerEvent) => {
-        if (e.pointerId !== activePointerIdRef.current) return;
-        activePointerIdRef.current = null;
-        lastPosRef.current = null;
-        schedulePenModeDeactivation();
-        if (onStrokeEnd) onStrokeEnd();
-    };
+    // Wrap onStrokeEnd in a ref so native listeners always call the latest version.
+    const onStrokeEndRef = useRef(onStrokeEnd);
+    useEffect(() => { onStrokeEndRef.current = onStrokeEnd; }, [onStrokeEnd]);
 
     const handleClear = () => {
         const canvas = canvasRef.current;
@@ -252,10 +56,185 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
         }
     };
 
-    // Inline style constants to prevent selection on all platforms:
-    // - userSelect / WebkitUserSelect: block text drag-selection (all browsers)
-    // - WebkitTouchCallout: blocks the iOS "Copy / Select All" callout on long-press
-    //   (cannot be done via Tailwind; must be inline or global CSS)
+    useImperativeHandle(ref, () => ({
+        clear: handleClear,
+        getDataUrl: () => canvasRef.current?.toDataURL()
+    }));
+
+    // ── Resize: keep canvas pixel dimensions matching its CSS layout ──
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const resizeCanvas = () => {
+            const parent = canvas.parentElement;
+            if (parent) {
+                canvas.width = parent.clientWidth;
+                canvas.height = typeof height === 'number' ? height : parseInt(height as string);
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.strokeStyle = color;
+                ctx.lineWidth = lineWidth;
+            }
+        };
+
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        return () => window.removeEventListener('resize', resizeCanvas);
+    }, [height, color, lineWidth]);
+
+    // ── Cleanup body styles on unmount ──
+    useEffect(() => {
+        return () => {
+            if (penModeTimerRef.current) clearTimeout(penModeTimerRef.current);
+            document.body.style.userSelect = '';
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (document.body.style as any).WebkitUserSelect = '';
+        };
+    }, []);
+
+    // ── All drawing logic as native listeners with { passive: false } ──
+    //
+    // WHY NATIVE LISTENERS:
+    // React registers event handlers via delegation at the root container.
+    // The event must bubble all the way up before React calls our handler —
+    // by that time the browser has already decided whether to start a gesture
+    // and may have fired `pointercancel`, clearing activePointerIdRef before
+    // any stroke can be drawn. Native listeners on the element fire FIRST,
+    // synchronously, giving us a guaranteed chance to preventDefault before
+    // the browser's gesture recognizer runs.
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        // ── Active Pen Mode helpers (defined inside effect: stable, no stale closures) ──
+        const activatePenMode = () => {
+            if (penModeTimerRef.current) {
+                clearTimeout(penModeTimerRef.current);
+                penModeTimerRef.current = null;
+            }
+            document.body.style.userSelect = 'none';
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (document.body.style as any).WebkitUserSelect = 'none';
+        };
+
+        const schedulePenModeDeactivation = () => {
+            if (penModeTimerRef.current) clearTimeout(penModeTimerRef.current);
+            penModeTimerRef.current = setTimeout(() => {
+                document.body.style.userSelect = '';
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (document.body.style as any).WebkitUserSelect = '';
+                penModeTimerRef.current = null;
+            }, PEN_MODE_COOLDOWN_MS);
+        };
+
+        // ── Helpers ──
+        const getPos = (e: PointerEvent) => {
+            const rect = canvas.getBoundingClientRect();
+            return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        };
+
+        const isPalmContact = (e: PointerEvent) => {
+            if (e.pointerType === 'pen') return false;
+            return (e.width || 1) * (e.height || 1) > PALM_AREA_THRESHOLD;
+        };
+
+        // ── Event handlers ──
+        const onPointerDown = (e: PointerEvent) => {
+            e.preventDefault();
+            activatePenMode();
+
+            if (isPalmContact(e)) return;
+            if (activePointerIdRef.current !== null) return;
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+
+            canvas.setPointerCapture(e.pointerId);
+            activePointerIdRef.current = e.pointerId;
+
+            const pos = getPos(e);
+            lastPosRef.current = pos;
+
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+
+            setHasContent(true);
+        };
+
+        const onPointerMove = (e: PointerEvent) => {
+            e.preventDefault();
+
+            if (e.pointerId !== activePointerIdRef.current) return;
+            if (isPalmContact(e)) return;
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+
+            const pos = getPos(e);
+            const last = lastPosRef.current;
+
+            if (last) {
+                // Bezier midpoint smoothing for natural-looking strokes
+                const midX = (last.x + pos.x) / 2;
+                const midY = (last.y + pos.y) / 2;
+                ctx.quadraticCurveTo(last.x, last.y, midX, midY);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(midX, midY);
+            }
+
+            lastPosRef.current = pos;
+        };
+
+        const onPointerUp = (e: PointerEvent) => {
+            e.preventDefault();
+            if (e.pointerId !== activePointerIdRef.current) return;
+
+            const ctx = canvas.getContext('2d');
+            if (ctx && lastPosRef.current) {
+                const rect = canvas.getBoundingClientRect();
+                ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+                ctx.stroke();
+            }
+
+            activePointerIdRef.current = null;
+            lastPosRef.current = null;
+            schedulePenModeDeactivation();
+            onStrokeEndRef.current?.();
+        };
+
+        const onPointerCancel = (e: PointerEvent) => {
+            e.preventDefault();
+            if (e.pointerId !== activePointerIdRef.current) return;
+            activePointerIdRef.current = null;
+            lastPosRef.current = null;
+            schedulePenModeDeactivation();
+            onStrokeEndRef.current?.();
+        };
+
+        const onContextMenu = (e: Event) => e.preventDefault();
+
+        // ── Register all listeners with passive: false ──
+        const opts: AddEventListenerOptions = { passive: false };
+        canvas.addEventListener('pointerdown', onPointerDown, opts);
+        canvas.addEventListener('pointermove', onPointerMove, opts);
+        canvas.addEventListener('pointerup', onPointerUp, opts);
+        canvas.addEventListener('pointercancel', onPointerCancel, opts);
+        canvas.addEventListener('contextmenu', onContextMenu);
+
+        return () => {
+            canvas.removeEventListener('pointerdown', onPointerDown);
+            canvas.removeEventListener('pointermove', onPointerMove);
+            canvas.removeEventListener('pointerup', onPointerUp);
+            canvas.removeEventListener('pointercancel', onPointerCancel);
+            canvas.removeEventListener('contextmenu', onContextMenu);
+        };
+    }, []); // Runs once on mount — all mutable state accessed via refs
+
+    // Inline styles: prevent text selection and iOS callout on the canvas wrapper and canvas itself.
     const noSelectStyle: React.CSSProperties = {
         userSelect: 'none',
         WebkitUserSelect: 'none',
@@ -275,15 +254,8 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
             )}
             <canvas
                 ref={canvasRef}
-                // Pointer Events (handles pen, touch, mouse uniformly)
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerCancel}
-                // Prevent context menu: pen barrel button / long-press hover on all platforms
-                onContextMenu={handleContextMenu}
-                // touch-none: prevent browser scroll/zoom gestures inside the canvas
-                // All scroll must happen outside the canvas area (per user design decision)
+                // No React pointer event handlers — all drawing handled by native listeners above.
+                // touch-none: CSS hint to browser not to handle touch gestures on this element.
                 className="w-full touch-none cursor-crosshair"
                 style={{ height, ...noSelectStyle }}
             />
