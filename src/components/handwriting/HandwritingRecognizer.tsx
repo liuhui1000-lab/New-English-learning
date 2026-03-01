@@ -314,7 +314,7 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 onStrokeEnd={handleStrokeEnd}
             />
 
-            <div className="absolute bottom-2 right-12 flex space-x-2">
+            <div className="absolute top-2 right-12 flex space-x-2">
                 <button
                     onClick={handleRecognizeClick}
                     disabled={recognizing}
@@ -331,13 +331,13 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
 
             {/* Auto-Saving Indicator */}
             {isAutoRecognizing && (
-                <div className="absolute top-2 right-2 bg-indigo-50 text-indigo-600 text-xs px-2 py-1 rounded-full animate-pulse flex items-center">
+                <div className="absolute top-2 left-2 bg-indigo-50 text-indigo-600 text-xs px-2 py-1 rounded-full animate-pulse flex items-center">
                     <RefreshCw className="w-3 h-3 mr-1 animate-spin" /> 自动识别中...
                 </div>
             )}
 
             {lastRecognized && !recognizing && !isAutoRecognizing && (
-                <div className="absolute top-2 right-2 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full animate-in fade-in slide-in-from-bottom-2 flex items-center">
+                <div className="absolute top-2 left-2 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full animate-in fade-in slide-in-from-bottom-2 flex items-center">
                     <Check className="w-3 h-3 mr-1" /> 已填入: {lastRecognized}
                 </div>
             )}
