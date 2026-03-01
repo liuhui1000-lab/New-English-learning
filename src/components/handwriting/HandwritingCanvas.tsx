@@ -18,8 +18,8 @@ export interface HandwritingCanvasRef {
 }
 
 // Palm rejection: reject touches where contact area exceeds this threshold (px²)
-// A fingertip is roughly 10x10 to 20x20 px on most screens; a palm is much larger.
-const PALM_AREA_THRESHOLD = 800;
+// A fingertip is roughly 10x10 to 40x40 px; a palm is much larger.
+const PALM_AREA_THRESHOLD = 2500;
 
 // Active Pen Mode cooldown: keep body user-select:none for this long after pen lifts,
 // covering student writing pauses so palm contact can't select surrounding text.
@@ -71,12 +71,21 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
         const resizeCanvas = () => {
             const parent = canvas.parentElement;
             if (parent) {
-                canvas.width = parent.clientWidth;
-                canvas.height = typeof height === 'number' ? height : parseInt(height as string);
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                ctx.strokeStyle = color;
-                ctx.lineWidth = lineWidth;
+                const targetWidth = parent.clientWidth;
+                const targetHeightNum = typeof height === 'number' ? height : parseInt(height as string);
+
+                // CRITICAL: Setting width/height ALWAYS clears the canvas.
+                // Only update if dimensions actually changed to avoid clearing on every render.
+                if (canvas.width !== targetWidth || canvas.height !== targetHeightNum) {
+                    canvas.width = targetWidth;
+                    canvas.height = targetHeightNum;
+
+                    // Context state is lost when width/height changes, so restore it
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = lineWidth;
+                }
             }
         };
 
@@ -208,6 +217,7 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
 
         const onPointerCancel = (e: PointerEvent) => {
             e.preventDefault();
+            console.warn("Handwriting: Pointer Cancelled by System", e.pointerId);
             if (e.pointerId !== activePointerIdRef.current) return;
             activePointerIdRef.current = null;
             lastPosRef.current = null;
@@ -219,11 +229,17 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
 
         // ── Register all listeners with passive: false ──
         const opts: AddEventListenerOptions = { passive: false };
+        const prevent = (e: Event) => e.preventDefault();
+
         canvas.addEventListener('pointerdown', onPointerDown, opts);
         canvas.addEventListener('pointermove', onPointerMove, opts);
         canvas.addEventListener('pointerup', onPointerUp, opts);
         canvas.addEventListener('pointercancel', onPointerCancel, opts);
         canvas.addEventListener('contextmenu', onContextMenu);
+
+        // Also explicitly block touch events at the native level to stop Safari's gesture recognizer
+        canvas.addEventListener('touchstart', prevent, opts);
+        canvas.addEventListener('touchmove', prevent, opts);
 
         return () => {
             canvas.removeEventListener('pointerdown', onPointerDown);
@@ -231,6 +247,8 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
             canvas.removeEventListener('pointerup', onPointerUp);
             canvas.removeEventListener('pointercancel', onPointerCancel);
             canvas.removeEventListener('contextmenu', onContextMenu);
+            canvas.removeEventListener('touchstart', prevent);
+            canvas.removeEventListener('touchmove', prevent);
         };
     }, []); // Runs once on mount — all mutable state accessed via refs
 
