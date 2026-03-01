@@ -89,6 +89,13 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
     };
 
     const handlePointerDown = (e: React.PointerEvent) => {
+        // CRITICAL: Prevent default immediately to stop Safari/iPadOS from treating
+        // pen touch-down as the start of a text-selection drag gesture.
+        // Without this, pointerdown initiates selection that picks up the next question's
+        // number text as the pen moves — even though pointermove also has preventDefault(),
+        // that fires too late to cancel the already-started selection.
+        e.preventDefault();
+
         // Reject palm contacts
         if (isPalmContact(e)) return;
 
