@@ -113,7 +113,12 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
     };
 
     const handlePointerMove = (e: React.PointerEvent) => {
-        // Only handle the active pointer
+        // CRITICAL: Always preventDefault on pointermove, even during hover (buttons=0).
+        // Without this, iPadOS Safari + Apple Pencil hover generates a drag-select gesture
+        // that can trigger "select all" on surrounding text. Same issue on Android Chrome.
+        e.preventDefault();
+
+        // Only draw when this is the active pointer
         if (e.pointerId !== activePointerIdRef.current) return;
         if (isPalmContact(e)) return;
 
@@ -139,6 +144,12 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
 
         lastPosRef.current = pos;
     };
+
+    // Suppress hover-entry gestures (Apple Pencil / Windows Ink entering the digitizer range)
+    const handlePointerOver = (e: React.PointerEvent) => e.preventDefault();
+
+    // Suppress context menu from pen barrel button or long-press hover (all platforms)
+    const handleContextMenu = (e: React.MouseEvent) => e.preventDefault();
 
     const handlePointerUp = (e: React.PointerEvent) => {
         if (e.pointerId !== activePointerIdRef.current) return;
@@ -175,8 +186,22 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
         }
     };
 
+    // Inline style constants to prevent selection on all platforms:
+    // - userSelect / WebkitUserSelect: block text drag-selection (all browsers)
+    // - WebkitTouchCallout: blocks the iOS "Copy / Select All" callout on long-press
+    //   (cannot be done via Tailwind; must be inline or global CSS)
+    const noSelectStyle: React.CSSProperties = {
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        WebkitTouchCallout: 'none' as any,
+    };
+
     return (
-        <div className={`relative w-full border-2 border-dashed border-gray-300 rounded-lg overflow-hidden bg-white/50 dark:bg-gray-800/30 ${className}`}>
+        <div
+            className={`relative w-full border-2 border-dashed border-gray-300 rounded-lg overflow-hidden bg-white/50 dark:bg-gray-800/30 ${className}`}
+            style={noSelectStyle}
+        >
             {!hasContent && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-gray-400 font-medium opacity-50">
                     {placeholder}
@@ -189,10 +214,14 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerCancel}
+                onPointerOver={handlePointerOver}
+                onPointerEnter={handlePointerOver}
+                // Prevent context menu: pen barrel button / long-press hover on all platforms
+                onContextMenu={handleContextMenu}
                 // touch-none: prevent browser scroll/zoom gestures inside the canvas
                 // All scroll must happen outside the canvas area (per user design decision)
                 className="w-full touch-none cursor-crosshair"
-                style={{ height }}
+                style={{ height, ...noSelectStyle }}
             />
 
             {hasContent && (
