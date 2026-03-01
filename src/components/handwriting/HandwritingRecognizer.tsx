@@ -304,8 +304,17 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
         await performRecognition()
     }
 
+    // Same no-select style as HandwritingCanvas — prevent pen hover from triggering
+    // text selection or iOS callout on the button overlay area.
+    const noSelectStyle: React.CSSProperties = {
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        WebkitTouchCallout: 'none' as any,
+    }
+
     return (
-        <div className="relative group">
+        <div className="relative group" style={noSelectStyle}>
             <HandwritingCanvas
                 ref={canvasRef}
                 height={height}
@@ -314,7 +323,7 @@ const HandwritingRecognizer = forwardRef<HandwritingRecognizerRef, HandwritingRe
                 onStrokeEnd={handleStrokeEnd}
             />
 
-            <div className="absolute top-2 right-12 flex space-x-2">
+            <div className="absolute top-2 right-12 flex space-x-2" style={noSelectStyle}>
                 <button
                     onClick={handleRecognizeClick}
                     disabled={recognizing}
