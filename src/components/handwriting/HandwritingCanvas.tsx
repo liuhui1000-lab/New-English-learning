@@ -106,6 +106,25 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
         };
     }, []);
 
+    // CRITICAL: Native passive:false listeners directly on the canvas element.
+    // React attaches handlers at the root container via event delegation, so
+    // React's e.preventDefault() fires AFTER the browser has already decided
+    // whether to start a gesture and potentially fire pointercancel.
+    // Native listeners on the element fire FIRST, synchronously, before any
+    // browser gesture recognition — preventing pointercancel from wiping out
+    // activePointerIdRef before the first pointermove can draw anything.
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const prevent = (e: Event) => e.preventDefault();
+        canvas.addEventListener('pointerdown', prevent, { passive: false });
+        canvas.addEventListener('pointermove', prevent, { passive: false });
+        return () => {
+            canvas.removeEventListener('pointerdown', prevent);
+            canvas.removeEventListener('pointermove', prevent);
+        };
+    }, []);
+
     // --- Pointer Events (replaces Touch + Mouse events) ---
 
     const getCanvasPos = (e: React.PointerEvent): { x: number; y: number } => {
