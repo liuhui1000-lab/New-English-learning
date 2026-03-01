@@ -152,6 +152,12 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
 
         // ── Event handlers ──
         const onPointerDown = (e: PointerEvent) => {
+            // Log touch area for calibration (only for touch type)
+            if (e.pointerType === 'touch') {
+                const area = (e.width || 1) * (e.height || 1);
+                console.log(`Handwriting Touch: ID=${e.pointerId}, Area=${area} (${e.width}x${e.height}), Pressure=${e.pressure}`);
+            }
+
             e.preventDefault();
             activatePenMode();
 
@@ -237,9 +243,9 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
         canvas.addEventListener('pointercancel', onPointerCancel, opts);
         canvas.addEventListener('contextmenu', onContextMenu);
 
-        // Also explicitly block touch events at the native level to stop Safari's gesture recognizer
-        canvas.addEventListener('touchstart', prevent, opts);
-        canvas.addEventListener('touchmove', prevent, opts);
+        // Note: We avoid preventing touchstart/touchmove here because doing so
+        // blocks the generation of PointerEvents for touch on some browsers.
+        // CSS touch-action: none handles basic scroll/zoom prevention.
 
         return () => {
             canvas.removeEventListener('pointerdown', onPointerDown);
@@ -247,8 +253,6 @@ const HandwritingCanvas = forwardRef<HandwritingCanvasRef, HandwritingCanvasProp
             canvas.removeEventListener('pointerup', onPointerUp);
             canvas.removeEventListener('pointercancel', onPointerCancel);
             canvas.removeEventListener('contextmenu', onContextMenu);
-            canvas.removeEventListener('touchstart', prevent);
-            canvas.removeEventListener('touchmove', prevent);
         };
     }, []); // Runs once on mount — all mutable state accessed via refs
 
