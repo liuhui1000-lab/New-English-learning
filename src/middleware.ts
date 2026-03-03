@@ -34,7 +34,21 @@ export async function middleware(request: NextRequest) {
         }
     )
 
-    await supabase.auth.getUser()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    // Protect dashboard and admin routes
+    if (request.nextUrl.pathname.startsWith('/dashboard') || request.nextUrl.pathname.startsWith('/admin')) {
+        if (!user) {
+            return NextResponse.redirect(new URL('/login', request.url))
+        }
+    }
+
+    // Redirect logged-in users away from auth pages
+    if (request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/register')) {
+        if (user) {
+            return NextResponse.redirect(new URL('/dashboard', request.url))
+        }
+    }
 
     return response
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Users, Settings, BookOpen, Layers, UploadCloud, Menu, X } from "lucide-react"
 import SignOutButton from "@/components/SignOutButton"
 import { supabase } from "@/lib/supabase"
@@ -14,6 +15,7 @@ export default function DashboardLayout({
     const [isAdmin, setIsAdmin] = useState(false)
     const [loading, setLoading] = useState(true)
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+    const router = useRouter()
 
     useEffect(() => {
         const fetchRole = async () => {
@@ -39,10 +41,13 @@ export default function DashboardLayout({
                         setIsAdmin(profile?.role === 'admin')
                         console.log('Is admin:', profile?.role === 'admin')
                     }
+                } else {
+                    router.push('/login')
                 }
             } catch (e) {
                 console.error('Error in fetchRole:', e)
                 setIsAdmin(false)
+                router.push('/login')
             } finally {
                 setLoading(false)
             }

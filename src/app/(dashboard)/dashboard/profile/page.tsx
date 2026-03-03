@@ -3,18 +3,24 @@
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 import { UserProfile } from "@/types"
+import { useRouter } from "next/navigation"
 
 export default function ProfilePage() {
     const [profile, setProfile] = useState<UserProfile | null>(null)
     const [password, setPassword] = useState("")
     const [loading, setLoading] = useState(false)
+    const router = useRouter()
 
     useEffect(() => {
         fetchMe()
     }, [])
 
     const fetchMe = async () => {
-        const { data: { user } } = await supabase.auth.getUser()
+        const { data: { user }, error } = await supabase.auth.getUser()
+        if (error || !user) {
+            router.push('/login')
+            return
+        }
         if (user) {
             const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
             if (data) setProfile(data)
