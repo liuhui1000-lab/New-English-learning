@@ -3,14 +3,14 @@ const { createClient } = require('@supabase/supabase-js');
 async function testFetch() {
     // 1. Login to get a valid session
     const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ovhktkslvvskscsyzrvf.supabase.co',
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+        process.env.NEXT_PUBLIC_SUPABASE_URL || 'YOUR_SUPABASE_URL',
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'YOUR_SUPABASE_ANON_KEY'
     );
 
     console.log("Logging in as demo student...");
     const { data: authData, error: loginError } = await supabase.auth.signInWithPassword({
-        email: 'test@example.com', // Need actual test creds, but we can bypass locally using a crafted token if needed
-        password: 'password123'
+        email: process.env.TEST_USER_EMAIL || 'test@example.com',
+        password: process.env.TEST_USER_PASSWORD || 'YOUR_TEST_PASSWORD'
     });
 
     if (loginError) {

@@ -11,7 +11,7 @@ async function run() {
     const b64 = Buffer.from(arrayBuffer).toString('base64');
 
     const url = "https://5ejew8k4i019dek5.aistudio-app.com/layout-parsing";
-    const token = "483605608bc2d69ed9979463871dd4bc6095285a";
+    const token = process.env.PADDLE_OCR_TOKEN || "YOUR_PADDLE_OCR_TOKEN_HERE";
 
     const payload = {
         file: b64,

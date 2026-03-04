@@ -129,7 +129,7 @@ Each object in "results" should have:
 - "topic": (string) e.g., "定语从句", "现在完成时", "固定搭配", "词义辨析"
 - "difficulty": (int) 1-5
 - "key_point": (string) short explanation of the tested point.
-- "explanation": (string) Concise explanation (max 50 words) of why the answer is correct. (IN CHINESE)
+- "explanation": (string) Detailed explanation (max 150 words) in Chinese. Explain why the correct answer is right and why other confusing/incorrect options are wrong.
 - "answer": (string) The correct answer or completion. For multiple choice, return the letter (e.g. "A"). For fill-in-the-blank, return the word(s).
 
 Input Questions:
