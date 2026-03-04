@@ -213,7 +213,38 @@ export default function QuestionBankPage() {
                         continue // Skip other batch failures and proceed to next
                     }
 
-                    const { results } = await res.json()
+                    const reader = res.body?.getReader();
+                    const decoder = new TextDecoder();
+                    let fullContent = "";
+
+                    if (reader) {
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+
+                            const chunk = decoder.decode(value, { stream: true });
+                            const lines = chunk.split('\n');
+
+                            for (const line of lines) {
+                                if (line.startsWith('data: ') && line.trim() !== 'data: [DONE]') {
+                                    try {
+                                        const data = JSON.parse(line.slice(6));
+                                        if (data.choices?.[0]?.delta?.content) {
+                                            fullContent += data.choices[0].delta.content;
+                                        }
+                                    } catch (e) {
+                                        // Ignore parse errors on incomplete chunks
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    const jsonMatch = fullContent.match(/\[[\s\S]*\]/);
+                    if (!jsonMatch) {
+                        throw new Error(`AI 返回格式错误, 未包含JSON数组。原始内容前100字: ${fullContent.slice(0, 100)}`);
+                    }
+                    const results = JSON.parse(jsonMatch[0]);
 
                     const analyzedAt = new Date().toISOString()
                     const updates = results.map((r: any, idx: number) => {

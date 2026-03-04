@@ -158,7 +158,11 @@ Input Questions:
                 { role: "user", content: userPrompt }
             ],
             temperature: 0.1,
-            response_format: { type: "json_object" }
+            stream: true,
+            // Deepseek and newer OpenAI models support json_object with stream, 
+            // but if it fails, the frontend fallback parses the Markdown JSON.
+            // Leaving it out just in case it breaks streaming on some providers.
+            // response_format: { type: "json_object" } 
         }
 
         const response = await fetch(targetUrl, {
@@ -187,32 +191,15 @@ Input Questions:
             throw new Error(`Provider API Error: ${response.status} ${err}`)
         }
 
-        const aiData = await response.json()
-        const content = aiData.choices[0].message.content
-
-        // 6. Parse JSON from AI content
-        console.log("AI Raw Output:", content)
-
-        // Find the first '[' and the last ']' to extract the JSON array
-        const jsonMatch = content.match(/\[[\s\S]*\]/)
-        if (!jsonMatch) {
-            throw new Error("No JSON array found in AI response")
-        }
-
-        const jsonStr = jsonMatch[0]
-
-        let parsedResults
-        try {
-            parsedResults = JSON.parse(jsonStr)
-        } catch (e: any) {
-            console.error("JSON Parse Fail:", e)
-            // Try to cleanup common issues like trailing commas if needed, 
-            // but for now just fail with better error
-            throw new Error(`JSON Syntax Error: ${e.message}`)
-        }
-
-        return NextResponse.json({ results: parsedResults })
-
+        // Return the stream directly to the client!
+        // This stops Vercel or Nginx from timing out since the headers are sent immediately
+        return new Response(response.body, {
+            headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+            },
+        });
     } catch (e: any) {
         console.error("AI Analyze Error:", e)
         return NextResponse.json({ error: e.message }, { status: 500 })
