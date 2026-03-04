@@ -2,8 +2,7 @@ import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 
-
-export const maxDuration = 60; // Allow up to 60s for AI processing
+export const runtime = 'edge'; // Use Edge runtime to bypass Vercel 10s/60s strict timeout
 
 // Simple in-memory cache
 let cachedSettings: Record<string, string> | null = null;

@@ -446,6 +446,7 @@ export default function ImportPage() {
                                 className="text-xs border-indigo-200 rounded mr-2 h-7 py-0 pl-2 pr-6 bg-white text-indigo-700 focus:ring-indigo-500 ml-2"
                                 title="AI处理批次大小"
                             >
+                                <option value={1}>1 /批</option>
                                 <option value={2}>2 /批</option>
                                 <option value={5}>5 /批</option>
                                 <option value={10}>10 /批</option>
