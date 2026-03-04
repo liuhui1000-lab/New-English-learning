@@ -213,7 +213,42 @@ export default function QuestionBankPage() {
                         continue // Skip other batch failures and proceed to next
                     }
 
-                    const { results } = await res.json()
+                    const reader = res.body?.getReader();
+                    const decoder = new TextDecoder();
+                    let fullContent = "";
+                    let buffer = "";
+
+                    if (reader) {
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+
+                            buffer += decoder.decode(value, { stream: true });
+                            const lines = buffer.split('\n');
+                            // Keep the last partial line in the buffer
+                            buffer = lines.pop() || "";
+
+                            for (const line of lines) {
+                                const trimmedLine = line.trim();
+                                if (trimmedLine.startsWith('data: ') && trimmedLine !== 'data: [DONE]') {
+                                    try {
+                                        const data = JSON.parse(trimmedLine.slice(6));
+                                        if (data.choices?.[0]?.delta?.content) {
+                                            fullContent += data.choices[0].delta.content;
+                                        }
+                                    } catch (e) {
+                                        console.warn("SSE JSON Parse skipped incomplete chunk:");
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    const jsonMatch = fullContent.match(/\[[\s\S]*\]/);
+                    if (!jsonMatch) {
+                        throw new Error(`AI 返回格式错误, 未包含JSON数组。原始内容前100字: ${fullContent.slice(0, 100)}`);
+                    }
+                    const results = JSON.parse(jsonMatch[0]);
 
                     const analyzedAt = new Date().toISOString()
                     const updates = results.map((r: any, idx: number) => {
