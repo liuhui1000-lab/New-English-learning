@@ -174,6 +174,8 @@ export default function QuestionBankPage() {
 
         setIsAnalyzing(true)
         setStatusMessage("正在准备分析...")
+        let successCount = 0;
+        let failCount = 0;
 
         try {
             const { data: targets } = await supabase
@@ -187,7 +189,7 @@ export default function QuestionBankPage() {
 
             for (let i = 0; i < targets.length; i += batchSize) {
                 const batch = targets.slice(i, i + batchSize)
-                setStatusMessage(`AI 分析中... (${Math.min(i + batchSize, targets.length)}/${targets.length})`)
+                setStatusMessage(`AI 分析中... (进度: ${Math.min(i + batchSize, targets.length)}/${targets.length}, 成功: ${successCount}, 失败: ${failCount})`)
 
                 const items = batch.map(q => q.content)
 
@@ -202,12 +204,13 @@ export default function QuestionBankPage() {
                         const errData = await res.json().catch(() => ({ error: res.statusText }));
                         const errorMsg = errData.details || errData.error || res.statusText;
                         console.error(`Batch ${Math.floor(i / batchSize) + 1} failed:`, errorMsg)
+                        failCount += batch.length; // Count the whole batch as failed
 
                         if (res.status === 429) {
-                            alert(`AI 分析受限 (429): ${errorMsg}\n建议稍后再试或检查 AI 余额（如果您使用的是 DeepSeek/智谱等付费接口）。`);
+                            alert(`AI 分析受极度限流 (429): ${errorMsg}\n已停止后续分析请求。`);
                             break; // Stop the whole loop
                         }
-                        continue // Skip other batch failures
+                        continue // Skip other batch failures and proceed to next
                     }
 
                     const { results } = await res.json()
@@ -248,19 +251,34 @@ export default function QuestionBankPage() {
 
                         if (updateError) {
                             console.error("Update failed", updateError)
+                            failCount += updates.length;
+                        } else {
+                            successCount += updates.length;
+                            // Incremental UI Update
+                            setQuestions(prevQuestions => {
+                                const newQuestions = [...prevQuestions];
+                                updates.forEach((update: any) => {
+                                    const index = newQuestions.findIndex(q => q.id === update.id);
+                                    if (index !== -1) {
+                                        newQuestions[index] = { ...newQuestions[index], ...update };
+                                    }
+                                });
+                                return newQuestions;
+                            });
                         }
                     }
 
                 } catch (batchErr) {
                     console.error(`Batch ${Math.floor(i / batchSize) + 1} exception:`, batchErr)
+                    failCount += batch.length;
                 }
 
-                // Add delay between batches
-                await new Promise(resolve => setTimeout(resolve, 800))
+                // Add delay between batches (1500ms as requested)
+                await new Promise(resolve => setTimeout(resolve, 1500))
             }
 
-            setStatusMessage("分析完成")
-            fetchQuestions()
+            setStatusMessage(null)
+            alert(`分析完成！提交了 ${targets.length} 题，其中成功 ${successCount} 题，失败 ${failCount} 题（跳过锁定的题目见报告）。`)
             setSelectedIds(new Set())
 
             if (newSkippedItems.length > 0) {
@@ -272,7 +290,7 @@ export default function QuestionBankPage() {
             alert("分析过程出错: " + err.message)
         } finally {
             setIsAnalyzing(false)
-            setTimeout(() => setStatusMessage(null), 3000)
+            setStatusMessage(null)
         }
     }
 
@@ -340,11 +358,11 @@ export default function QuestionBankPage() {
                                 className="text-xs border-indigo-200 rounded mr-2 h-7 py-0 pl-2 pr-6 bg-white text-indigo-700 focus:ring-indigo-500"
                                 title="AI处理批次大小"
                             >
+                                <option value={2}>2 /批</option>
                                 <option value={5}>5 /批</option>
                                 <option value={10}>10 /批</option>
                                 <option value={15}>15 /批</option>
                                 <option value={20}>20 /批</option>
-                                <option value={25}>25 /批</option>
                             </select>
 
                             <button

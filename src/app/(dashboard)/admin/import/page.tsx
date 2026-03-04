@@ -14,6 +14,32 @@ export default function ImportPage() {
     const [skipOCR, setSkipOCR] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
     const [importStatus, setImportStatus] = useState<string | null>(null)
+    const [batchSize, setBatchSize] = useState(2) // Default batch size is 2
+
+    const fetchWithRetry = async (url: string, options: any, maxRetries = 3): Promise<Response> => {
+        let lastError: any;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            if (attempt > 0) {
+                const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                console.log(`Retrying after ${Math.round(delay)}ms... (Attempt ${attempt}/${maxRetries})`);
+                setImportStatus(`AI 繁忙，正在重试 (${attempt}/${maxRetries})...`);
+                await new Promise(r => setTimeout(r, delay));
+            }
+
+            try {
+                const res = await fetch(url, options);
+                if (res.status === 429 && attempt < maxRetries) {
+                    continue; // Trigger retry
+                }
+                return res;
+            } catch (err) {
+                lastError = err;
+                if (attempt < maxRetries) continue;
+                throw err;
+            }
+        }
+        throw lastError;
+    }
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const selectedFiles = Array.from(e.target.files || [])
@@ -197,75 +223,92 @@ export default function ImportPage() {
         if (!confirm(`即将发送 ${questions.length} 道题目给 AI 进行分析。\n这可能需要几十秒，请保持页面开启。`)) return
 
         setIsAnalyzing(true)
-        setImportStatus("AI 分析中...")
+        setImportStatus("正在准备分析...")
+        let successCount = 0;
+        let failCount = 0;
 
         try {
-            // Batch process to avoid Vercel timeouts (10s limit usually) and Token limits
-            const BATCH_SIZE = 5
             const newQuestions = [...questions]
 
-            for (let i = 0; i < newQuestions.length; i += BATCH_SIZE) {
-                const batch = newQuestions.slice(i, i + BATCH_SIZE)
+            for (let i = 0; i < newQuestions.length; i += batchSize) {
+                const batch = newQuestions.slice(i, i + batchSize)
                 // Only analyze if content is long enough (skip single words)
                 // content array
                 const items = batch.map(q => q.content)
 
-                setImportStatus(`AI 分析中... (${i + 1}/${questions.length})`)
+                setImportStatus(`AI 分析中... (进度: ${Math.min(i + batchSize, questions.length)}/${questions.length}, 成功: ${successCount}, 失败: ${failCount})`)
 
-                const res = await fetch('/api/ai/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ items, mode: 'tagging' })
-                })
+                try {
+                    const res = await fetchWithRetry('/api/ai/analyze', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ items, mode: 'tagging' })
+                    })
 
-                if (!res.ok) {
-                    const errData = await res.json().catch(() => ({ error: res.statusText }));
-                    console.error(`Batch ${i} failed`, errData);
+                    if (!res.ok) {
+                        const errData = await res.json().catch(() => ({ error: res.statusText }));
+                        console.error(`Batch ${i} failed`, errData);
+                        failCount += batch.length;
 
-                    if (res.status === 429) {
-                        alert(`AI 额度耗尽或请求过快 (Code 429)。\n已暂停。请稍后重试。`);
+                        if (res.status === 429) {
+                            alert(`AI 额度耗尽或请求过快 (Code 429)。\n已暂停。请稍后重试。`);
+                            break;
+                        }
+                        if (res.status === 401) {
+                            alert(`AI API Key 无效 (Code 401)。请检查设置。\n已暂停。`);
+                            break;
+                        }
+
+                        // For other errors (500, etc), maybe ask user to continue?
+                        if (!confirm(`批次 ${i / batchSize + 1} 失败: ${errData.error}\n是否跳过此批次继续？`)) {
+                            break;
+                        }
+                        continue;
+                    }
+
+                    const { results } = await res.json()
+                    let currentBatchSuccess = 0;
+
+                    // Merge AI results back to questions for the current batch
+                    results.forEach((r: any, idx: number) => {
+                        const targetIndex = i + idx
+                        if (newQuestions[targetIndex]) {
+                            const q = newQuestions[targetIndex]
+                            // Clean up and merge tags
+                            const newTags = new Set(q.tags)
+                            if (r.topic) newTags.add(`Topic:${r.topic}`)
+                            if (r.key_point) newTags.add(`Point:${r.key_point}`)
+                            if (r.difficulty) newTags.add(`Diff:${r.difficulty}`)
+
+                            newQuestions[targetIndex] = {
+                                ...q,
+                                tags: Array.from(newTags),
+                                // Auto-fill answer if empty
+                                answer: (!q.answer && r.answer) ? r.answer : q.answer
+                            }
+                            currentBatchSuccess++;
+                        } // Close if check
+                    }) // Close forEach
+
+                    successCount += currentBatchSuccess;
+
+                    // Incremental Update
+                    setQuestions([...newQuestions]);
+
+                } catch (batchErr) {
+                    console.error(`Batch ${Math.floor(i / batchSize) + 1} exception:`, batchErr)
+                    failCount += batch.length;
+                    if (!confirm(`批次 ${Math.floor(i / batchSize) + 1} 异常!\n是否跳过此批次继续？`)) {
                         break;
                     }
-                    if (res.status === 401) {
-                        alert(`AI API Key 无效 (Code 401)。请检查设置。\n已暂停。`);
-                        break;
-                    }
-
-                    // For other errors (500, etc), maybe ask user to continue?
-                    if (!confirm(`批次 ${i / BATCH_SIZE + 1} 失败: ${errData.error}\n是否跳过此批次继续？`)) {
-                        break;
-                    }
-                    continue;
                 }
 
-                const { results } = await res.json()
-
-                // Merge AI results back to questions for the current batch
-                results.forEach((r: any, idx: number) => {
-                    const targetIndex = i + idx
-                    if (newQuestions[targetIndex]) {
-                        const q = newQuestions[targetIndex]
-                        // Clean up and merge tags
-                        const newTags = new Set(q.tags)
-                        if (r.topic) newTags.add(`Topic:${r.topic}`)
-                        if (r.key_point) newTags.add(`Point:${r.key_point}`)
-                        if (r.difficulty) newTags.add(`Diff:${r.difficulty}`)
-
-                        newQuestions[targetIndex] = {
-                            ...q,
-                            tags: Array.from(newTags),
-                            // Auto-fill answer if empty
-                            answer: (!q.answer && r.answer) ? r.answer : q.answer
-                        }
-                    } // Close if check
-                }) // Close forEach
-
                 // Small delay to be nice to API
-                await new Promise(resolve => setTimeout(resolve, 500))
+                await new Promise(resolve => setTimeout(resolve, 1500))
             }
 
-            setQuestions(newQuestions)
-            alert("AI 分析完成！已自动添加标签。")
+            setImportStatus(null)
+            alert(`AI 分析完成！提交了 ${questions.length} 题，其中成功 ${successCount} 题，失败 ${failCount} 题。`)
 
         } catch (err: any) {
             alert("AI 分析中断: " + err.message)
@@ -397,6 +440,18 @@ export default function ImportPage() {
                             <button onClick={() => handleBatchType('sentence_transformation')} className="px-2 py-1 text-xs bg-white border rounded hover:bg-gray-100">句型转换</button>
                             <button onClick={() => handleBatchType('collocation')} className="px-2 py-1 text-xs bg-white border rounded hover:bg-gray-100">固定搭配</button>
                             <button onClick={handleClearEmpty} className="px-2 py-1 text-xs text-red-600 border border-red-200 rounded hover:bg-red-50 ml-2">清理空白项</button>
+                            <select
+                                value={batchSize}
+                                onChange={(e) => setBatchSize(Number(e.target.value))}
+                                className="text-xs border-indigo-200 rounded mr-2 h-7 py-0 pl-2 pr-6 bg-white text-indigo-700 focus:ring-indigo-500 ml-2"
+                                title="AI处理批次大小"
+                            >
+                                <option value={2}>2 /批</option>
+                                <option value={5}>5 /批</option>
+                                <option value={10}>10 /批</option>
+                                <option value={15}>15 /批</option>
+                                <option value={20}>20 /批</option>
+                            </select>
                             <button
                                 onClick={handleAIAnalyze}
                                 disabled={isAnalyzing}
