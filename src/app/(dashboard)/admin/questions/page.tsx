@@ -237,10 +237,20 @@ export default function QuestionBankPage() {
                                 if (trimmedLine.startsWith('data: ') && trimmedLine !== 'data: [DONE]') {
                                     try {
                                         const data = JSON.parse(trimmedLine.slice(6));
+
+                                        // Handle explicit errors sent from our backend stream
+                                        if (data.error) {
+                                            throw new Error(data.error);
+                                        }
+
                                         if (data.choices?.[0]?.delta?.content) {
                                             fullContent += data.choices[0].delta.content;
                                         }
-                                    } catch (e) {
+                                    } catch (e: any) {
+                                        if (e.message && !e.message.includes("Unexpected token") && !e.message.includes("JSON")) {
+                                            // Re-throw actual API errors
+                                            throw e;
+                                        }
                                         console.warn("SSE JSON Parse skipped incomplete chunk:");
                                     }
                                 }

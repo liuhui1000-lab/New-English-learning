@@ -158,10 +158,14 @@ Input Questions:
                 { role: "user", content: userPrompt }
             ],
             temperature: 0.1,
-            stream: true,
-            // Force LLM to output valid JSON structure.
-            // DeepSeek, OpenAI, and Zhipu all support this with streaming.
-            response_format: { type: "json_object" }
+            stream: true
+        } as any;
+
+        // Force LLM to output valid JSON structure.
+        // DeepSeek and OpenAI support this reliably with streaming.
+        // GLM (Zhipu) often returns empty streams when this is enabled, so we skip it for GLM.
+        if (activeProvider === 'deepseek' || activeProvider === 'openai') {
+            payload.response_format = { type: "json_object" };
         }
 
         const encoder = new TextEncoder();
