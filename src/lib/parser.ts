@@ -92,15 +92,18 @@ function extractTargetSections(text: string): string {
         }
     }
 
-    // 2. Find End (Start of Next Section)
-    // We want to KEEP "Reading and Writing" because Word/Sentence Transformations are usually in there.
-    // Instead, we explicitly stop ONLY when we hit the final "Writing / Composition" section to prevent essay parsing.
+    // 2. Find End (Start of Next Section: "Part 3 Reading and Writing")
+    // Cut off at the "Reading and Writing" section boundary, which comes right after Grammar/Vocabulary.
+    // Support all number formats: Arabic (3), ASCII Roman (III), Unicode Roman (Ⅲ), English words (Three)
     const endPatterns = [
-        // Match "VII. Writing" or similar (Writing section)
-        // Handle OCR: VII -> VIL, VIII -> VILI/VIIII
-        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:VII|VIL|VIII|VILI|IX|Part\s*(?:(?:VII|VIII|IX)|7|8|9|Seven|Eight|Nine))\.?\s*(?:Writing|Composition)/i,
-        // Match writing prompts natively (e.g., "84. Write at least...")
-        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:\d+\s*[\.\．\、\)\）]\s*)?Write\s+at\s+least/i,
+        // Match "Part 3 Reading and Writing" (primary pattern)
+        // Number formats: 3, III, Ⅲ (Unicode U+2162), Three, etc.
+        /Part\s*(?:3|III|Ⅲ|Three|three)\s*[\.:;]?\s*Reading\s+and\s+Writing/i,
+        // Match "VII. Writing" or similar (Writing section) as fallback
+        // Handle OCR: VII -> VIL, VIII -> VILI; also handle Unicode Ⅶ/Ⅷ/Ⅸ
+        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:VII|VIL|VIII|VILI|IX|Ⅶ|Ⅷ|Ⅸ|Part\s*(?:(?:VII|VIII|IX|Ⅶ|Ⅷ|Ⅸ)|7|8|9|Seven|Eight|Nine))\.?\s*(?:Writing|Composition)/i,
+        // Match writing prompts natively (e.g., "84. Write at least..." or "84. Write a passage in at least...")
+        /(?:^|\n|\s{3,}|[\.!\?\)\]）\s])(?:\d+\s*[\.\．\、\)\）]\s*)?Write\s+.*?at\s+least/i,
     ];
 
     let endIndex = text.length;
@@ -643,7 +646,8 @@ function classifyQuestion(content: string): ParsedQuestion {
     // Check for blanks: at least 2 consecutive underscores, or [] / () indicating a blank
     const hasBlank = /_{2,}|\[\s*\]|\(\s*\)/.test(content);
     // Check for root word at the end: (word) or （word） followed by optional punctuation or spaces
-    const rootWordMatch = content.match(/[\(\（]([a-zA-Z\s]+)[\)\）][^\)\）]*$/);
+    // IMPORTANT: Require at least one letter inside parens to avoid matching empty ( ) checkboxes from OCR
+    const rootWordMatch = content.match(/[\(\（]([a-zA-Z][a-zA-Z\s]*)[\)\）][^\)\）]*$/);
 
     // 1. Sentence Transformation (Rewrite)
     // Keywords: "rewrite", "homonymous", "passive voice", "plural", "question", or Chinese prompts
