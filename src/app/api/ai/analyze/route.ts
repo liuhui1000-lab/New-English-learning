@@ -159,10 +159,9 @@ Input Questions:
             ],
             temperature: 0.1,
             stream: true,
-            // Deepseek and newer OpenAI models support json_object with stream, 
-            // but if it fails, the frontend fallback parses the Markdown JSON.
-            // Leaving it out just in case it breaks streaming on some providers.
-            // response_format: { type: "json_object" } 
+            // Force LLM to output valid JSON structure.
+            // DeepSeek, OpenAI, and Zhipu all support this with streaming.
+            response_format: { type: "json_object" }
         }
 
         const response = await fetch(targetUrl, {

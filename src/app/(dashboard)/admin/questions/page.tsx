@@ -244,11 +244,48 @@ export default function QuestionBankPage() {
                         }
                     }
 
-                    const jsonMatch = fullContent.match(/\[[\s\S]*\]/);
-                    if (!jsonMatch) {
-                        throw new Error(`AI 返回格式错误, 未包含JSON数组。原始内容前100字: ${fullContent.slice(0, 100)}`);
+                    // Robust JSON extraction: try full object first, then array fallback
+                    let results: any[];
+                    try {
+                        // Try 1: Parse as {"results": [...]} (the format we ask for)
+                        const objMatch = fullContent.match(/\{[\s\S]*"results"\s*:\s*\[[\s\S]*\][\s\S]*\}/);
+                        if (objMatch) {
+                            const parsed = JSON.parse(objMatch[0]);
+                            results = parsed.results;
+                        } else {
+                            // Try 2: Parse as bare array [...]
+                            const arrMatch = fullContent.match(/\[[\s\S]*\]/);
+                            if (!arrMatch) {
+                                throw new Error(`AI 返回格式错误, 未包含JSON。原始内容前200字: ${fullContent.slice(0, 200)}`);
+                            }
+                            results = JSON.parse(arrMatch[0]);
+                        }
+                    } catch (parseErr: any) {
+                        // Try 3: JSON repair fallback for common LLM mistakes
+                        console.warn(`JSON parse failed, attempting repair...`, parseErr.message);
+                        const arrMatch = fullContent.match(/\[[\s\S]*\]/);
+                        if (!arrMatch) throw parseErr;
+                        let raw = arrMatch[0];
+                        // Fix 1: Remove trailing commas before ] or }
+                        raw = raw.replace(/,\s*([}\]])/g, '$1');
+                        // Fix 2: Fix unquoted Chinese/mixed values after ":"
+                        // Pattern: "key": someChineseText...  →  "key": "someChineseText..."
+                        raw = raw.replace(/"(\w+)"\s*:\s*(?!["{\[\dtfn-])([^\n,}]+)/g, (match, key, val) => {
+                            // Don't re-wrap if it's already a keyword (true/false/null) or number
+                            const trimVal = val.trim();
+                            if (/^(true|false|null)$/.test(trimVal) || /^-?\d+(\.\d+)?$/.test(trimVal)) return match;
+                            // Escape inner quotes and wrap
+                            const escaped = trimVal.replace(/"/g, '\\"');
+                            return `"${key}": "${escaped}"`;
+                        });
+                        try {
+                            results = JSON.parse(raw);
+                        } catch {
+                            // If even repair fails, throw the original error
+                            throw parseErr;
+                        }
+                        console.log(`JSON repair succeeded for batch!`);
                     }
-                    const results = JSON.parse(jsonMatch[0]);
 
                     const analyzedAt = new Date().toISOString()
                     const updates = results.map((r: any, idx: number) => {
