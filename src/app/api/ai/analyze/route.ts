@@ -164,35 +164,65 @@ Input Questions:
             response_format: { type: "json_object" }
         }
 
-        const response = await fetch(targetUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify(payload)
-        })
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+            async start(controller) {
+                // Send an initial keep-alive comment so the gateway router knows we are active
+                controller.enqueue(encoder.encode(": keepalive\n\n"));
 
-        if (!response.ok) {
-            const err = await response.text()
+                // Pump a keep-alive comment every 15 seconds to prevent 504 Gateway Timeout
+                const keepAliveInterval = setInterval(() => {
+                    try {
+                        controller.enqueue(encoder.encode(": keepalive\n\n"));
+                    } catch (e) {
+                        clearInterval(keepAliveInterval);
+                    }
+                }, 15000);
 
-            // Forward specific error code to client
-            if (response.status === 429) {
-                return NextResponse.json({ error: "AI Rate Limit / Quota Exceeded (429). Please slow down." }, { status: 429 })
+                try {
+                    const response = await fetch(targetUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${apiKey}`
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    clearInterval(keepAliveInterval);
+
+                    if (!response.ok) {
+                        const err = await response.text();
+                        let errorMsg = `Provider API Error: ${response.status} ${err}`;
+                        if (response.status === 429) errorMsg = "AI Rate Limit / Quota Exceeded (429). Please slow down.";
+                        else if (response.status === 401) errorMsg = `Invalid AI API Key (401) for provider: ${activeProvider}. Check Settings.`;
+                        else if (response.status >= 500) errorMsg = "AI Provider Server Error (5xx). Try changing model.";
+
+                        // We already started the 200 OK stream, so we must send a custom error payload
+                        controller.enqueue(encoder.encode(`data: {"error": ${JSON.stringify(errorMsg)}}\n\n`));
+                        controller.close();
+                        return;
+                    }
+
+                    if (response.body) {
+                        const reader = response.body.getReader();
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            controller.enqueue(value);
+                        }
+                    }
+                    controller.close();
+                } catch (e: any) {
+                    clearInterval(keepAliveInterval);
+                    controller.enqueue(encoder.encode(`data: {"error": ${JSON.stringify(e.message)}}\n\n`));
+                    controller.close();
+                }
             }
-            if (response.status === 401) {
-                return NextResponse.json({ error: `Invalid AI API Key (401) for provider: ${activeProvider}. Check Settings.` }, { status: 401 })
-            }
-            if (response.status >= 500) {
-                return NextResponse.json({ error: "AI Provider Server Error (5xx). Try changing model." }, { status: 502 })
-            }
+        });
 
-            throw new Error(`Provider API Error: ${response.status} ${err}`)
-        }
-
-        // Return the stream directly to the client!
-        // This stops Vercel or Nginx from timing out since the headers are sent immediately
-        return new Response(response.body, {
+        // Return the stream directly to the client
+        return new Response(stream, {
             headers: {
                 'Content-Type': 'text/event-stream',
                 'Cache-Control': 'no-cache',

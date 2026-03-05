@@ -207,10 +207,14 @@ export default function QuestionBankPage() {
                         failCount += batch.length; // Count the whole batch as failed
 
                         if (res.status === 429) {
-                            alert(`AI 分析受极度限流 (429): ${errorMsg}\n已停止后续分析请求。`);
-                            break; // Stop the whole loop
+                            // Back off heavily on 429 to let the AI provider cool down
+                            console.warn("Global 429 encountered. Backing off for 10 seconds before next batch...");
+                            await new Promise(resolve => setTimeout(resolve, 10000));
+                        } else {
+                            // Short delay before next batch on normal errors
+                            await new Promise(resolve => setTimeout(resolve, 2000));
                         }
-                        continue // Skip other batch failures and proceed to next
+                        continue // Skip other batch processing and proceed to next
                     }
 
                     const reader = res.body?.getReader();
@@ -345,8 +349,9 @@ export default function QuestionBankPage() {
                     failCount += batch.length;
                 }
 
-                // Add delay between batches (1500ms as requested)
-                await new Promise(resolve => setTimeout(resolve, 1500))
+                // Add standard delay between successful batches to avoid hitting rate limits
+                // E.g., for DeepSeek, 2-3 seconds between batches of 2-5 questions is safer
+                await new Promise(resolve => setTimeout(resolve, 3000))
             }
 
             setStatusMessage(null)
