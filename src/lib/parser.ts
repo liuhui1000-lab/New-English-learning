@@ -468,6 +468,8 @@ async function extractText(file: File, onProgress?: (msg: string) => void, skipO
                 data: arrayBuffer,
                 cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
                 cMapPacked: true,
+                standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/standard_fonts/`,
+                wasmUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/wasm/`
             });
 
             const pdf = await Promise.race([
