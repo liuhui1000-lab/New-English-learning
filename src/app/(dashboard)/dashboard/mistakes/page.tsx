@@ -48,6 +48,9 @@ export default function ErrorNotebookPage() {
         const allMistakes: any[] = []
 
         try {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) return
+
             // 1. Fetch Recitation Mistakes (ONLY Vocabulary from recitation flow)
             // Separate word_transformation here to match user expectation: Recitation = Vocab
             const { data: recitationData, error: rError } = await supabase
@@ -58,6 +61,7 @@ export default function ErrorNotebookPage() {
                         id, content, answer, type, tags
                     )
                 `)
+                .eq('user_id', user.id)
                 .eq('questions.type', 'vocabulary')
                 .eq('status', 'learning')
                 .gt('attempts', 0)
@@ -91,6 +95,7 @@ export default function ErrorNotebookPage() {
                         id, content, answer, type, explanation, tags
                     )
                 `)
+                .eq('user_id', user.id)
                 .eq('is_correct', false)
                 .order('attempt_at', { ascending: true })
                 .limit(200)

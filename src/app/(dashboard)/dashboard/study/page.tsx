@@ -157,11 +157,23 @@ export default function StudyPage() {
         if (!user) return
 
         try {
+            // Fetch existing progress first to get current attempts count
+            const { data: existingProgress } = await supabase
+                .from('user_progress')
+                .select('question_id, attempts')
+                .eq('user_id', user.id)
+                .in('question_id', results.map(r => r.questionId))
+
+            const progressMap = new Map(existingProgress?.map(p => [p.question_id, p.attempts]) || [])
+
             const updates = results.map(res => {
                 const now = new Date()
                 let nextReview = new Date()
                 nextReview.setDate(now.getDate() + 1)
                 const status = (res.isPassed && !res.hasFamilyPenalty) ? 'reviewing' : 'learning'
+
+                const currentAttempts = progressMap.get(res.questionId) || 0
+                const newAttempts = (!res.isPassed || res.hasFamilyPenalty) ? currentAttempts + 1 : currentAttempts
 
                 return {
                     user_id: user.id,
@@ -169,7 +181,8 @@ export default function StudyPage() {
                     status: status,
                     last_practiced_at: now.toISOString(),
                     next_review_at: nextReview.toISOString(),
-                    consecutive_correct: (res.isPassed && !res.hasFamilyPenalty) ? 1 : 0
+                    consecutive_correct: (res.isPassed && !res.hasFamilyPenalty) ? 1 : 0,
+                    attempts: newAttempts
                 }
             })
 

@@ -59,9 +59,10 @@ export default function UserDetailPage() {
         // 2. Weakest Words (High attempts, Learning status)
         const { data: weak } = await supabase
             .from('user_progress')
-            .select('attempts, status, questions(content, answer)')
+            .select('attempts, status, questions!inner(content, answer)')
             .eq('user_id', userId)
             .eq('status', 'learning')
+            .eq('questions.type', 'vocabulary')
             .order('attempts', { ascending: false })
             .limit(10)
 
