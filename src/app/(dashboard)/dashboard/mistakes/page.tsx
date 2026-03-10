@@ -57,7 +57,7 @@ export default function ErrorNotebookPage() {
                 .select(`
                     *,
                     questions!inner (
-                        id, content, answer, type, tags
+                        id, content, answer, type, tags, explanation
                     )
                 `)
                 .eq('user_id', user.id)
@@ -79,6 +79,7 @@ export default function ErrorNotebookPage() {
                         type: 'recitation', // This puts them in the "背诵回顾" tab
                         note: qType === 'word_transformation' ? '词汇变形' :
                             qType === 'sentence_transformation' ? '句型转换' : '单词拼写',
+                        explanation: record.questions.explanation,
                         count: record.attempts,
                         tags: record.questions.tags || [],
                         lastAttempt: record.updated_at || record.last_practiced_at
