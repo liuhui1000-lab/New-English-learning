@@ -421,8 +421,7 @@ function PracticeContent() {
             user_id: d.user_id,
             question_id: d.question_id,
             status: d.is_correct ? 'mastered' : 'learning',
-            last_practiced_at: new Date().toISOString(),
-            attempts: 1
+            last_practiced_at: new Date().toISOString()
         }))
 
         if (progressUpdates.length > 0) {

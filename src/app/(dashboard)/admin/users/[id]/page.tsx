@@ -63,6 +63,7 @@ export default function UserDetailPage() {
             .eq('user_id', userId)
             .eq('status', 'learning')
             .in('questions.type', ['vocabulary', 'word_transformation'])
+            .not('next_review_at', 'is', null)
             .order('attempts', { ascending: false })
             .limit(10)
 

@@ -64,6 +64,7 @@ export default function ErrorNotebookPage() {
                 .in('questions.type', ['vocabulary', 'word_transformation', 'sentence_transformation'])
                 .eq('status', 'learning')
                 .gt('attempts', 0)
+                .not('next_review_at', 'is', null)
 
             if (rError) console.error("Recitation Fetch Error:", rError)
 
