@@ -284,7 +284,7 @@ export default function ErrorNotebookPage() {
         })
     }, [])
 
-    const availableTypes = Array.from(new Set(mistakes.map(m => m.note))).filter(Boolean).sort()
+    const availableTypes = ['单词拼写', '词组搭配', '词汇变形', '句型转换', '语法']
     const availableTopics = Array.from(new Set(
         mistakes.flatMap(m => m.tags || [])
             .filter((t: string) => t.startsWith('Topic:'))
