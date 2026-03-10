@@ -398,7 +398,7 @@ function PracticeContent() {
                     question_id: q.id,
                     is_correct: isCorrect,
                     answer: userAnswer,
-                    question_type: type,
+                    question_type: q.type,
                     source_type: 'quiz'
                 })
             }

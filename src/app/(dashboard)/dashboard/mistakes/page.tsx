@@ -61,7 +61,7 @@ export default function ErrorNotebookPage() {
                     )
                 `)
                 .eq('user_id', user.id)
-                .in('questions.type', ['vocabulary', 'word_transformation', 'sentence_transformation'])
+                .in('questions.type', ['vocabulary', 'word_transformation'])
                 .eq('status', 'learning')
                 .gt('attempts', 0)
                 .not('next_review_at', 'is', null)
