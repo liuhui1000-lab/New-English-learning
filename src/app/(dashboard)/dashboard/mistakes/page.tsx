@@ -48,11 +48,10 @@ export default function ErrorNotebookPage() {
         const allMistakes: any[] = []
 
         try {
-            const { data: { user } } = await supabase.auth.getUser()
+            const { data: { user } = {} } = await supabase.auth.getUser()
             if (!user) return
 
-            // 1. Fetch Recitation Mistakes (ONLY Vocabulary from recitation flow)
-            // Separate word_transformation here to match user expectation: Recitation = Vocab
+            // 1. Fetch Recitation Mistakes (From user_progress study flow)
             const { data: recitationData, error: rError } = await supabase
                 .from('user_progress')
                 .select(`
@@ -62,7 +61,7 @@ export default function ErrorNotebookPage() {
                     )
                 `)
                 .eq('user_id', user.id)
-                .eq('questions.type', 'vocabulary')
+                .in('questions.type', ['vocabulary', 'word_transformation', 'sentence_transformation'])
                 .eq('status', 'learning')
                 .gt('attempts', 0)
 
@@ -77,8 +76,9 @@ export default function ErrorNotebookPage() {
                         id: record.questions.id,
                         content: record.questions.content,
                         answer: record.questions.answer,
-                        type: 'recitation',
-                        note: qType === 'word_transformation' ? '词汇变形' : '单词拼写',
+                        type: 'recitation', // This puts them in the "背诵回顾" tab
+                        note: qType === 'word_transformation' ? '词汇变形' :
+                            qType === 'sentence_transformation' ? '句型转换' : '单词拼写',
                         count: record.attempts,
                         tags: record.questions.tags || [],
                         lastAttempt: record.updated_at || record.last_practiced_at
@@ -113,7 +113,7 @@ export default function ErrorNotebookPage() {
                             id: qId,
                             content: record.questions.content,
                             answer: record.questions.answer,
-                            type: 'quiz',
+                            type: 'quiz', // This puts them in the "练习/错题库" tab
                             note: qType === 'word_transformation' ? '词汇变形' :
                                 qType === 'vocabulary' ? '单词拼写' :
                                     qType === 'grammar' ? '语法' :
@@ -136,42 +136,6 @@ export default function ErrorNotebookPage() {
                 grouped.forEach(item => {
                     item.count = item.wrongAttempts.length
                     allMistakes.push(item)
-                })
-            }
-
-            // 3. Fetch Word/Sentence Transformation Mistakes from user_progress (Study flow)
-            // These are conceptually "practice" but saved in user_progress due to the study algorithm
-            const { data: studyQuizData, error: sqError } = await supabase
-                .from('user_progress')
-                .select(`
-                *,
-                questions!inner (
-                    id, content, answer, type, tags, explanation
-                )
-            `)
-                .eq('user_id', user.id)
-                .in('questions.type', ['word_transformation', 'sentence_transformation'])
-                .eq('status', 'learning')
-                .gt('attempts', 0)
-
-            if (sqError) console.error("Study Quiz Fetch Error:", sqError)
-
-            if (studyQuizData) {
-                console.log(`Fetched ${studyQuizData.length} study quiz records from user_progress`)
-                studyQuizData.forEach((record: any) => {
-                    const qType = record.questions.type
-                    allMistakes.push({
-                        id: record.questions.id,
-                        content: record.questions.content,
-                        answer: record.questions.answer,
-                        type: 'quiz', // Show in Practice tab
-                        note: qType === 'word_transformation' ? '词汇变形' : '句型转换',
-                        count: record.attempts,
-                        tags: record.questions.tags || [],
-                        explanation: record.questions.explanation,
-                        lastAttempt: record.updated_at || record.last_practiced_at,
-                        wrongAttempts: [] // We don't have historical logs for this in user_progress, just count
-                    })
                 })
             }
 

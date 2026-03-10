@@ -62,7 +62,7 @@ export default function UserDetailPage() {
             .select('attempts, status, questions!inner(content, answer)')
             .eq('user_id', userId)
             .eq('status', 'learning')
-            .eq('questions.type', 'vocabulary')
+            .in('questions.type', ['vocabulary', 'word_transformation'])
             .order('attempts', { ascending: false })
             .limit(10)
 
