@@ -90,11 +90,11 @@ export default function ErrorNotebookPage() {
             const { data: quizData, error: qError } = await supabase
                 .from('quiz_results')
                 .select(`
-                    id, answer, attempt_at, question_id,
-                    questions!inner (
-                        id, content, answer, type, explanation, tags
-                    )
-                `)
+                id, answer, attempt_at, question_id,
+                questions!inner (
+                    id, content, answer, type, explanation, tags
+                )
+            `)
                 .eq('user_id', user.id)
                 .eq('is_correct', false)
                 .order('attempt_at', { ascending: true })
@@ -136,6 +136,42 @@ export default function ErrorNotebookPage() {
                 grouped.forEach(item => {
                     item.count = item.wrongAttempts.length
                     allMistakes.push(item)
+                })
+            }
+
+            // 3. Fetch Word/Sentence Transformation Mistakes from user_progress (Study flow)
+            // These are conceptually "practice" but saved in user_progress due to the study algorithm
+            const { data: studyQuizData, error: sqError } = await supabase
+                .from('user_progress')
+                .select(`
+                *,
+                questions!inner (
+                    id, content, answer, type, tags, explanation
+                )
+            `)
+                .eq('user_id', user.id)
+                .in('questions.type', ['word_transformation', 'sentence_transformation'])
+                .eq('status', 'learning')
+                .gt('attempts', 0)
+
+            if (sqError) console.error("Study Quiz Fetch Error:", sqError)
+
+            if (studyQuizData) {
+                console.log(`Fetched ${studyQuizData.length} study quiz records from user_progress`)
+                studyQuizData.forEach((record: any) => {
+                    const qType = record.questions.type
+                    allMistakes.push({
+                        id: record.questions.id,
+                        content: record.questions.content,
+                        answer: record.questions.answer,
+                        type: 'quiz', // Show in Practice tab
+                        note: qType === 'word_transformation' ? '词汇变形' : '句型转换',
+                        count: record.attempts,
+                        tags: record.questions.tags || [],
+                        explanation: record.questions.explanation,
+                        lastAttempt: record.updated_at || record.last_practiced_at,
+                        wrongAttempts: [] // We don't have historical logs for this in user_progress, just count
+                    })
                 })
             }
 
