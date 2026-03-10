@@ -98,7 +98,7 @@ export default function ErrorNotebookPage() {
             `)
                 .eq('user_id', user.id)
                 .eq('is_correct', false)
-                .order('attempt_at', { ascending: true })
+                .order('attempt_at', { ascending: false })
                 .limit(200)
 
             if (qError) console.error("Quiz Fetch Error:", qError)
@@ -576,7 +576,7 @@ export default function ErrorNotebookPage() {
                                                         <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-xs font-bold rounded">
                                                             {item.note}
                                                         </span>
-                                                        {item.count > 1 && (
+                                                        {item.type === 'recitation' && item.count > 0 && (
                                                             <span className="px-2 py-0.5 bg-red-50 text-red-600 text-xs font-bold rounded flex items-center">
                                                                 <AlertTriangle className="w-3 h-3 mr-1" /> 出错 {item.count} 次
                                                             </span>
@@ -585,19 +585,23 @@ export default function ErrorNotebookPage() {
                                                     <h3 className="text-lg font-bold text-gray-900 leading-relaxed">
                                                         {item.content}
                                                     </h3>
-                                                    <div className="mt-4 p-3 bg-green-50 rounded-lg">
-                                                        <div className="text-xs text-green-600 font-bold mb-1 uppercase tracking-wider">正确答案</div>
-                                                        <div className="text-gray-900 font-medium">✓ {item.answer}</div>
-                                                    </div>
-                                                    {item.explanation && (
-                                                        <div className="mt-3 text-sm text-gray-500 italic flex items-start gap-2">
-                                                            <span>💡</span> {item.explanation}
-                                                        </div>
+                                                    {item.type === 'quiz' && (
+                                                        <>
+                                                            <div className="mt-4 p-3 bg-green-50 rounded-lg">
+                                                                <div className="text-xs text-green-600 font-bold mb-1 uppercase tracking-wider">正确答案</div>
+                                                                <div className="text-gray-900 font-medium">✓ {item.answer}</div>
+                                                            </div>
+                                                            {item.explanation && (
+                                                                <div className="mt-3 text-sm text-gray-500 italic flex items-start gap-2">
+                                                                    <span>💡</span> {item.explanation}
+                                                                </div>
+                                                            )}
+                                                        </>
                                                     )}
                                                 </div>
                                             </div>
 
-                                            {item.wrongAttempts && item.wrongAttempts.length > 0 && (
+                                            {item.type === 'quiz' && item.wrongAttempts && item.wrongAttempts.length > 0 && (
                                                 <div className="mt-4 border-t border-gray-100 pt-4 print:hidden">
                                                     <div className="text-xs text-gray-400 font-bold mb-2">错误记录 (按时间)</div>
                                                     <div className="space-y-2">
